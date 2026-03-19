@@ -57,7 +57,7 @@
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <label class="flex cursor-pointer items-center text-sm font-normal text-gray-700 select-none">
-                                        <input type="checkbox" name="remember" class="mr-3 h-5 w-5 rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]">
+                                        <input type="checkbox" name="remember" class="mr-3 h-5 w-5 rounded border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]">
                                         Запомнить меня
                                     </label>
                                     <a href="{{ url('/reset-password') }}" class="text-sm text-[#c3242a] hover:text-[#a01e24]">
@@ -72,7 +72,7 @@
                                 </div>
                             </div>
                         </form>
-                        <div class="mt-5">
+                        <div class="mt-5" style="display: none;">
                             <p class="text-center text-sm font-normal text-gray-700 sm:text-start">
                                 Нет аккаунта?
                                 <a href="{{ url('/signup') }}" class="text-[#c3242a] hover:text-[#a01e24]">Зарегистрироваться</a>

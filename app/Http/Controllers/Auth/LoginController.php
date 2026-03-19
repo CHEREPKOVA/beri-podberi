@@ -25,7 +25,7 @@ class LoginController extends Controller
 
         if (! Auth::attempt($request->only('email', 'password'), $remember)) {
             throw ValidationException::withMessages([
-                'email' => __('auth.failed'),
+                'email' => __('auth.failed', [], 'ru'),
             ]);
         }
 

@@ -17,6 +17,8 @@
     <link href="https://fonts.bunny.net/css?family=dm-sans:400,500,600,700" rel="stylesheet" />
     <style type="text/tailwindcss">
         body { font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif; }
+        .shadow-theme-xs { box-shadow: 0px 1px 2px 0px rgba(16, 24, 40, 0.05); }
+        [x-cloak] { display: none !important; }
     </style>
     @stack('styles')
 </head>
@@ -33,16 +35,81 @@
                 </button>
             </div>
             <nav class="mt-4 px-3 space-y-1">
-                <a href="{{ url('/dashboard') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400">
+                @php
+                    $currentRoute = request()->route()?->getName();
+                    $currentRole = auth()->user()?->getCurrentRole();
+                @endphp
+
+                {{-- Главная --}}
+                <a href="{{ url('/dashboard') }}"
+                   class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                       {{ $currentRoute === 'dashboard' ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
                     <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-                    <span x-show="sidebarOpen" x-transition>Dashboard</span>
+                    <span x-show="sidebarOpen" x-transition>Главная</span>
                 </a>
+
+                {{-- Раздел для Администратора --}}
+                @if($currentRole?->slug === 'admin')
+                <div class="pt-4">
+
+                    <a href="{{ route('admin.staff.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'admin.staff') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Администраторы</span>
+                    </a>
+                </div>
+                @endif
+
+                {{-- Раздел для Производителя --}}
+                @if($currentRole?->slug === 'manufacturer')
+                <div class="pt-4">
+
+                    <a href="{{ route('manufacturer.profile') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Профиль</span>
+                    </a>
+
+                    <a href="{{ route('manufacturer.warehouses.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.warehouses') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Склады</span>
+                    </a>
+
+                    <a href="{{ route('manufacturer.catalog.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.catalog') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Каталог</span>
+                    </a>
+
+                    <a href="{{ route('manufacturer.products.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.products') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Номенклатура</span>
+                    </a>
+                </div>
+                @endif
             </nav>
         </aside>
         {{-- Main --}}
         <div :class="sidebarOpen ? 'ml-64' : 'ml-20'" class="flex-1 transition-all duration-300">
             <header class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6">
-                <h1 class="text-lg font-semibold">@yield('heading', 'Dashboard')</h1>
+                <h1 class="text-lg font-semibold">@yield('heading', 'Главная')</h1>
                 <div class="flex items-center gap-4">
                     @auth
                     <span class="text-sm text-gray-500">{{ auth()->user()->email }}</span>

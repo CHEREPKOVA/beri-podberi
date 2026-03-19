@@ -7,6 +7,7 @@ use App\Services\CurrentRoleService;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -54,6 +55,25 @@ class User extends Authenticatable
         return $this->belongsToMany(Role::class, 'role_user')
             ->withPivot('company_name')
             ->withTimestamps();
+    }
+
+    public function manufacturerProfile(): HasOne
+    {
+        return $this->hasOne(ManufacturerProfile::class);
+    }
+
+    public function getOrCreateManufacturerProfile(): ManufacturerProfile
+    {
+        if ($this->manufacturerProfile) {
+            return $this->manufacturerProfile;
+        }
+
+        return $this->manufacturerProfile()->create([
+            'full_name' => $this->roles()
+                ->where('slug', Role::SLUG_MANUFACTURER)
+                ->first()?->pivot?->company_name ?? $this->name,
+            'inn' => '',
+        ]);
     }
 
     public function hasRole(string $slug): bool

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\StaffController as AdminStaffController;
+use App\Http\Controllers\Admin\CompanyController as AdminCompanyController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\Manufacturer\ProductController as ManufacturerProductController;
@@ -13,7 +14,7 @@ Route::get('/', function () {
     return redirect('/dashboard');
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'user.active'])->group(function () {
     Route::get('/dashboard', function () {
         return view('dashboard');
     })->name('dashboard')->middleware('role.selected');
@@ -32,6 +33,17 @@ Route::middleware('auth')->group(function () {
         Route::get('/staff/{staff}/edit', [AdminStaffController::class, 'edit'])->name('staff.edit');
         Route::put('/staff/{staff}', [AdminStaffController::class, 'update'])->name('staff.update');
         Route::delete('/staff/{staff}', [AdminStaffController::class, 'destroy'])->name('staff.destroy');
+        Route::post('/staff/{staff}/suspend', [AdminStaffController::class, 'suspend'])->name('staff.suspend');
+        Route::post('/staff/{staff}/activate', [AdminStaffController::class, 'activate'])->name('staff.activate');
+
+        Route::get('/companies', [AdminCompanyController::class, 'index'])->name('companies.index');
+        Route::get('/companies/{companyKey}', [AdminCompanyController::class, 'show'])->name('companies.show');
+        Route::put('/companies/{companyKey}', [AdminCompanyController::class, 'updateCompany'])->name('companies.update');
+        Route::put('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'updateUser'])->name('companies.users.update');
+        Route::post('/companies/{companyKey}/users/{user}/suspend', [AdminCompanyController::class, 'suspendUser'])->name('companies.users.suspend');
+        Route::post('/companies/{companyKey}/users/{user}/activate', [AdminCompanyController::class, 'activateUser'])->name('companies.users.activate');
+        Route::post('/companies/{companyKey}/users/{user}/reset-password', [AdminCompanyController::class, 'resetPassword'])->name('companies.users.reset-password');
+        Route::delete('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'deleteUser'])->name('companies.users.delete');
     });
 
     // Профиль производителя

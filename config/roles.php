@@ -22,7 +22,7 @@ return [
         'manager' => 'Менеджер платформы (оператор поддержки)',
         'manufacturer' => 'Производитель (завод)',
         'distributor' => 'Дистрибьютор',
-        'end_company' => 'Конечная компания (магазин, СТО)',
+        'end_company' => 'Конечная компания (Магазин / СТО)',
         'company_employee' => 'Сотрудник организации',
     ],
 
@@ -30,7 +30,7 @@ return [
     'short_labels' => [
         'manufacturer' => 'Производитель',
         'distributor' => 'Дистрибьютор',
-        'end_company' => 'Магазин',
+        'end_company' => 'Магазин / СТО',
         'company_employee' => 'Сотрудник',
     ],
 

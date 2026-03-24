@@ -4,7 +4,26 @@
 @section('heading', 'Редактировать сотрудника')
 
 @section('content')
-<div class="max-w-xl">
+<div class="max-w-xl space-y-6">
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-sm">
+        <p class="text-gray-500 dark:text-gray-400 mb-2">Контроль учётной записи</p>
+        <div class="flex flex-wrap gap-4">
+            <div>
+                <span class="text-gray-500 dark:text-gray-400">Статус:</span>
+                @if($staff->is_active)
+                <span class="ml-1 font-medium text-green-700 dark:text-green-400">Активен</span>
+                @else
+                <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">Заблокирован</span>
+                @endif
+            </div>
+            <div>
+                <span class="text-gray-500 dark:text-gray-400">Последний вход:</span>
+                <span class="ml-1 font-medium text-gray-900 dark:text-white">{{ $staff->last_login_at ? $staff->last_login_at->format('d.m.Y H:i') : '—' }}</span>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Блокировку и отзыв доступа выполняйте из списка сотрудников.</p>
+    </div>
+
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <form method="POST" action="{{ route('admin.staff.update', $staff) }}" class="space-y-5">
             @csrf

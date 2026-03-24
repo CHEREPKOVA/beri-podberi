@@ -33,6 +33,18 @@ class LoginController extends Controller
 
         $user = $request->user();
 
+        if (! $user->is_active) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw ValidationException::withMessages([
+                'email' => __('auth.blocked', [], 'ru'),
+            ]);
+        }
+
+        $user->forceFill(['last_login_at' => now()])->save();
+
         $redirect = app(CurrentRoleService::class)->applyAfterLogin($user);
         if ($redirect !== null) {
             return $redirect;

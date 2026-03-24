@@ -39,6 +39,12 @@ class StaffController extends Controller
             $query->whereHas('roles', fn ($q) => $q->where('slug', $request->role));
         }
 
+        if ($request->get('status') === 'active') {
+            $query->where('is_active', true);
+        } elseif ($request->get('status') === 'blocked') {
+            $query->where('is_active', false);
+        }
+
         $staff = $query->orderBy('name')->paginate(20)->withQueryString();
         $roleOptions = Role::whereIn('slug', self::STAFF_ROLE_SLUGS)->orderBy('sort_order')->get();
 
@@ -85,6 +91,7 @@ class StaffController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
+            'is_active' => true,
         ]);
 
         $user->roles()->attach($role->id);
@@ -165,6 +172,45 @@ class StaffController extends Controller
         }
 
         return redirect()->route('admin.staff.index')->with('success', 'Сотрудник удалён из панели управления.');
+    }
+
+    /**
+     * Временная блокировка доступа (учётная запись остаётся, вход невозможен).
+     */
+    public function suspend(Request $request, User $staff): RedirectResponse
+    {
+        $this->ensureStaffUser($staff);
+        $this->rejectProtectedAdmin($staff);
+
+        if ($staff->id === $request->user()->id) {
+            return redirect()->route('admin.staff.index')->with('error', 'Нельзя заблокировать свою учётную запись.');
+        }
+
+        if (! $staff->is_active) {
+            return redirect()->route('admin.staff.index')->with('error', 'Учётная запись уже заблокирована.');
+        }
+
+        $staff->is_active = false;
+        $staff->save();
+
+        return redirect()->route('admin.staff.index')->with('success', 'Доступ сотрудника временно заблокирован.');
+    }
+
+    /**
+     * Снятие блокировки доступа.
+     */
+    public function activate(User $staff): RedirectResponse
+    {
+        $this->ensureStaffUser($staff);
+
+        if ($staff->is_active) {
+            return redirect()->route('admin.staff.index')->with('error', 'Учётная запись уже активна.');
+        }
+
+        $staff->is_active = true;
+        $staff->save();
+
+        return redirect()->route('admin.staff.index')->with('success', 'Доступ сотрудника восстановлен.');
     }
 
     private function ensureStaffUser(User $user): void

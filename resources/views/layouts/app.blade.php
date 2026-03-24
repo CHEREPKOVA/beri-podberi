@@ -60,6 +60,15 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Администраторы</span>
                     </a>
+
+                    <a href="{{ route('admin.companies.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'admin.companies') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7v11a2 2 0 002 2h10a2 2 0 002-2V7M9 7V5a3 3 0 016 0v2"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Компании</span>
+                    </a>
                 </div>
                 @endif
 

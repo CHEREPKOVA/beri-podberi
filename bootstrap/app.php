@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role.selected' => \App\Http\Middleware\EnsureCurrentRoleSelected::class,
             'role' => \App\Http\Middleware\RequireRole::class,
+            'user.active' => \App\Http\Middleware\EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

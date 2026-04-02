@@ -1,13 +1,26 @@
 <?php
 
-use App\Http\Controllers\Admin\StaffController as AdminStaffController;
+use App\Http\Controllers\Admin\CatalogController as AdminCatalogController;
+use App\Http\Controllers\Admin\CatalogProductController as AdminCatalogProductController;
 use App\Http\Controllers\Admin\CompanyController as AdminCompanyController;
+use App\Http\Controllers\Admin\DeliveryMethodController as AdminDeliveryMethodController;
+use App\Http\Controllers\Admin\DirectoriesController as AdminDirectoriesController;
+use App\Http\Controllers\Admin\ProductAnalogController as AdminProductAnalogController;
+use App\Http\Controllers\Admin\ProductAttributeController as AdminProductAttributeController;
+use App\Http\Controllers\Admin\ProductCategoryController as AdminProductCategoryController;
+use App\Http\Controllers\Admin\RegionController as AdminRegionController;
+use App\Http\Controllers\Admin\StaffController as AdminStaffController;
+use App\Http\Controllers\Admin\SystemSettingController as AdminSystemSettingController;
+use App\Http\Controllers\Admin\TransportCompanyController as AdminTransportCompanyController;
+use App\Http\Controllers\Admin\UnitTypeController as AdminUnitTypeController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\Manufacturer\ProductController as ManufacturerProductController;
 use App\Http\Controllers\Manufacturer\ProfileController as ManufacturerProfileController;
 use App\Http\Controllers\Manufacturer\WarehouseController as ManufacturerWarehouseController;
 use App\Http\Controllers\RoleSelectionController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -44,6 +57,40 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::post('/companies/{companyKey}/users/{user}/activate', [AdminCompanyController::class, 'activateUser'])->name('companies.users.activate');
         Route::post('/companies/{companyKey}/users/{user}/reset-password', [AdminCompanyController::class, 'resetPassword'])->name('companies.users.reset-password');
         Route::delete('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'deleteUser'])->name('companies.users.delete');
+
+        Route::get('/directories', [AdminDirectoriesController::class, 'index'])->name('directories.index');
+        Route::resource('regions', AdminRegionController::class)->except(['show']);
+        Route::resource('delivery-methods', AdminDeliveryMethodController::class)->except(['show']);
+        Route::resource('transport-companies', AdminTransportCompanyController::class)->except(['show']);
+        Route::resource('unit-types', AdminUnitTypeController::class)->except(['show']);
+        Route::get('/system-settings', [AdminSystemSettingController::class, 'index'])->name('system-settings.index');
+        Route::put('/system-settings', [AdminSystemSettingController::class, 'update'])->name('system-settings.update');
+
+        Route::get('/catalog', [AdminCatalogController::class, 'index'])->name('catalog.index');
+        Route::get('/catalog/quality', [AdminCatalogController::class, 'quality'])->name('catalog.quality');
+
+        Route::get('/catalog/categories', [AdminProductCategoryController::class, 'index'])->name('catalog.categories.index');
+        Route::get('/catalog/categories/create', [AdminProductCategoryController::class, 'create'])->name('catalog.categories.create');
+        Route::post('/catalog/categories', [AdminProductCategoryController::class, 'store'])->name('catalog.categories.store');
+        Route::get('/catalog/categories/{category}/edit', [AdminProductCategoryController::class, 'edit'])->name('catalog.categories.edit');
+        Route::put('/catalog/categories/{category}', [AdminProductCategoryController::class, 'update'])->name('catalog.categories.update');
+        Route::delete('/catalog/categories/{category}', [AdminProductCategoryController::class, 'destroy'])->name('catalog.categories.destroy');
+
+        Route::get('/catalog/products', [AdminCatalogProductController::class, 'index'])->name('catalog.products.index');
+        Route::get('/catalog/products/{product}', [AdminCatalogProductController::class, 'show'])->name('catalog.products.show');
+        Route::get('/catalog/products/{product}/edit', [AdminCatalogProductController::class, 'edit'])->name('catalog.products.edit');
+        Route::put('/catalog/products/{product}', [AdminCatalogProductController::class, 'update'])->name('catalog.products.update');
+
+        Route::get('/catalog/attributes', [AdminProductAttributeController::class, 'index'])->name('catalog.attributes.index');
+        Route::get('/catalog/attributes/create', [AdminProductAttributeController::class, 'create'])->name('catalog.attributes.create');
+        Route::post('/catalog/attributes', [AdminProductAttributeController::class, 'store'])->name('catalog.attributes.store');
+        Route::get('/catalog/attributes/{attribute}/edit', [AdminProductAttributeController::class, 'edit'])->name('catalog.attributes.edit');
+        Route::put('/catalog/attributes/{attribute}', [AdminProductAttributeController::class, 'update'])->name('catalog.attributes.update');
+        Route::delete('/catalog/attributes/{attribute}', [AdminProductAttributeController::class, 'destroy'])->name('catalog.attributes.destroy');
+
+        Route::get('/catalog/analogs', [AdminProductAnalogController::class, 'index'])->name('catalog.analogs.index');
+        Route::get('/catalog/analogs/{product}/edit', [AdminProductAnalogController::class, 'edit'])->name('catalog.analogs.edit');
+        Route::put('/catalog/analogs/{product}', [AdminProductAnalogController::class, 'update'])->name('catalog.analogs.update');
     });
 
     // Профиль производителя
@@ -75,6 +122,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
 
         // Каталог (дерево категорий + товары), ЧПУ: /catalog и /catalog/{slug}
         Route::get('/catalog/products', [ManufacturerProductController::class, 'catalogProducts'])->name('catalog.products');
+        Route::get('/catalog/product/{product}', [ManufacturerProductController::class, 'catalogShow'])->name('catalog.show');
         Route::get('/catalog/{category?}', [ManufacturerProductController::class, 'catalog'])->name('catalog.index')->where('category', '[a-z0-9\-]+');
 
         // Номенклатура (товары)
@@ -102,10 +150,11 @@ Route::get('/login', function () {
 
 Route::post('/login', [LoginController::class, 'store'])->name('login.store');
 
-Route::post('/logout', function (\Illuminate\Http\Request $request) {
-    \Illuminate\Support\Facades\Auth::logout();
+Route::post('/logout', function (Request $request) {
+    Auth::logout();
     $request->session()->invalidate();
     $request->session()->regenerateToken();
+
     return redirect()->route('login');
 })->name('logout');
 

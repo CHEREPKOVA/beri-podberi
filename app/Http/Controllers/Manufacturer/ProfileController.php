@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\DeliveryMethod;
 use App\Models\ManufacturerContact;
 use App\Models\ManufacturerDocument;
-use App\Models\ManufacturerProfile;
 use App\Models\Region;
 use App\Models\TransportCompany;
 use App\Models\Warehouse;
@@ -31,9 +30,9 @@ class ProfileController extends Controller
             'documents',
         ]);
 
-        $regions = Region::active()->orderBy('sort_order')->get();
+        $regions = Region::active()->orderBy('name')->get();
         $deliveryMethods = DeliveryMethod::active()->orderBy('sort_order')->get();
-        $transportCompanies = TransportCompany::active()->orderBy('sort_order')->get();
+        $transportCompanies = TransportCompany::active()->orderBy('name')->get();
         $federalDistricts = Region::federalDistricts();
 
         return view('manufacturer.profile.index', compact(
@@ -133,7 +132,7 @@ class ProfileController extends Controller
     {
         $this->authorizeContact($request, $contact);
 
-        if (!$contact->canBeDeleted()) {
+        if (! $contact->canBeDeleted()) {
             return redirect()
                 ->route('manufacturer.profile', ['tab' => 'contacts'])
                 ->with('error', 'Нельзя удалить основной контакт');
@@ -244,7 +243,7 @@ class ProfileController extends Controller
 
         $callback = function () use ($warehouses) {
             $file = fopen('php://output', 'w');
-            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
             fputcsv($file, ['Название', 'Адрес', 'Регион', 'Тип', 'Ответственный', 'Телефон', 'График работы', 'Примечание', 'В каталоге'], ';');
 

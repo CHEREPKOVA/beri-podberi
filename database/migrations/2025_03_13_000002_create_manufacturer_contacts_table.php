@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('manufacturer_contacts', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('manufacturer_profile_id')->constrained()->onDelete('cascade');
+            $table->foreignId('manufacturer_profile_id')->constrained()->cascadeOnDelete();
             
             $table->string('full_name'); // ФИО контактного лица
             $table->string('position')->nullable(); // Должность
@@ -21,8 +21,6 @@ return new class extends Migration
             $table->text('notes')->nullable(); // Примечания
             
             $table->timestamps();
-            
-            $table->index('manufacturer_profile_id');
         });
     }
 

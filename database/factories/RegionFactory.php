@@ -36,7 +36,6 @@ class RegionFactory extends Factory
             'name' => $name,
             'code' => strtoupper(fake()->unique()->lexify('??')),
             'federal_district' => fake()->randomElement($districts),
-            'sort_order' => fake()->numberBetween(1, 100),
             'is_active' => true,
         ];
     }

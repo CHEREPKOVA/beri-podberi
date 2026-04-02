@@ -14,7 +14,7 @@ class WarehouseController extends Controller
         $profile = $request->user()->getOrCreateManufacturerProfile();
         $profile->load(['warehouses.region']);
 
-        $regions = Region::active()->orderBy('sort_order')->get();
+        $regions = Region::active()->orderBy('name')->get();
 
         return view('manufacturer.warehouses.index', compact('profile', 'regions'));
     }

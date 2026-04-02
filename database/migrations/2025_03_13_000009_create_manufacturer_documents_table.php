@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('manufacturer_documents', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('manufacturer_profile_id')->constrained()->onDelete('cascade');
+            $table->foreignId('manufacturer_profile_id')->constrained()->cascadeOnDelete();
             
             $table->string('name'); // Название документа
             $table->enum('type', [
@@ -29,8 +29,6 @@ return new class extends Migration
             $table->text('notes')->nullable();
             
             $table->timestamps();
-            
-            $table->index('manufacturer_profile_id');
             $table->index('type');
         });
     }

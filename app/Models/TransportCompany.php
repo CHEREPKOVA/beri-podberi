@@ -11,12 +11,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 class TransportCompany extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'name',
         'slug',
         'website',
         'tracking_url',
-        'sort_order',
         'is_active',
     ];
 
@@ -41,9 +41,10 @@ class TransportCompany extends Model
 
     public function getTrackingLink(string $trackingNumber): ?string
     {
-        if (!$this->tracking_url) {
+        if (! $this->tracking_url) {
             return null;
         }
-        return $this->tracking_url . $trackingNumber;
+
+        return $this->tracking_url.$trackingNumber;
     }
 }

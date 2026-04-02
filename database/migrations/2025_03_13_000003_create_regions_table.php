@@ -13,7 +13,6 @@ return new class extends Migration
             $table->string('name'); // Название региона
             $table->string('code', 10)->nullable(); // Код региона (например, 77 для Москвы)
             $table->string('federal_district')->nullable(); // Федеральный округ
-            $table->integer('sort_order')->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             

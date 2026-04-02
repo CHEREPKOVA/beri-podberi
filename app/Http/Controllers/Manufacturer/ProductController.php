@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -53,9 +54,9 @@ class ProductController extends Controller
 
         if ($request->filled('has_stock')) {
             if ($request->has_stock === 'yes') {
-                $query->whereHas('stocks', fn($q) => $q->where('quantity', '>', 0));
+                $query->whereHas('stocks', fn ($q) => $q->where('quantity', '>', 0));
             } else {
-                $query->whereDoesntHave('stocks', fn($q) => $q->where('quantity', '>', 0));
+                $query->whereDoesntHave('stocks', fn ($q) => $q->where('quantity', '>', 0));
             }
         }
 
@@ -75,9 +76,9 @@ class ProductController extends Controller
         $profile = $request->user()->manufacturerProfile;
 
         $categories = ProductCategory::active()->orderBy('sort_order')->get();
-        $unitTypes = UnitType::active()->orderBy('sort_order')->get();
+        $unitTypes = UnitType::active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->active()->get();
-        $regions = Region::active()->orderBy('sort_order')->get();
+        $regions = Region::active()->orderBy('name')->get();
         $attributes = ProductAttribute::active()
             ->forCategory($request->old('category_id'))
             ->orderBy('sort_order')
@@ -146,9 +147,9 @@ class ProductController extends Controller
         ]);
 
         $categories = ProductCategory::active()->orderBy('sort_order')->get();
-        $unitTypes = UnitType::active()->orderBy('sort_order')->get();
+        $unitTypes = UnitType::active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->active()->get();
-        $regions = Region::active()->orderBy('sort_order')->get();
+        $regions = Region::active()->orderBy('name')->get();
         $attributes = ProductAttribute::active()
             ->forCategory($product->category_id)
             ->orderBy('sort_order')
@@ -223,7 +224,7 @@ class ProductController extends Controller
     {
         $this->authorizeProduct($request, $product);
 
-        if (!$product->canBePublished()) {
+        if (! $product->canBePublished()) {
             return back()->with('error', 'Невозможно опубликовать товар: заполните обязательные поля (название, цена, категория) и добавьте остатки.');
         }
 
@@ -359,9 +360,11 @@ class ProductController extends Controller
             }
 
             DB::commit();
+
             return back()->with('success', $message);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return back()->with('error', 'Ошибка при выполнении операции');
         }
     }
@@ -383,12 +386,12 @@ class ProductController extends Controller
 
         $headers = [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="products_' . date('Y-m-d') . '.csv"',
+            'Content-Disposition' => 'attachment; filename="products_'.date('Y-m-d').'.csv"',
         ];
 
         $callback = function () use ($products) {
             $file = fopen('php://output', 'w');
-            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
             fputcsv($file, [
                 'Артикул',
@@ -455,7 +458,7 @@ class ProductController extends Controller
 
             $message = "Импорт завершён. Создано: {$stats['created']}, обновлено: {$stats['updated']}, пропущено: {$stats['skipped']}";
 
-            if (!empty($stats['errors'])) {
+            if (! empty($stats['errors'])) {
                 return redirect()
                     ->route('manufacturer.products.import')
                     ->with('warning', $message)
@@ -467,7 +470,8 @@ class ProductController extends Controller
                 ->with('success', $message);
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Ошибка импорта: ' . $e->getMessage());
+
+            return back()->with('error', 'Ошибка импорта: '.$e->getMessage());
         }
     }
 
@@ -512,7 +516,7 @@ class ProductController extends Controller
     {
         $skuRule = 'required|string|max:100';
         if ($product) {
-            $skuRule .= '|unique:products,sku,' . $product->id . ',id,manufacturer_profile_id,' . $product->manufacturer_profile_id;
+            $skuRule .= '|unique:products,sku,'.$product->id.',id,manufacturer_profile_id,'.$product->manufacturer_profile_id;
         }
 
         return $request->validate([
@@ -552,7 +556,7 @@ class ProductController extends Controller
                     'product_id' => $product->id,
                     'path' => $path,
                     'original_name' => $file->getClientOriginalName(),
-                    'is_primary' => !$hasImages && $index === 0,
+                    'is_primary' => ! $hasImages && $index === 0,
                     'sort_order' => $product->images()->max('sort_order') + 1,
                 ]);
 
@@ -565,7 +569,7 @@ class ProductController extends Controller
     {
         if ($request->has('stocks')) {
             foreach ($request->stocks as $warehouseId => $data) {
-                if (!empty($data['quantity']) || $data['quantity'] === '0' || $data['quantity'] === 0) {
+                if (! empty($data['quantity']) || $data['quantity'] === '0' || $data['quantity'] === 0) {
                     ProductStock::updateOrCreate(
                         [
                             'product_id' => $product->id,
@@ -587,7 +591,7 @@ class ProductController extends Controller
             $product->regionalPrices()->delete();
 
             foreach ($request->regional_prices as $regionId => $price) {
-                if (!empty($price)) {
+                if (! empty($price)) {
                     ProductRegionalPrice::create([
                         'product_id' => $product->id,
                         'region_id' => $regionId,
@@ -604,7 +608,7 @@ class ProductController extends Controller
             $product->attributeValues()->delete();
 
             foreach ($request->attributes as $attributeId => $value) {
-                if (!empty($value) || $value === '0') {
+                if (! empty($value) || $value === '0') {
                     ProductAttributeValue::create([
                         'product_id' => $product->id,
                         'product_attribute_id' => $attributeId,
@@ -636,8 +640,8 @@ class ProductController extends Controller
     {
         if ($request->hasFile('documents')) {
             foreach ($request->file('documents') as $doc) {
-                $docName = $request->input('document_names.' . array_search($doc, $request->file('documents')), $doc->getClientOriginalName());
-                $docType = $request->input('document_types.' . array_search($doc, $request->file('documents')), 'other');
+                $docName = $request->input('document_names.'.array_search($doc, $request->file('documents')), $doc->getClientOriginalName());
+                $docType = $request->input('document_types.'.array_search($doc, $request->file('documents')), 'other');
 
                 $path = $doc->store('products/documents', 'public');
 
@@ -659,7 +663,7 @@ class ProductController extends Controller
         $handle = fopen($file->getPathname(), 'r');
 
         $header = fgetcsv($handle, 0, ';');
-        $header = array_map(fn($h) => mb_strtolower(trim($h)), $header);
+        $header = array_map(fn ($h) => mb_strtolower(trim($h)), $header);
 
         $mapping = [
             'артикул' => 'sku',
@@ -684,7 +688,7 @@ class ProductController extends Controller
             }
         }
 
-        if (!isset($headerMap['sku']) || !isset($headerMap['name'])) {
+        if (! isset($headerMap['sku']) || ! isset($headerMap['name'])) {
             throw new \Exception('Файл должен содержать колонки "Артикул" и "Наименование"');
         }
 
@@ -698,6 +702,7 @@ class ProductController extends Controller
             if (empty($sku) || empty($name)) {
                 $stats['skipped']++;
                 $stats['errors'][] = "Строка {$row}: пустой артикул или название";
+
                 continue;
             }
 
@@ -707,7 +712,7 @@ class ProductController extends Controller
                 'manufacturer_profile_id' => $profile->id,
             ];
 
-            if (isset($headerMap['base_price']) && !empty($data[$headerMap['base_price']])) {
+            if (isset($headerMap['base_price']) && ! empty($data[$headerMap['base_price']])) {
                 $productData['base_price'] = (float) str_replace([' ', ','], ['', '.'], $data[$headerMap['base_price']]);
                 $productData['price_updated_at'] = now();
             }
@@ -716,7 +721,7 @@ class ProductController extends Controller
                 $productData['description'] = $data[$headerMap['description']] ?? null;
             }
 
-            if (isset($headerMap['category']) && !empty($data[$headerMap['category']])) {
+            if (isset($headerMap['category']) && ! empty($data[$headerMap['category']])) {
                 $categoryName = trim($data[$headerMap['category']]);
                 $category = ProductCategory::where('name', $categoryName)->first();
                 if ($category) {
@@ -738,7 +743,7 @@ class ProductController extends Controller
                 $stats['created']++;
             }
 
-            if (isset($headerMap['stock']) && !empty($data[$headerMap['stock']])) {
+            if (isset($headerMap['stock']) && ! empty($data[$headerMap['stock']])) {
                 $warehouse = $profile->warehouses()->active()->first();
                 if ($warehouse) {
                     ProductStock::updateOrCreate(
@@ -764,7 +769,7 @@ class ProductController extends Controller
     {
         $xml = simplexml_load_file($file->getPathname());
 
-        if (!$xml || !isset($xml->shop->offers->offer)) {
+        if (! $xml || ! isset($xml->shop->offers->offer)) {
             throw new \Exception('Неверный формат YML файла');
         }
 
@@ -775,7 +780,7 @@ class ProductController extends Controller
                 $catName = (string) $cat;
                 $categories[$catId] = ProductCategory::firstOrCreate(
                     ['name' => $catName],
-                    ['slug' => \Illuminate\Support\Str::slug($catName), 'is_active' => true]
+                    ['slug' => Str::slug($catName), 'is_active' => true]
                 );
             }
         }
@@ -786,6 +791,7 @@ class ProductController extends Controller
 
             if (empty($sku) || empty($name)) {
                 $stats['skipped']++;
+
                 continue;
             }
 
@@ -837,6 +843,7 @@ class ProductController extends Controller
         }
         $query->withAttributeFilters($attributeFilters);
         $products = $query->orderBy('name')->paginate(24)->withQueryString();
+
         return view('manufacturer.catalog.index', [
             'categoryTree' => $categoryTree,
             'products' => $products,
@@ -865,6 +872,7 @@ class ProductController extends Controller
         }
         $query->withAttributeFilters($attributeFilters);
         $products = $query->orderBy('name')->paginate(24)->withQueryString();
+
         return response()->view('manufacturer.catalog._products', [
             'products' => $products,
             'selectedCategory' => $category,
@@ -872,6 +880,37 @@ class ProductController extends Controller
             'filterableAttributes' => $filterableAttributes,
             'appliedFilters' => $attributeFilters,
         ])->header('Cache-Control', 'no-store');
+    }
+
+    public function catalogShow(Request $request, Product $product): View
+    {
+        $this->authorizeProduct($request, $product);
+
+        $product->load([
+            'manufacturerProfile.regions',
+            'category.parent',
+            'additionalCategories',
+            'images',
+            'unitType',
+            'attributeValues.attribute',
+            'stocks.warehouse.region',
+            'documents',
+            'analogs.images',
+            'analogs.category',
+        ]);
+
+        $supplierRows = collect([[
+            'name' => $product->manufacturerProfile?->short_name ?: ($product->manufacturerProfile?->full_name ?? 'Производитель'),
+            'price' => $product->base_price,
+            'stock' => $product->available_stock,
+            'conditions' => $product->transport_conditions ?: 'По стандартным условиям производителя',
+            'regions' => $product->manufacturerProfile?->regions?->pluck('name')->implode(', ') ?: 'Все регионы',
+        ]]);
+
+        return view('manufacturer.catalog.show', [
+            'product' => $product,
+            'supplierRows' => $supplierRows,
+        ]);
     }
 
     /** Разрешает категорию по slug или id из query (для AJAX/форм). */
@@ -883,6 +922,7 @@ class ProductController extends Controller
         if (is_numeric($value)) {
             return ProductCategory::active()->find((int) $value);
         }
+
         return ProductCategory::active()->where('slug', $value)->first();
     }
 
@@ -890,7 +930,7 @@ class ProductController extends Controller
     private function parseAttributeFilters(Request $request): array
     {
         $attr = $request->input('attr', $request->input('attributes', []));
-        if (!is_array($attr)) {
+        if (! is_array($attr)) {
             return [];
         }
         $out = [];
@@ -911,6 +951,7 @@ class ProductController extends Controller
                 }
             }
         }
+
         return $out;
     }
 

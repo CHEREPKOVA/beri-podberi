@@ -51,6 +51,9 @@
                 {{-- Раздел для Администратора --}}
                 @if($currentRole?->slug === 'admin')
                 <div class="pt-4">
+                    @php
+                        $adminCatalogActive = str_starts_with($currentRoute ?? '', 'admin.catalog');
+                    @endphp
 
                     <a href="{{ route('admin.staff.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
@@ -65,9 +68,35 @@
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'admin.companies') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
                         <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7v11a2 2 0 002 2h10a2 2 0 002-2V7M9 7V5a3 3 0 016 0v2"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Компании</span>
+                    </a>
+
+                    <a href="{{ route('admin.catalog.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ $adminCatalogActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Каталог</span>
+                    </a>
+
+                    @php
+                        $adminDirectoriesActive = str_starts_with($currentRoute ?? '', 'admin.directories')
+                            || str_starts_with($currentRoute ?? '', 'admin.regions')
+                            || str_starts_with($currentRoute ?? '', 'admin.delivery-methods')
+                            || str_starts_with($currentRoute ?? '', 'admin.transport-companies')
+                            || str_starts_with($currentRoute ?? '', 'admin.unit-types')
+                            || str_starts_with($currentRoute ?? '', 'admin.system-settings');
+                    @endphp
+                    <a href="{{ route('admin.directories.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ $adminDirectoriesActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h7"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Справочники</span>
                     </a>
                 </div>
                 @endif

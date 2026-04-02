@@ -24,13 +24,12 @@ class UnitTypeSeeder extends Seeder
             ['name' => 'Палета', 'short_name' => 'пал.', 'code' => 'pallet'],
         ];
 
-        foreach ($units as $index => $unit) {
+        foreach ($units as $unit) {
             UnitType::firstOrCreate(
                 ['code' => $unit['code']],
                 [
                     'name' => $unit['name'],
                     'short_name' => $unit['short_name'],
-                    'sort_order' => $index,
                     'is_active' => true,
                 ]
             );

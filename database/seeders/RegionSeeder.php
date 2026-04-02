@@ -113,14 +113,12 @@ class RegionSeeder extends Seeder
         ];
 
         $now = now();
-        $order = 1;
 
         foreach ($regions as $region) {
             DB::table('regions')->insert([
                 'name' => $region['name'],
                 'code' => $region['code'],
                 'federal_district' => $region['federal_district'],
-                'sort_order' => $order++,
                 'is_active' => true,
                 'created_at' => $now,
                 'updated_at' => $now,

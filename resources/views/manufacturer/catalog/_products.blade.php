@@ -112,7 +112,7 @@
         @else
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 @foreach($products as $product)
-                    <a href="{{ route('manufacturer.products.edit', $product) }}" class="block rounded-lg border border-gray-200 dark:border-gray-600 hover:border-[#c3242a] dark:hover:border-red-500 overflow-hidden transition-colors">
+                    <a href="{{ route('manufacturer.catalog.show', $product) }}" class="block rounded-lg border border-gray-200 dark:border-gray-600 hover:border-[#c3242a] dark:hover:border-red-500 overflow-hidden transition-colors">
                         <div class="aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                             @if($product->primaryImage())
                                 <img src="{{ $product->primaryImage()->url }}" alt="" class="w-full h-full object-cover" />

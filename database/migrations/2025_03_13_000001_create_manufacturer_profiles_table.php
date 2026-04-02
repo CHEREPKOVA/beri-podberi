@@ -33,6 +33,7 @@ return new class extends Migration
             // Дополнительно
             $table->string('logo')->nullable(); // Путь к логотипу
             $table->text('description')->nullable(); // Краткое описание (до 1000 символов)
+            $table->text('delivery_notes')->nullable(); // Особые условия доставки
             
             // Флаги редактирования (какие поля заблокированы админом)
             $table->json('locked_fields')->nullable(); // Поля, которые нельзя редактировать

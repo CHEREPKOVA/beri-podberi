@@ -60,7 +60,7 @@ class CompanyController extends Controller
         }
 
         if ($request->filled('region')) {
-            $rows->having('region', 'LIKE', '%' . $request->string('region')->toString() . '%');
+            $rows->having('region', 'LIKE', '%'.$request->string('region')->toString().'%');
         }
 
         $companies = DB::query()
@@ -138,7 +138,7 @@ class CompanyController extends Controller
         }
 
         $deliveryMethods = DeliveryMethod::active()->orderBy('sort_order')->get();
-        $transportCompanies = TransportCompany::active()->orderBy('sort_order')->get();
+        $transportCompanies = TransportCompany::active()->orderBy('name')->get();
 
         return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies'));
     }
@@ -198,7 +198,7 @@ class CompanyController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,' . $user->id,
+            'email' => 'required|email|max:255|unique:users,email,'.$user->id,
             'role_id' => 'required|exists:roles,id',
         ]);
 
@@ -300,7 +300,7 @@ class CompanyController extends Controller
 
     private function encodeCompanyKey(string $type, string $name): string
     {
-        return rtrim(strtr(base64_encode($type . '|' . $name), '+/', '-_'), '=');
+        return rtrim(strtr(base64_encode($type.'|'.$name), '+/', '-_'), '=');
     }
 
     private function decodeCompanyKey(string $companyKey): array

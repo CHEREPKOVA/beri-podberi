@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('product_documents', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
+            $table->foreignId('product_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->enum('type', ['certificate', 'instruction', 'datasheet', 'other'])->default('other');
             $table->string('file_path');
@@ -20,8 +20,6 @@ return new class extends Migration
             $table->date('valid_until')->nullable();
             $table->text('notes')->nullable();
             $table->timestamps();
-
-            $table->index('product_id');
         });
     }
 

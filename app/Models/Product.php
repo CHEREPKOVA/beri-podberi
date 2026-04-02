@@ -16,7 +16,9 @@ class Product extends Model
     use HasFactory, SoftDeletes;
 
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_HIDDEN = 'hidden';
+
     public const STATUS_DRAFT = 'draft';
 
     protected $fillable = [
@@ -100,6 +102,20 @@ class Product extends Model
             ->withTimestamps();
     }
 
+    /** Прямо назначенные аналоги товара */
+    public function analogs(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'product_analogs', 'product_id', 'analog_product_id')
+            ->withTimestamps();
+    }
+
+    /** Обратные связи аналогов (когда текущий товар назначен аналогом другого) */
+    public function analogOf(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'product_analogs', 'analog_product_id', 'product_id')
+            ->withTimestamps();
+    }
+
     public function unitType(): BelongsTo
     {
         return $this->belongsTo(UnitType::class);
@@ -171,13 +187,13 @@ class Product extends Model
 
     public function isSynced(): bool
     {
-        return !empty($this->sync_source);
+        return ! empty($this->sync_source);
     }
 
     public function canBePublished(): bool
     {
-        return !empty($this->name)
-            && !empty($this->base_price)
+        return ! empty($this->name)
+            && ! empty($this->base_price)
             && $this->category_id
             && $this->hasStock();
     }
@@ -219,17 +235,18 @@ class Product extends Model
                 $q->where('product_attribute_id', $attributeId)->whereIn('value', $values);
             });
         }
+
         return $query;
     }
 
     /** Товары в данной категории или в любой из её подкатегорий */
     public function scopeInCategory($query, $categoryId)
     {
-        if (!$categoryId) {
+        if (! $categoryId) {
             return $query;
         }
         $category = ProductCategory::find($categoryId);
-        if (!$category) {
+        if (! $category) {
             return $query;
         }
         $ids = $category->descendant_ids;
@@ -259,6 +276,7 @@ class Product extends Model
         if ($regionId === null) {
             return $query;
         }
+
         return $query->where(function ($q) use ($regionId) {
             $q->whereDoesntHave('availableRegions') // нет ограничений = все регионы
                 ->orWhereHas('availableRegions', fn ($r) => $r->where('regions.id', $regionId));
@@ -274,6 +292,7 @@ class Product extends Model
         if ($regionId === null) {
             return $query;
         }
+
         return $query->forRegion($regionId)->whereHas('manufacturerProfile', function ($q) use ($regionId) {
             $q->whereHas('regions', fn ($r) => $r->where('regions.id', $regionId));
         });
@@ -290,6 +309,7 @@ class Product extends Model
                 return (string) $rp->price;
             }
         }
+
         return (string) ($this->base_price ?? '0');
     }
 
@@ -305,6 +325,7 @@ class Product extends Model
             ->whereHas('warehouse', fn ($q) => $q->where('region_id', $regionId))
             ->get()
             ->sum(fn ($s) => max(0, $s->quantity - $s->reserved));
+
         return (int) $quantity;
     }
 }

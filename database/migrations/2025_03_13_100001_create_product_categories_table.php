@@ -12,14 +12,13 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('slug')->unique();
-            $table->foreignId('parent_id')->nullable()->constrained('product_categories')->onDelete('set null');
+            $table->foreignId('parent_id')->nullable()->constrained('product_categories')->nullOnDelete();
             $table->text('description')->nullable();
             $table->string('icon')->nullable();
             $table->integer('sort_order')->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 
-            $table->index('parent_id');
             $table->index('is_active');
         });
     }

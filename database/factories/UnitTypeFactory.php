@@ -32,8 +32,7 @@ class UnitTypeFactory extends Factory
         return [
             'name' => $unit['name'],
             'short_name' => $unit['short'],
-            'code' => $unit['code'] . '-' . fake()->unique()->numberBetween(100, 999),
-            'sort_order' => fake()->numberBetween(1, 50),
+            'code' => $unit['code'].'-'.fake()->unique()->numberBetween(100, 999),
             'is_active' => true,
         ];
     }

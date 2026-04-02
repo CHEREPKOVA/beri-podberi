@@ -6,16 +6,17 @@ use Database\Factories\RegionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Region extends Model
 {
     /** @use HasFactory<RegionFactory> */
     use HasFactory;
+
     protected $fillable = [
         'name',
         'code',
         'federal_district',
-        'sort_order',
         'is_active',
     ];
 
@@ -31,6 +32,22 @@ class Region extends Model
         return $this->belongsToMany(ManufacturerProfile::class, 'manufacturer_region')
             ->withPivot('is_primary')
             ->withTimestamps();
+    }
+
+    public function warehouses(): HasMany
+    {
+        return $this->hasMany(Warehouse::class);
+    }
+
+    /** Регионы привязки товаров (доступность по региону). */
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'product_region')->withTimestamps();
+    }
+
+    public function regionalPrices(): HasMany
+    {
+        return $this->hasMany(ProductRegionalPrice::class);
     }
 
     public function scopeActive($query)

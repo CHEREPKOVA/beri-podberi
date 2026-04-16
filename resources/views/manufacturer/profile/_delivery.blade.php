@@ -20,7 +20,7 @@
                             name="delivery_methods[]"
                             value="{{ $method->id }}"
                             {{ $profile->deliveryMethods->contains($method->id) ? 'checked' : '' }}
-                            class="mt-0.5 h-5 w-5 rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]"
+                            class="mt-0.5 h-5 w-5 rounded border-gray-300 accent-[#c3242a] text-[#c3242a] focus:ring-[#c3242a]"
                         >
                         <div class="flex-1">
                             <div class="font-medium text-gray-900 dark:text-white">{{ $method->name }}</div>
@@ -53,7 +53,7 @@
                             name="transport_companies[]"
                             value="{{ $company->id }}"
                             {{ $profile->transportCompanies->contains($company->id) ? 'checked' : '' }}
-                            class="h-5 w-5 rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]"
+                            class="h-5 w-5 rounded border-gray-300 accent-[#c3242a] text-[#c3242a] focus:ring-[#c3242a]"
                         >
                         <span class="flex-1 text-sm font-medium text-gray-900 dark:text-white">{{ $company->name }}</span>
                         @if($company->website)

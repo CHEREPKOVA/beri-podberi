@@ -1,0 +1,50 @@
+name: Deploy Laravel
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script_stop: true
+          script: |
+            set -e
+            cd "${{ secrets.PROJECT_PATH }}"
+
+            echo "Pull latest changes"
+            git fetch --all
+            git reset --hard "origin/${{ github.ref_name }}"
+
+            echo "Install PHP dependencies"
+            composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader
+
+            echo "Run migrations"
+            php artisan migrate --force
+
+            echo "Clear and rebuild Laravel caches"
+            php artisan optimize:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "Restart queue workers if enabled"
+            php artisan queue:restart || true
+
+            echo "Deploy completed"

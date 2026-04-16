@@ -106,7 +106,7 @@
                                     value="{{ $region->id }}"
                                     x-model="selectedRegions"
                                     :value="{{ $region->id }}"
-                                    class="h-4 w-4 rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]"
+                                    class="h-4 w-4 rounded border-gray-300 accent-[#c3242a] text-[#c3242a] focus:ring-[#c3242a]"
                                 >
                                 <span class="flex-1 text-sm text-gray-700 dark:text-gray-300">{{ $region->name }}</span>
                                 <button

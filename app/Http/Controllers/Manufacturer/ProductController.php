@@ -11,7 +11,6 @@ use App\Models\ProductDocument;
 use App\Models\ProductImage;
 use App\Models\ProductRegionalPrice;
 use App\Models\ProductStock;
-use App\Models\Region;
 use App\Models\UnitType;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,7 +77,10 @@ class ProductController extends Controller
         $categories = ProductCategory::active()->orderBy('sort_order')->get();
         $unitTypes = UnitType::active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->active()->get();
-        $regions = Region::active()->orderBy('name')->get();
+        $regions = $profile->regions()
+            ->active()
+            ->orderBy('name')
+            ->get();
         $attributes = ProductAttribute::active()
             ->forCategory($request->old('category_id'))
             ->orderBy('sort_order')
@@ -149,7 +151,10 @@ class ProductController extends Controller
         $categories = ProductCategory::active()->orderBy('sort_order')->get();
         $unitTypes = UnitType::active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->active()->get();
-        $regions = Region::active()->orderBy('name')->get();
+        $regions = $profile->regions()
+            ->active()
+            ->orderBy('name')
+            ->get();
         $attributes = ProductAttribute::active()
             ->forCategory($product->category_id)
             ->orderBy('sort_order')

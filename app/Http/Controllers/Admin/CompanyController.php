@@ -147,14 +147,32 @@ class CompanyController extends Controller
     {
         [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
 
-        $validated = $request->validate([
+        $manufacturerProfile = null;
+        if ($companyType === Role::SLUG_MANUFACTURER) {
+            $manufacturerProfile = User::query()
+                ->whereHas('roles', fn (EloquentBuilder $q) => $q
+                    ->where('roles.slug', Role::SLUG_MANUFACTURER)
+                    ->where('role_user.company_name', $companyName))
+                ->with('manufacturerProfile')
+                ->first()
+                ?->manufacturerProfile;
+        }
+
+        $rules = [
             'status' => 'required|in:active,pending,blocked',
             'region' => 'nullable|string|max:255',
             'legal_name' => 'nullable|string|max:255',
             'contact_email' => 'nullable|email|max:255',
             'contact_phone' => 'nullable|string|max:255',
             'service_params' => 'nullable|string|max:2000',
-        ]);
+        ];
+
+        if ($manufacturerProfile) {
+            $rules['manufacturer_full_name'] = 'required|string|max:255';
+            $rules['manufacturer_inn'] = 'required|string|max:12';
+        }
+
+        $validated = $request->validate($rules);
 
         $updates = [
             'company_type' => $companyType,
@@ -169,6 +187,13 @@ class CompanyController extends Controller
         ];
 
         $this->companyMembersPivotQuery($companyName, $companyType)->update($updates);
+
+        if ($manufacturerProfile) {
+            $manufacturerProfile->update([
+                'full_name' => $validated['manufacturer_full_name'],
+                'inn' => $validated['manufacturer_inn'],
+            ]);
+        }
 
         if ($validated['status'] === 'blocked') {
             User::query()

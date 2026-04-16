@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Hash;
 class TestUsersSeeder extends Seeder
 {
     /**
-     * Тестовые пользователи для каждой роли.
+     * Тестовые пользователи по ролям (производитель с демо-кабинетом — в FactoryDemoSeeder).
      * Пароль у всех: password
      */
     private const TEST_PASSWORD = 'password';
@@ -23,10 +23,6 @@ class TestUsersSeeder extends Seeder
         Role::SLUG_MANAGER => [
             'name' => 'Менеджер Тестовый',
             'email' => 'manager@test.com',
-        ],
-        Role::SLUG_MANUFACTURER => [
-            'name' => 'Производитель Тестовый',
-            'email' => 'manufacturer@test.com',
         ],
         Role::SLUG_DISTRIBUTOR => [
             'name' => 'Дистрибьютор Тестовый',

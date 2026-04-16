@@ -116,9 +116,9 @@
             selectAll: {{ $product?->availableRegions->count() === 0 || $product?->availableRegions->count() === $regions->count() ? 'true' : 'false' }},
             regions: {}
         }" x-init="regions = { @foreach($regions as $region){{ $region->id }}: {{ in_array($region->id, old('available_regions', $product?->availableRegions->pluck('id')->toArray() ?? [])) ? 'true' : 'false' }},@endforeach }">
-            <label class="flex cursor-pointer items-center mb-4 select-none">
+            <label class="flex cursor-pointer items-center mb-4 select-none" @click="selectAll = !selectAll; if(selectAll) { Object.keys(regions).forEach(k => regions[k] = false); }">
                 <div class="relative">
-                    <div @click="selectAll = !selectAll; if(selectAll) { Object.keys(regions).forEach(k => regions[k] = false); }"
+                    <div
                         :class="selectAll ? 'border-[#c3242a] bg-[#c3242a]' : 'bg-transparent border-gray-300 dark:border-gray-600'"
                         class="mr-2.5 flex h-5 w-5 items-center justify-center rounded-md border-[1.25px] transition-colors hover:border-[#c3242a] dark:hover:border-[#c3242a] cursor-pointer">
                         <span :class="selectAll ? 'opacity-100' : 'opacity-0'" class="transition-opacity">

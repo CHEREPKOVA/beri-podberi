@@ -50,10 +50,8 @@ class ProfileController extends Controller
         $profile = $request->user()->manufacturerProfile;
 
         $validated = $request->validate([
-            'full_name' => 'required|string|max:255',
             'short_name' => 'nullable|string|max:255',
             'legal_form' => 'required|in:ooo,ip,pao,ao,gos',
-            'inn' => 'required|string|max:12',
             'kpp' => 'nullable|string|max:9',
             'ogrn' => 'nullable|string|max:15',
             'legal_address' => 'nullable|string|max:500',

@@ -22,25 +22,13 @@
             <div class="space-y-5">
                 <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Основные данные</h3>
 
-                {{-- Полное название --}}
+                {{-- Полное название (только администратор) --}}
                 <div>
                     <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
-                        Полное название организации <span class="text-red-500">*</span>
+                        Полное название организации
                     </label>
-                    @if($profile->isFieldLocked('full_name'))
                     <p class="text-gray-900 dark:text-white py-2">{{ $profile->full_name }}</p>
-                    <p class="text-xs text-gray-500">Поле заблокировано администратором</p>
-                    @else
-                    <input
-                        type="text"
-                        name="full_name"
-                        value="{{ old('full_name', $profile->full_name) }}"
-                        :disabled="!editing"
-                        class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                        required
-                    >
-                    @endif
-                    @error('full_name')<p class="text-sm text-red-500 mt-1">{{ $message }}</p>@enderror
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Изменить может только администратор в карточке компании.</p>
                 </div>
 
                 {{-- Сокращенное название --}}
@@ -76,26 +64,13 @@
                     </div>
                 </div>
 
-                {{-- ИНН --}}
+                {{-- ИНН (только администратор) --}}
                 <div>
                     <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
-                        ИНН <span class="text-red-500">*</span>
+                        ИНН
                     </label>
-                    @if($profile->isFieldLocked('inn'))
-                    <p class="text-gray-900 dark:text-white py-2">{{ $profile->inn }}</p>
-                    <p class="text-xs text-gray-500">Поле заблокировано администратором</p>
-                    @else
-                    <input
-                        type="text"
-                        name="inn"
-                        value="{{ old('inn', $profile->inn) }}"
-                        :disabled="!editing"
-                        class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                        maxlength="12"
-                        required
-                    >
-                    @endif
-                    @error('inn')<p class="text-sm text-red-500 mt-1">{{ $message }}</p>@enderror
+                    <p class="text-gray-900 dark:text-white py-2">{{ $profile->inn ?: '—' }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Изменить может только администратор в карточке компании.</p>
                 </div>
 
                 {{-- КПП --}}

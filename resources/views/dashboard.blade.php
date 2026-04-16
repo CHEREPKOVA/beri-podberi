@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Dashboard')
-@section('heading', 'Dashboard')
+@section('title', 'Личный кабинет')
+@section('heading', 'Личный кабинет')
 
 @section('content')
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">

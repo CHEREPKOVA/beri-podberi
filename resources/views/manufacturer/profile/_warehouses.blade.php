@@ -169,7 +169,7 @@
                     </div>
                     <div>
                         <label class="flex items-center gap-3 h-11 mt-6">
-                            <input type="checkbox" name="is_active" value="1" {{ $warehouse->is_active ? 'checked' : '' }} class="h-5 w-5 rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]">
+                            <input type="checkbox" name="is_active" value="1" {{ $warehouse->is_active ? 'checked' : '' }} class="h-5 w-5 rounded border-gray-300 accent-[#c3242a] text-[#c3242a] focus:ring-[#c3242a]">
                             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Отображать в каталоге (склад виден покупателям)</span>
                         </label>
                     </div>

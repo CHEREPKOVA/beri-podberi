@@ -52,8 +52,14 @@
                     @csrf
                     @method('PUT')
                     <div>
-                        <label class="block text-sm mb-1">Название</label>
-                        <input type="text" value="{{ $companyProfile?->full_name ?? $company->name }}" disabled class="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-sm">
+                        @if($companyProfile)
+                            <label class="block text-sm mb-1">Полное название организации</label>
+                            <input type="text" name="manufacturer_full_name" value="{{ old('manufacturer_full_name', $companyProfile->full_name) }}" required maxlength="255" class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm @error('manufacturer_full_name') border-red-500 @enderror">
+                            @error('manufacturer_full_name')<p class="text-sm text-red-600 mt-1">{{ $message }}</p>@enderror
+                        @else
+                            <label class="block text-sm mb-1">Название</label>
+                            <input type="text" value="{{ $company->name }}" disabled class="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-sm">
+                        @endif
                     </div>
                     <div>
                         <label class="block text-sm mb-1">Тип</label>
@@ -93,7 +99,8 @@
                     @if($companyProfile)
                     <div>
                         <label class="block text-sm mb-1">ИНН</label>
-                        <input type="text" value="{{ $companyProfile->inn }}" disabled class="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-sm">
+                        <input type="text" name="manufacturer_inn" value="{{ old('manufacturer_inn', $companyProfile->inn) }}" required maxlength="12" class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm @error('manufacturer_inn') border-red-500 @enderror">
+                        @error('manufacturer_inn')<p class="text-sm text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                     <div>
                         <label class="block text-sm mb-1">КПП</label>

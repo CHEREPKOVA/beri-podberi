@@ -54,6 +54,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::post('/companies', [AdminCompanyController::class, 'store'])->name('companies.store');
         Route::get('/companies/{companyKey}', [AdminCompanyController::class, 'show'])->name('companies.show');
         Route::put('/companies/{companyKey}', [AdminCompanyController::class, 'updateCompany'])->name('companies.update');
+        Route::delete('/companies/{companyKey}', [AdminCompanyController::class, 'destroy'])->name('companies.destroy');
         Route::put('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'updateUser'])->name('companies.users.update');
         Route::post('/companies/{companyKey}/users/{user}/suspend', [AdminCompanyController::class, 'suspendUser'])->name('companies.users.suspend');
         Route::post('/companies/{companyKey}/users/{user}/activate', [AdminCompanyController::class, 'activateUser'])->name('companies.users.activate');

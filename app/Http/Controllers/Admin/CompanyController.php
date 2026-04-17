@@ -289,6 +289,33 @@ class CompanyController extends Controller
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Данные компании обновлены.');
     }
 
+    public function destroy(Request $request, string $companyKey): RedirectResponse
+    {
+        [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
+
+        $users = User::query()
+            ->whereHas('roles', fn (EloquentBuilder $q) => $q
+                ->where('role_user.company_name', $companyName)
+                ->whereIn('roles.slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE]))
+            ->with(['roles' => fn ($q) => $q->wherePivot('company_name', $companyName)])
+            ->get();
+
+        DB::table('role_user')
+            ->where('company_name', $companyName)
+            ->whereIn('role_id', Role::whereIn('slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE])->pluck('id'))
+            ->delete();
+
+        foreach ($users as $user) {
+            if ($user->roles()->count() === 0) {
+                $user->delete();
+            }
+        }
+
+        $this->logAction($request, 'company.deleted', $companyName, $companyType);
+
+        return redirect()->route('admin.companies.index')->with('success', 'Компания удалена.');
+    }
+
     public function updateUser(Request $request, string $companyKey, User $user): RedirectResponse
     {
         [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);

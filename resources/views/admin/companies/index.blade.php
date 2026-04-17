@@ -7,44 +7,54 @@
 <div class="space-y-6">
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="p-6 border-b border-gray-200 dark:border-gray-700">
-            <form method="GET" class="flex flex-wrap items-center gap-3">
-                <input type="text" name="search" value="{{ request('search') }}"
-                       placeholder="Поиск по названию..."
-                       class="w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <form method="GET" class="flex flex-wrap items-center gap-3">
+                    <input type="text" name="search" value="{{ request('search') }}"
+                           placeholder="Поиск по названию..."
+                           class="w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
 
-                <div class="relative">
-                    <select name="type" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                        <option value="">Все типы</option>
-                        @foreach($companyTypes as $type)
-                            <option value="{{ $type->slug }}" {{ request('type') === $type->slug ? 'selected' : '' }}>{{ $type->name }}</option>
-                        @endforeach
-                    </select>
-                    <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    <div class="relative">
+                        <select name="type" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
+                            <option value="">Все типы</option>
+                            @foreach($companyTypes as $type)
+                                <option value="{{ $type->slug }}" {{ request('type') === $type->slug ? 'selected' : '' }}>{{ $type->name }}</option>
+                            @endforeach
+                        </select>
+                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+
+                    <div class="relative">
+                        <select name="status" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
+                            <option value="">Все статусы</option>
+                            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Активна</option>
+                            <option value="pending" {{ request('status') === 'pending' ? 'selected' : '' }}>На модерации</option>
+                            <option value="blocked" {{ request('status') === 'blocked' ? 'selected' : '' }}>Заблокирована</option>
+                        </select>
+                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+
+                    <input type="text" name="region" value="{{ request('region') }}"
+                           placeholder="Регион..."
+                           class="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+
+                    <button type="submit" class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-sm rounded-lg">Применить</button>
+                    @if(request()->hasAny(['search', 'type', 'status', 'region']))
+                        <a href="{{ route('admin.companies.index') }}" class="text-sm text-gray-500">Сбросить</a>
+                    @endif
+                </form>
+
+                <a href="{{ route('admin.companies.create') }}"
+                   class="inline-flex items-center gap-2 px-4 py-2 bg-[#c3242a] text-white rounded-lg hover:bg-[#a01e24] text-sm font-medium transition-colors shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                     </svg>
-                </div>
-
-                <div class="relative">
-                    <select name="status" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                        <option value="">Все статусы</option>
-                        <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Активна</option>
-                        <option value="pending" {{ request('status') === 'pending' ? 'selected' : '' }}>На модерации</option>
-                        <option value="blocked" {{ request('status') === 'blocked' ? 'selected' : '' }}>Заблокирована</option>
-                    </select>
-                    <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                </div>
-
-                <input type="text" name="region" value="{{ request('region') }}"
-                       placeholder="Регион..."
-                       class="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
-
-                <button type="submit" class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-sm rounded-lg">Применить</button>
-                @if(request()->hasAny(['search', 'type', 'status', 'region']))
-                    <a href="{{ route('admin.companies.index') }}" class="text-sm text-gray-500">Сбросить</a>
-                @endif
-            </form>
+                    Добавить компанию
+                </a>
+            </div>
         </div>
 
         <div class="overflow-x-auto">

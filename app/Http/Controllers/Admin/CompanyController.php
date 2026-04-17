@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryMethod;
+use App\Models\ManufacturerProfile;
 use App\Models\Role;
 use App\Models\TransportCompany;
 use App\Models\User;
@@ -72,6 +73,78 @@ class CompanyController extends Controller
         $companyTypes = Role::whereIn('slug', self::CORPORATE_TYPES)->orderBy('sort_order')->get();
 
         return view('admin.companies.index', compact('companies', 'companyTypes'));
+    }
+
+    public function create(): View
+    {
+        return view('admin.companies.create');
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'full_name' => 'required|string|max:255',
+            'inn' => ['required', 'string', 'regex:/^\d{10,12}$/'],
+            'email' => 'required|string|email|max:255|unique:users,email',
+            'password' => 'required|string|min:8|confirmed',
+        ], [], [
+            'full_name' => 'Полное наименование',
+            'inn' => 'ИНН',
+            'email' => 'Email для входа',
+            'password' => 'Пароль',
+        ]);
+
+        $companyType = Role::SLUG_MANUFACTURER;
+        $role = Role::findBySlug($companyType);
+        abort_if(! $role, 500, 'Роль производителя не настроена.');
+
+        $companyName = trim($validated['full_name']);
+        $inn = $validated['inn'];
+        $email = trim($validated['email']);
+
+        $exists = DB::table('role_user')
+            ->where('company_name', $companyName)
+            ->where('company_type', $companyType)
+            ->exists();
+        if ($exists) {
+            return back()
+                ->withInput()
+                ->withErrors(['full_name' => 'Компания с таким наименованием уже существует.']);
+        }
+
+        $user = User::create([
+            'name' => $companyName,
+            'email' => $email,
+            'password' => Hash::make($validated['password']),
+            'is_active' => true,
+        ]);
+
+        $user->roles()->attach($role->id, [
+            'company_name' => $companyName,
+            'company_type' => $companyType,
+            'company_status' => 'active',
+            'company_legal_name' => $companyName,
+        ]);
+
+        ManufacturerProfile::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'full_name' => $companyName,
+                'inn' => $inn,
+            ]
+        );
+
+        $this->logAction($request, 'company.created', $companyName, $companyType, [
+            'inn' => $inn,
+            'email' => $email,
+            'created_user_id' => $user->id,
+        ]);
+
+        $companyKey = $this->encodeCompanyKey($companyType, $companyName);
+
+        return redirect()
+            ->route('admin.companies.show', $companyKey)
+            ->with('success', 'Компания создана. Доступ для входа в личный кабинет добавлен.');
     }
 
     public function show(Request $request, string $companyKey): View

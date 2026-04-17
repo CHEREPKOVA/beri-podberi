@@ -50,6 +50,8 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::post('/staff/{staff}/activate', [AdminStaffController::class, 'activate'])->name('staff.activate');
 
         Route::get('/companies', [AdminCompanyController::class, 'index'])->name('companies.index');
+        Route::get('/companies/create', [AdminCompanyController::class, 'create'])->name('companies.create');
+        Route::post('/companies', [AdminCompanyController::class, 'store'])->name('companies.store');
         Route::get('/companies/{companyKey}', [AdminCompanyController::class, 'show'])->name('companies.show');
         Route::put('/companies/{companyKey}', [AdminCompanyController::class, 'updateCompany'])->name('companies.update');
         Route::put('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'updateUser'])->name('companies.users.update');

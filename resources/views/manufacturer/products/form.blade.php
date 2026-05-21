@@ -91,6 +91,7 @@
                             'basic' => 'Основная информация',
                             'prices' => 'Цены и остатки',
                             'attributes' => 'Характеристики',
+                            'analogs' => 'Аналоги',
                             'additional' => 'Дополнительно',
                             'publication' => 'Публикация',
                         ];
@@ -122,6 +123,11 @@
                 {{-- Вкладка: Характеристики --}}
                 <div x-show="activeTab === 'attributes'" x-cloak>
                     @include('manufacturer.products._tab_attributes', ['product' => $product, 'attributes' => $attributes])
+                </div>
+
+                {{-- Вкладка: Аналоги --}}
+                <div x-show="activeTab === 'analogs'" x-cloak>
+                    @include('manufacturer.products._tab_analogs', ['product' => $product, 'selectedAnalogs' => $selectedAnalogs ?? collect()])
                 </div>
 
                 {{-- Вкладка: Дополнительно --}}

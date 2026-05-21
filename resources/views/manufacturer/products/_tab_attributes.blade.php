@@ -63,6 +63,32 @@
                         </div>
                         @break
 
+                    @case('range')
+                        @php
+                            $rangeOld = old('attributes.' . $attribute->id, null);
+                            $rangeParsed = [];
+                            if (is_array($rangeOld)) {
+                                $rangeParsed = $rangeOld;
+                            } elseif ($existingValue?->value) {
+                                $rangeParsed = json_decode($existingValue->value, true) ?: [];
+                            }
+                            $rMin = $rangeParsed['min'] ?? '';
+                            $rMax = $rangeParsed['max'] ?? '';
+                        @endphp
+                        <div class="flex flex-wrap gap-3 items-center">
+                            <span class="text-xs text-gray-500">От</span>
+                            <input type="text" inputmode="decimal" name="attributes[{{ $attribute->id }}][min]"
+                                value="{{ $rMin }}"
+                                {{ $attribute->is_required ? 'required' : '' }}
+                                class="w-36 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent" />
+                            <span class="text-xs text-gray-500">До</span>
+                            <input type="text" inputmode="decimal" name="attributes[{{ $attribute->id }}][max]"
+                                value="{{ $rMax }}"
+                                {{ $attribute->is_required ? 'required' : '' }}
+                                class="w-36 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent" />
+                        </div>
+                        @break
+
                     @case('boolean')
                         @php
                             $isChecked = old('attributes.' . $attribute->id, $existingValue?->value) === '1';

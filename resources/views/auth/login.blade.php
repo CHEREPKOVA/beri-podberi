@@ -17,6 +17,20 @@
                 <div>
                     <div class="mb-5 sm:mb-8">
                     </div>
+                    @if($errors->has('throttle_seconds'))
+                        @php
+                            $throttleSeconds = (int) $errors->first('throttle_seconds');
+                        @endphp
+                        <div id="throttle-message"
+                            data-throttle-seconds="{{ $throttleSeconds }}"
+                            class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                        </div>
+                    @endif
+                    @if($errors->has('auth') && !$errors->has('throttle_seconds'))
+                        <div class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                            {{ $errors->first('auth') }}
+                        </div>
+                    @endif
                     @if (session('status'))
                         <div class="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                             {{ session('status') }}
@@ -33,7 +47,6 @@
                                     <input type="email" id="email" name="email" value="{{ old('email') }}"
                                         placeholder="info@example.com" required autofocus
                                         class="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#c3242a] focus:ring-3 focus:ring-[#c3242a]/20 focus:outline-none" />
-                                    @error('email')<p class="mt-1 text-sm text-red-500">{{ $message }}</p>@enderror
                                 </div>
                                 <div>
                                     <label for="password" class="mb-1.5 block text-sm font-medium text-gray-700">
@@ -53,7 +66,6 @@
                                             </svg>
                                         </span>
                                     </div>
-                                    @error('password')<p class="mt-1 text-sm text-red-500">{{ $message }}</p>@enderror
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <label class="flex cursor-pointer items-center text-sm font-normal text-gray-700 select-none">
@@ -89,4 +101,40 @@
     </div>
 </div>
 <style>[x-cloak]{display:none!important}</style>
+<script>
+    (() => {
+        const node = document.getElementById('throttle-message');
+        if (!node) return;
+
+        let secondsLeft = Number(node.dataset.throttleSeconds || 0);
+        if (!Number.isFinite(secondsLeft) || secondsLeft <= 0) {
+            node.textContent = 'Слишком много попыток входа. Попробуйте снова позже.';
+            return;
+        }
+
+        const format = (seconds) => {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `Слишком много попыток входа. Попробуйте снова через ${mins} мин ${secs} сек.`;
+        };
+
+        const render = () => {
+            node.textContent = format(secondsLeft);
+        };
+
+        render();
+
+        const timer = setInterval(() => {
+            secondsLeft -= 1;
+
+            if (secondsLeft <= 0) {
+                clearInterval(timer);
+                node.textContent = 'Можно попробовать войти снова.';
+                return;
+            }
+
+            render();
+        }, 1000);
+    })();
+</script>
 @endsection

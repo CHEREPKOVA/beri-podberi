@@ -8,6 +8,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -26,6 +27,8 @@ class User extends Authenticatable
         'email',
         'password',
         'is_active',
+        'last_login_ip',
+        'last_login_user_agent',
     ];
 
     /**
@@ -60,9 +63,26 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function userPermissions(): BelongsToMany
+    {
+        return $this->belongsToMany(Permission::class, 'user_permissions')
+            ->withPivot('is_allowed')
+            ->withTimestamps();
+    }
+
     public function manufacturerProfile(): HasOne
     {
         return $this->hasOne(ManufacturerProfile::class);
+    }
+
+    public function distributorProfile(): HasOne
+    {
+        return $this->hasOne(DistributorProfile::class);
+    }
+
+    public function endCompanyProfile(): HasOne
+    {
+        return $this->hasOne(EndCompanyProfile::class);
     }
 
     public function getOrCreateManufacturerProfile(): ManufacturerProfile
@@ -79,6 +99,34 @@ class User extends Authenticatable
         ]);
     }
 
+    public function getOrCreateDistributorProfile(): DistributorProfile
+    {
+        if ($this->distributorProfile) {
+            return $this->distributorProfile;
+        }
+
+        return $this->distributorProfile()->create([
+            'full_name' => $this->roles()
+                ->where('slug', Role::SLUG_DISTRIBUTOR)
+                ->first()?->pivot?->company_name ?? $this->name,
+            'inn' => '',
+        ]);
+    }
+
+    public function getOrCreateEndCompanyProfile(): EndCompanyProfile
+    {
+        if ($this->endCompanyProfile) {
+            return $this->endCompanyProfile;
+        }
+
+        return $this->endCompanyProfile()->create([
+            'full_name' => $this->roles()
+                ->where('slug', Role::SLUG_END_COMPANY)
+                ->first()?->pivot?->company_name ?? $this->name,
+            'inn' => '',
+        ]);
+    }
+
     public function hasRole(string $slug): bool
     {
         return $this->roles->contains('slug', $slug);
@@ -87,6 +135,36 @@ class User extends Authenticatable
     public function hasAnyRole(array $slugs): bool
     {
         return $this->roles->whereIn('slug', $slugs)->isNotEmpty();
+    }
+
+    public function hasPermission(string $permissionSlug): bool
+    {
+        if ($this->relationLoaded('userPermissions') && $this->userPermissions->isNotEmpty()) {
+            $override = $this->userPermissions->firstWhere('slug', $permissionSlug);
+            if ($override) {
+                return (bool) $override->pivot->is_allowed;
+            }
+        } else {
+            $override = $this->userPermissions()->where('slug', $permissionSlug)->first();
+            if ($override) {
+                return (bool) $override->pivot->is_allowed;
+            }
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($q) => $q->where('slug', $permissionSlug))
+            ->exists();
+    }
+
+    public function hasAnyPermission(array $permissionSlugs): bool
+    {
+        foreach ($permissionSlugs as $permissionSlug) {
+            if ($this->hasPermission($permissionSlug)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -111,5 +189,44 @@ class User extends Authenticatable
     public function needsRoleSelection(): bool
     {
         return app(CurrentRoleService::class)->needsRoleSelection($this);
+    }
+
+    /**
+     * Доступные для входа/переключения роли (с учётом статуса привязки к компании).
+     *
+     * @return Collection<int, Role>
+     */
+    public function activeRoles(): Collection
+    {
+        return $this->roles->filter(function (Role $role): bool {
+            $status = strtolower((string) ($role->pivot->company_status ?? 'active'));
+
+            return in_array($status, ['', 'active'], true);
+        })->values();
+    }
+
+    public function currentCompanyRegionName(): ?string
+    {
+        $role = $this->getCurrentRole();
+        if (! $role) {
+            return null;
+        }
+
+        $pivot = $this->roles->firstWhere('id', $role->id)?->pivot;
+        $region = trim((string) ($pivot?->company_region ?? ''));
+
+        return $region !== '' ? $region : null;
+    }
+
+    public function currentCompanyRegionId(): ?int
+    {
+        $regionName = $this->currentCompanyRegionName();
+        if (! $regionName) {
+            return null;
+        }
+
+        return Region::query()
+            ->where('name', $regionName)
+            ->value('id');
     }
 }

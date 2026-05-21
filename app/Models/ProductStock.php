@@ -17,6 +17,7 @@ class ProductStock extends Model
         'quantity',
         'reserved',
         'stock_updated_at',
+        'stock_updated_by_user_id',
     ];
 
     protected function casts(): array
@@ -34,6 +35,11 @@ class ProductStock extends Model
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function updatedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'stock_updated_by_user_id');
     }
 
     public function getAvailableQuantityAttribute(): int

@@ -46,6 +46,9 @@ class ProductCategoryFactory extends Factory
             'icon' => null,
             'sort_order' => fake()->numberBetween(1, 100),
             'is_active' => true,
+            'shown_in_customer_catalog' => true,
+            'restrict_catalog_by_roles' => false,
+            'accepts_products' => true,
         ];
     }
 

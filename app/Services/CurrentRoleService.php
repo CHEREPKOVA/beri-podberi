@@ -13,11 +13,13 @@ class CurrentRoleService
 
     public function set(User $user, int $roleId): bool
     {
-        $role = Role::find($roleId);
-        if (! $role || ! $user->roles->contains($role)) {
+        $role = $user->activeRoles()->firstWhere('id', $roleId);
+        if (! $role instanceof Role) {
             return false;
         }
+
         Session::put(self::SESSION_KEY, $roleId);
+
         return true;
     }
 
@@ -27,11 +29,14 @@ class CurrentRoleService
         if ($roleId === null) {
             return null;
         }
-        $role = Role::find($roleId);
-        if (! $role || ! $user->roles->contains($role)) {
+
+        $role = $user->activeRoles()->firstWhere('id', (int) $roleId);
+        if (! $role instanceof Role) {
             $this->clear();
+
             return null;
         }
+
         return $role;
     }
 
@@ -46,11 +51,13 @@ class CurrentRoleService
      */
     public function setSingleRoleIfOnlyOne(User $user): bool
     {
-        $roles = $user->roles;
+        $roles = $user->activeRoles();
         if ($roles->count() === 1) {
             Session::put(self::SESSION_KEY, $roles->first()->id);
+
             return true;
         }
+
         return false;
     }
 
@@ -59,9 +66,10 @@ class CurrentRoleService
      */
     public function needsRoleSelection(User $user): bool
     {
-        if ($user->roles->count() <= 1) {
+        if ($user->activeRoles()->count() <= 1) {
             return false;
         }
+
         return $this->get($user) === null;
     }
 

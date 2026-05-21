@@ -71,7 +71,19 @@ class CatalogProductController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'category_id' => ['nullable', 'exists:product_categories,id'],
+            'category_id' => [
+                'nullable',
+                'exists:product_categories,id',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+                    $cat = ProductCategory::query()->find((int) $value);
+                    if ($cat && ! $cat->accepts_products) {
+                        $fail('Категория только для подкатегорий: выберите категорию, куда допускается привязка товаров.');
+                    }
+                },
+            ],
             'additional_category_ids' => ['nullable', 'array'],
             'additional_category_ids.*' => ['exists:product_categories,id'],
             'description' => ['nullable', 'string', 'max:2000'],

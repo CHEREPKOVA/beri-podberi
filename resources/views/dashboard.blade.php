@@ -13,7 +13,7 @@
         $roleDisplay = $currentRole ? $currentRole->labelWithCompany($companyName) : '—';
     @endphp
     <p class="text-sm text-gray-500 dark:text-gray-500 mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
-        <span class="font-medium text-gray-700 dark:text-gray-300">Вход в качестве:</span> {{ $roleDisplay }}
+        <span class="font-medium text-gray-700 dark:text-gray-300">Вы вошли как:</span> {{ $roleDisplay }}
     </p>
 </div>
 @endsection

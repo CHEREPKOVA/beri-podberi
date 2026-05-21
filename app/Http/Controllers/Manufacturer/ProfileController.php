@@ -183,6 +183,7 @@ class ProfileController extends Controller
             'phone' => 'nullable|string|max:50',
             'notes' => 'nullable|string|max:500',
             'working_hours' => 'nullable|string|max:255',
+            'shipping_conditions' => 'nullable|string|max:255',
         ]);
 
         $validated['manufacturer_profile_id'] = $profile->id;
@@ -207,6 +208,7 @@ class ProfileController extends Controller
             'phone' => 'nullable|string|max:50',
             'notes' => 'nullable|string|max:500',
             'working_hours' => 'nullable|string|max:255',
+            'shipping_conditions' => 'nullable|string|max:255',
         ]);
 
         $validated['is_active'] = $request->boolean('is_active');
@@ -243,7 +245,7 @@ class ProfileController extends Controller
             $file = fopen('php://output', 'w');
             fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
-            fputcsv($file, ['Название', 'Адрес', 'Регион', 'Тип', 'Ответственный', 'Телефон', 'График работы', 'Примечание', 'В каталоге'], ';');
+            fputcsv($file, ['Название', 'Адрес', 'Регион', 'Тип', 'Ответственный', 'Телефон', 'График работы', 'Условия отгрузки', 'Примечание', 'В каталоге'], ';');
 
             foreach ($warehouses as $warehouse) {
                 fputcsv($file, [
@@ -254,6 +256,7 @@ class ProfileController extends Controller
                     $warehouse->responsible_person ?? '',
                     $warehouse->phone ?? '',
                     $warehouse->working_hours ?? '',
+                    $warehouse->shipping_conditions ?? '',
                     $warehouse->notes ?? '',
                     $warehouse->is_active ? 'Да' : 'Нет',
                 ], ';');

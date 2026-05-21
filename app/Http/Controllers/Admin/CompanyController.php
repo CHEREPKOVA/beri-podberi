@@ -134,12 +134,6 @@ class CompanyController extends Controller
             ]
         );
 
-        $this->logAction($request, 'company.created', $companyName, $companyType, [
-            'inn' => $inn,
-            'email' => $email,
-            'created_user_id' => $user->id,
-        ]);
-
         $companyKey = $this->encodeCompanyKey($companyType, $companyName);
 
         return redirect()
@@ -280,12 +274,6 @@ class CompanyController extends Controller
                 ->update(['is_active' => true]);
         }
 
-        $this->logAction($request, 'company.updated', $companyName, $companyType, [
-            'status' => $validated['status'],
-            'region' => $validated['region'] ?? null,
-            'legal_name' => $validated['legal_name'] ?? null,
-        ]);
-
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Данные компании обновлены.');
     }
 
@@ -310,8 +298,6 @@ class CompanyController extends Controller
                 $user->delete();
             }
         }
-
-        $this->logAction($request, 'company.deleted', $companyName, $companyType);
 
         return redirect()->route('admin.companies.index')->with('success', 'Компания удалена.');
     }
@@ -341,11 +327,6 @@ class CompanyController extends Controller
             ->whereIn('role_id', Role::whereIn('slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE])->pluck('id'))
             ->update(['role_id' => $role->id, 'company_type' => $companyType]);
 
-        $this->logAction($request, 'company.user.updated', $companyName, $companyType, [
-            'user_id' => $user->id,
-            'role' => $role->slug,
-        ]);
-
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Пользователь обновлён.');
     }
 
@@ -355,8 +336,6 @@ class CompanyController extends Controller
         $this->assertUserInCompany($user, $companyName);
 
         $user->update(['is_active' => false]);
-        $this->logAction($request, 'company.user.suspended', $companyName, $companyType, ['user_id' => $user->id]);
-
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Пользователь заблокирован.');
     }
 
@@ -366,8 +345,6 @@ class CompanyController extends Controller
         $this->assertUserInCompany($user, $companyName);
 
         $user->update(['is_active' => true]);
-        $this->logAction($request, 'company.user.activated', $companyName, $companyType, ['user_id' => $user->id]);
-
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Пользователь разблокирован.');
     }
 
@@ -378,8 +355,6 @@ class CompanyController extends Controller
 
         $newPassword = Str::random(12);
         $user->update(['password' => Hash::make($newPassword)]);
-
-        $this->logAction($request, 'company.user.password_reset', $companyName, $companyType, ['user_id' => $user->id]);
 
         return redirect()->route('admin.companies.show', $companyKey)
             ->with('success', "Пароль пользователя «{$user->name}» сброшен.")
@@ -399,8 +374,6 @@ class CompanyController extends Controller
         if ($user->roles()->count() === 0) {
             $user->delete();
         }
-
-        $this->logAction($request, 'company.user.deleted', $companyName, $companyType, ['user_id' => $user->id]);
 
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Пользователь удалён из компании.');
     }
@@ -439,18 +412,4 @@ class CompanyController extends Controller
         return [$type, $name];
     }
 
-    private function logAction(Request $request, string $action, string $companyName, string $companyType, array $context = []): void
-    {
-        DB::table('admin_action_logs')->insert([
-            'admin_id' => $request->user()->id,
-            'action' => $action,
-            'target_type' => null,
-            'target_id' => null,
-            'company_name' => $companyName,
-            'company_type' => $companyType,
-            'context' => json_encode($context, JSON_UNESCAPED_UNICODE),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-    }
 }

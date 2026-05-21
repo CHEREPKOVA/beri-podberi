@@ -39,6 +39,13 @@ class DeliveryMethod extends Model
             ->withTimestamps();
     }
 
+    public function distributorProfiles(): BelongsToMany
+    {
+        return $this->belongsToMany(DistributorProfile::class, 'distributor_delivery_settings')
+            ->withPivot('is_active')
+            ->withTimestamps();
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

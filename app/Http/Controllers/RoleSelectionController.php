@@ -24,7 +24,7 @@ class RoleSelectionController extends Controller
         }
 
         return view('auth.role-select', [
-            'roles' => $user->roles,
+            'roles' => $user->activeRoles(),
         ]);
     }
 
@@ -47,7 +47,7 @@ class RoleSelectionController extends Controller
             return back()->withErrors(['role_id' => 'Выберите одну из ваших ролей.']);
         }
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->route('dashboard');
     }
 
     /**
@@ -69,6 +69,6 @@ class RoleSelectionController extends Controller
             return back()->withErrors(['role_id' => 'Выберите одну из ваших ролей.']);
         }
 
-        return back()->with('status', 'Роль успешно изменена.');
+        return redirect()->route('dashboard')->with('status', 'Роль успешно изменена.');
     }
 }

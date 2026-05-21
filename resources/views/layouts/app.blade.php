@@ -23,6 +23,20 @@
     @stack('styles')
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" x-data="{ sidebarOpen: true }">
+    @php
+        $authUser = auth()->user();
+        $activeRoles = $authUser?->activeRoles() ?? collect();
+        $canSwitchRole = $activeRoles->count() > 1;
+        $currentRole = $authUser?->getCurrentRole();
+        $currentRolePivot = $authUser?->roles?->firstWhere('id', $currentRole?->id);
+        $currentRoleCompany = $currentRolePivot?->pivot?->company_name ?? null;
+        $currentRoleLabel = $currentRole ? $currentRole->labelWithCompany($currentRoleCompany) : '—';
+        $isAdminPanelRole = $currentRole?->isAdminPanel() ?? false;
+        $canManageStaff = $authUser?->hasPermission('staff.manage') ?? false;
+        $canManageCompanies = $authUser?->hasPermission('companies.manage') ?? false;
+        $canManageCatalog = $authUser?->hasPermission('catalog.manage') ?? false;
+        $canManageDirectories = $authUser?->hasPermission('directories.manage') ?? false;
+    @endphp
     <div class="flex min-h-screen">
         {{-- Sidebar --}}
         <aside :class="sidebarOpen ? 'w-64' : 'w-20'" class="fixed left-0 top-0 z-40 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300">
@@ -48,13 +62,14 @@
                     <span x-show="sidebarOpen" x-transition>Главная</span>
                 </a>
 
-                {{-- Раздел для Администратора --}}
-                @if($currentRole?->slug === 'admin')
+                {{-- Раздел админ-панели (пункты по правам) --}}
+                @if($isAdminPanelRole)
                 <div class="pt-4">
                     @php
                         $adminCatalogActive = str_starts_with($currentRoute ?? '', 'admin.catalog');
                     @endphp
 
+                    @if($canManageStaff)
                     <a href="{{ route('admin.staff.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'admin.staff') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -63,7 +78,9 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Администраторы</span>
                     </a>
+                    @endif
 
+                    @if($canManageCompanies)
                     <a href="{{ route('admin.companies.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'admin.companies') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -72,7 +89,9 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Компании</span>
                     </a>
+                    @endif
 
+                    @if($canManageCatalog)
                     <a href="{{ route('admin.catalog.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ $adminCatalogActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -81,6 +100,7 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Каталог</span>
                     </a>
+                    @endif
 
                     @php
                         $adminDirectoriesActive = str_starts_with($currentRoute ?? '', 'admin.directories')
@@ -90,6 +110,7 @@
                             || str_starts_with($currentRoute ?? '', 'admin.unit-types')
                             || str_starts_with($currentRoute ?? '', 'admin.system-settings');
                     @endphp
+                    @if($canManageDirectories)
                     <a href="{{ route('admin.directories.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ $adminDirectoriesActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -98,6 +119,7 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Справочники</span>
                     </a>
+                    @endif
                 </div>
                 @endif
 
@@ -123,13 +145,26 @@
                         <span x-show="sidebarOpen" x-transition>Склады</span>
                     </a>
 
+                    @php
+                        $manufacturerCatalogActive = str_starts_with($currentRoute ?? '', 'manufacturer.catalog');
+                        $manufacturerPartnersActive = str_starts_with($currentRoute ?? '', 'manufacturer.partners');
+                    @endphp
                     <a href="{{ route('manufacturer.catalog.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.catalog') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                           {{ $manufacturerCatalogActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
                         <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
                         </svg>
-                        <span x-show="sidebarOpen" x-transition>Каталог</span>
+                        <span x-show="sidebarOpen" x-transition>Каталог товаров</span>
+                    </a>
+
+                    <a href="{{ route('manufacturer.partners.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ $manufacturerPartnersActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H4v-2a4 4 0 015-3.87M16 3.13a4 4 0 010 7.75M8 3.13a4 4 0 000 7.75M12 14a4 4 0 00-4 4v2h8v-2a4 4 0 00-4-4z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Каталог дистрибьюторов</span>
                     </a>
 
                     <a href="{{ route('manufacturer.products.index') }}"
@@ -139,6 +174,62 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Номенклатура</span>
+                    </a>
+
+                </div>
+                @endif
+
+                @if($currentRole?->slug === 'distributor')
+                <div class="pt-4">
+                    <a href="{{ route('distributor.profile') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Профиль</span>
+                    </a>
+                    <a href="{{ route('distributor.warehouses.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.warehouses') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Склады</span>
+                    </a>
+                    <a href="{{ route('distributor.products.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.products') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Номенклатура</span>
+                    </a>
+                </div>
+                @endif
+
+                @if($currentRole?->slug === 'end_company')
+                <div class="pt-4">
+                    <a href="{{ route('end_company.profile') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'end_company.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Профиль</span>
+                    </a>
+                </div>
+                @endif
+
+                @if(in_array($currentRole?->slug, ['distributor', 'end_company', 'company_employee'], true))
+                <div class="pt-4">
+                    <a href="{{ route('buyer.catalog.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'buyer.catalog') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Каталог</span>
                     </a>
                 </div>
                 @endif
@@ -150,6 +241,14 @@
                 <h1 class="text-lg font-semibold">@yield('heading', 'Главная')</h1>
                 <div class="flex items-center gap-4">
                     @auth
+                    <span class="text-sm text-gray-500">Вы вошли как: {{ $currentRoleLabel }}</span>
+                    @if($canSwitchRole)
+                    <button type="button"
+                        onclick="document.getElementById('role-switch-modal')?.classList.remove('hidden')"
+                        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-[#c3242a] hover:text-[#c3242a] transition">
+                        Сменить роль
+                    </button>
+                    @endif
                     <span class="text-sm text-gray-500">{{ auth()->user()->email }}</span>
                     <form method="POST" action="{{ url('/logout') }}" class="inline">@csrf<button type="submit" class="text-sm text-red-600 hover:underline">Выход</button></form>
                     @else
@@ -172,7 +271,7 @@
             <form method="POST" action="{{ route('role.store') }}">
                 @csrf
                 <div class="space-y-3 mb-6">
-                    @foreach(auth()->user()->roles as $role)
+                    @foreach($activeRoles as $role)
                         @php
                             $companyName = $role->pivot->company_name ?? null;
                             $optionLabel = $role->labelWithCompany($companyName);
@@ -185,6 +284,37 @@
                     @endforeach
                 </div>
                 @error('role_id')<p class="mb-3 text-sm text-red-500">{{ $message }}</p>@enderror
+                <button type="submit"
+                    class="w-full rounded-lg bg-[#c3242a] px-4 py-3 text-sm font-medium text-white hover:bg-[#a01e24] transition">
+                    Продолжить
+                </button>
+            </form>
+        </div>
+    </div>
+    @endif
+
+    @if($canSwitchRole && !auth()->user()->needsRoleSelection())
+    <div id="role-switch-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog" aria-labelledby="role-switch-title">
+        <div class="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 shadow-xl p-6">
+            <div class="mb-6 flex items-start justify-between gap-3">
+                <h2 id="role-switch-title" class="text-lg font-semibold text-gray-900 dark:text-white">Выберите новую активную роль</h2>
+                <button type="button" onclick="document.getElementById('role-switch-modal')?.classList.add('hidden')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
+            </div>
+            <form method="POST" action="{{ route('role.switch') }}">
+                @csrf
+                <div class="space-y-3 mb-6">
+                    @foreach($activeRoles as $role)
+                        @php
+                            $companyName = $role->pivot->company_name ?? null;
+                            $optionLabel = $role->labelWithCompany($companyName);
+                        @endphp
+                        <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-600 p-3 transition hover:bg-gray-50 dark:hover:bg-gray-700/50 has-[:checked]:border-[#c3242a] has-[:checked]:ring-2 has-[:checked]:ring-[#c3242a]/20">
+                            <input type="radio" name="role_id" value="{{ $role->id }}" @checked($currentRole?->id === $role->id) required
+                                class="h-4 w-4 shrink-0 border-gray-300 text-[#c3242a] focus:ring-[#c3242a]" />
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ $optionLabel }}</span>
+                        </label>
+                    @endforeach
+                </div>
                 <button type="submit"
                     class="w-full rounded-lg bg-[#c3242a] px-4 py-3 text-sm font-medium text-white hover:bg-[#a01e24] transition">
                     Продолжить

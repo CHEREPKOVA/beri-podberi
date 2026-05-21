@@ -9,6 +9,7 @@ class Role extends Model
 {
     public const SLUG_ADMIN = 'admin';
     public const SLUG_MANAGER = 'manager';
+    public const SLUG_ANALYST = 'analyst';
     public const SLUG_MANUFACTURER = 'manufacturer';
     public const SLUG_DISTRIBUTOR = 'distributor';
     public const SLUG_END_COMPANY = 'end_company';
@@ -24,6 +25,18 @@ class Role extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'role_user')->withTimestamps();
+    }
+
+    public function permissions(): BelongsToMany
+    {
+        return $this->belongsToMany(Permission::class, 'permission_role')->withTimestamps();
+    }
+
+    /** Категории каталога, видимые только выбранным ролям при restrict_catalog_by_roles. */
+    public function catalogCategories(): BelongsToMany
+    {
+        return $this->belongsToMany(ProductCategory::class, 'product_category_role', 'role_id', 'product_category_id')
+            ->withTimestamps();
     }
 
     public function label(): string

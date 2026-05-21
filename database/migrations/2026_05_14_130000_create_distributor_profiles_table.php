@@ -1,0 +1,51 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('distributor_profiles', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+
+            $table->string('full_name');
+            $table->string('short_name')->nullable();
+            $table->enum('legal_form', ['ooo', 'ip', 'pao', 'ao', 'gos'])->default('ooo');
+            $table->string('inn', 12);
+            $table->string('kpp', 9)->nullable();
+            $table->string('ogrn', 15)->nullable();
+            $table->string('legal_address')->nullable();
+            $table->string('actual_address')->nullable();
+            $table->string('bank_name')->nullable();
+            $table->string('bik', 9)->nullable();
+            $table->string('checking_account', 20)->nullable();
+            $table->string('correspondent_account', 20)->nullable();
+            $table->string('logo')->nullable();
+            $table->text('description')->nullable();
+            $table->text('delivery_notes')->nullable();
+            $table->json('locked_fields')->nullable();
+
+            $table->boolean('integration_csv_enabled')->default(false);
+            $table->boolean('integration_yml_enabled')->default(false);
+            $table->boolean('integration_import_1c_stocks')->default(false);
+            $table->boolean('integration_export_orders_1c')->default(false);
+            $table->string('integration_csv_feed_url')->nullable();
+            $table->string('integration_yml_feed_url')->nullable();
+            $table->text('integration_comment')->nullable();
+
+            $table->timestamps();
+
+            $table->unique('user_id');
+            $table->index('inn');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('distributor_profiles');
+    }
+};

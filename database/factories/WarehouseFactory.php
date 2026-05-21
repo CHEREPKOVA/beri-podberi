@@ -39,6 +39,11 @@ class WarehouseFactory extends Factory
             'phone' => fake()->numerify('+7 (9##) ###-##-##'),
             'notes' => fake('ru_RU')->optional(0.4)->sentence(),
             'working_hours' => 'Пн–Пт 9:00–18:00',
+            'shipping_conditions' => fake('ru_RU')->optional(0.5)->randomElement([
+                'Отгрузка только паллетами',
+                'Требует подтверждение',
+                'Стандартные условия',
+            ]),
             'is_active' => true,
         ];
     }

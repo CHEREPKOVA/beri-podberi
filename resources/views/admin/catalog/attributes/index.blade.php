@@ -30,7 +30,12 @@
                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                     @forelse($attributes as $attribute)
                     <tr>
-                        <td class="px-4 py-3 text-sm">{{ $attribute->name }} <span class="text-gray-500">({{ $attribute->slug }})</span></td>
+                        <td class="px-4 py-3 text-sm">
+                            <a href="{{ route('admin.catalog.attributes.edit', $attribute) }}" class="text-[#c3242a] hover:underline">
+                                {{ $attribute->name }}
+                            </a>
+                            <span class="text-gray-500">({{ $attribute->slug }})</span>
+                        </td>
                         <td class="px-4 py-3 text-sm text-gray-500">{{ $attribute->productCategory?->name ?? 'Глобальное' }}</td>
                         <td class="px-4 py-3 text-sm text-gray-500">{{ \App\Models\ProductAttribute::typeLabels()[$attribute->type] ?? $attribute->type }}</td>
                         <td class="px-4 py-3 text-sm text-gray-500">

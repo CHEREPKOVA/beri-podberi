@@ -105,6 +105,14 @@
                         {{ $warehouse->working_hours }}
                     </div>
                     @endif
+                    @if($warehouse->shipping_conditions)
+                    <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400 sm:col-span-3">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8m-8 5h8m-8 5h8M5 4h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/>
+                        </svg>
+                        Условия отгрузки: {{ $warehouse->shipping_conditions }}
+                    </div>
+                    @endif
                 </div>
                 @if($warehouse->notes)
                 <p class="mt-3 text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">{{ $warehouse->notes }}</p>
@@ -166,6 +174,10 @@
                     <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">График работы (для самовывоза)</label>
                         <input type="text" name="working_hours" value="{{ $warehouse->working_hours }}" placeholder="Например: Пн–Пт 9:00–18:00" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Условия отгрузки</label>
+                        <input type="text" name="shipping_conditions" value="{{ $warehouse->shipping_conditions }}" placeholder="Например: отгрузка только паллетами" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                     </div>
                     <div>
                         <label class="flex items-center gap-3 h-11 mt-6">
@@ -272,6 +284,10 @@
                     <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">График работы (для самовывоза)</label>
                         <input type="text" name="working_hours" placeholder="Например: Пн–Пт 9:00–18:00" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Условия отгрузки</label>
+                        <input type="text" name="shipping_conditions" placeholder="Например: требует подтверждение" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                     </div>
                     <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Примечание</label>

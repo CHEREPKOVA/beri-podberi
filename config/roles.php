@@ -11,6 +11,7 @@ return [
     'slugs' => [
         'admin' => 'admin',
         'manager' => 'manager',
+        'analyst' => 'analyst',
         'manufacturer' => 'manufacturer',
         'distributor' => 'distributor',
         'end_company' => 'end_company',
@@ -20,6 +21,7 @@ return [
     'labels' => [
         'admin' => 'Администратор платформы',
         'manager' => 'Менеджер платформы (оператор поддержки)',
+        'analyst' => 'Аналитик платформы',
         'manufacturer' => 'Производитель (завод)',
         'distributor' => 'Дистрибьютор',
         'end_company' => 'Конечная компания (Магазин / СТО)',
@@ -35,7 +37,7 @@ return [
     ],
 
     /** Роли с доступом в админ-панель (CMS) */
-    'admin_panel_roles' => ['admin', 'manager'],
+    'admin_panel_roles' => ['admin', 'manager', 'analyst'],
 
     /** Роли, которые считаются "профилями" для переключения в личном кабинете */
     'switchable_profiles' => ['manufacturer', 'distributor', 'end_company', 'company_employee'],

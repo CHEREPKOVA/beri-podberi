@@ -42,4 +42,18 @@ class SystemSetting extends Model
             default => $this->value,
         };
     }
+
+    public static function getActiveParsed(string $key, mixed $default = null): mixed
+    {
+        $row = static::query()
+            ->where('key', $key)
+            ->where('is_active', true)
+            ->first();
+
+        if ($row === null) {
+            return $default;
+        }
+
+        return $row->parsedValue();
+    }
 }

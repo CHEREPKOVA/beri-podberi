@@ -95,9 +95,13 @@
                         <td class="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ $user->name }}</td>
                         <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ $user->email }}</td>
                         <td class="px-4 py-3">
-                            @foreach($user->roles->whereIn('slug', ['admin', 'manager']) as $role)
+                            @foreach($user->roles->whereIn('slug', ['admin', 'manager', 'analyst']) as $role)
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                {{ $role->slug === 'admin' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' }}">
+                                {{ $role->slug === 'admin'
+                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                                    : ($role->slug === 'manager'
+                                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                                        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300') }}">
                                 {{ $role->name }}
                             </span>
                             @endforeach

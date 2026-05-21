@@ -121,6 +121,8 @@ class ProductAttributeSeeder extends Seeder
                     'type' => $attr['type'],
                     'options' => $attr['options'] ?? null,
                     'is_filterable' => $attr['is_filterable'],
+                    'filter_values_source' => ProductAttribute::FILTER_VALUES_FIXED,
+                    'filter_allow_multiple' => false,
                     'is_required' => false,
                     'sort_order' => $index,
                     'is_active' => true,

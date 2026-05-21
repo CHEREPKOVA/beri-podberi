@@ -105,6 +105,21 @@ class ManufacturerProfile extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function distributorPartnerships(): HasMany
+    {
+        return $this->hasMany(ManufacturerDistributorPartnership::class);
+    }
+
+    public function distributorExclusiveRegions(): HasMany
+    {
+        return $this->hasMany(ManufacturerDistributorExclusiveRegion::class);
+    }
+
+    public function distributorPartnershipLogs(): HasMany
+    {
+        return $this->hasMany(ManufacturerDistributorPartnershipLog::class);
+    }
+
     public function deliveryMethods(): BelongsToMany
     {
         return $this->belongsToMany(DeliveryMethod::class, 'manufacturer_delivery_settings')

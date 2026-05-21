@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ProductCategory extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'name',
         'slug',
@@ -21,12 +22,18 @@ class ProductCategory extends Model
         'icon',
         'sort_order',
         'is_active',
+        'shown_in_customer_catalog',
+        'restrict_catalog_by_roles',
+        'accepts_products',
     ];
 
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
+            'shown_in_customer_catalog' => 'boolean',
+            'restrict_catalog_by_roles' => 'boolean',
+            'accepts_products' => 'boolean',
         ];
     }
 
@@ -50,6 +57,24 @@ class ProductCategory extends Model
         return $this->hasMany(ProductAttribute::class, 'product_category_id');
     }
 
+    /** Доступ в пользовательском каталоге ограничен этими ролями (если restrict_catalog_by_roles = true). */
+    public function catalogRoles(): BelongsToMany
+    {
+        return $this->belongsToMany(Role::class, 'product_category_role', 'product_category_id', 'role_id')
+            ->withTimestamps();
+    }
+
+    /** Унаследованные свойства, отключённые на этой ветке (не показываются в карточке и фильтрах). */
+    public function excludedAttributes(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ProductAttribute::class,
+            'product_category_excluded_attributes',
+            'product_category_id',
+            'product_attribute_id'
+        )->withTimestamps();
+    }
+
     /** Товары, у которых эта категория указана как дополнительная */
     public function productsAsAdditional(): BelongsToMany
     {
@@ -66,7 +91,25 @@ class ProductCategory extends Model
             $ids[] = $parent->id;
             $parent = $parent->parent;
         }
+
         return $ids;
+    }
+
+    /** Ид свойств предков и глобальных, которые можно отключить для этой подкатегории */
+    public function excludableInheritedAttributeIds(): array
+    {
+        $ancestorIds = $this->ancestorIds();
+
+        return ProductAttribute::query()
+            ->where('is_active', true)
+            ->where(function ($q) use ($ancestorIds) {
+                $q->whereNull('product_category_id');
+                foreach ($ancestorIds as $aid) {
+                    $q->orWhere('product_category_id', $aid);
+                }
+            })
+            ->pluck('id')
+            ->all();
     }
 
     /** ID этой категории и всех потомков (для фильтрации товаров по категории с подкатегориями) */
@@ -76,12 +119,18 @@ class ProductCategory extends Model
         foreach ($this->children as $child) {
             $ids = array_merge($ids, $child->descendant_ids);
         }
+
         return $ids;
     }
 
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
+    }
+
+    public function scopeAssignableForProducts($query)
+    {
+        return $query->where('accepts_products', true);
     }
 
     public function scopeRoots($query)
@@ -95,10 +144,39 @@ class ProductCategory extends Model
         return 'slug';
     }
 
-    /** Дерево категорий (корни с вложенными children). Если $manufacturerProfileId передан и $hideEmpty = true — только ветки с товарами этого производителя. */
-    public static function getTree(bool $hideEmpty = false, ?int $manufacturerProfileId = null): \Illuminate\Support\Collection
+    /**
+     * Видимость узла дерева пользовательского каталога при текущей роли сессии.
+     */
+    public function isShownInCatalogForRole(?Role $catalogRole): bool
     {
-        $all = self::active()->orderBy('sort_order')->get();
+        if (! $this->is_active || ! $this->shown_in_customer_catalog) {
+            return false;
+        }
+        if (! $this->restrict_catalog_by_roles) {
+            return true;
+        }
+
+        return $catalogRole instanceof Role
+            && $this->catalogRoles()->where('roles.id', $catalogRole->id)->exists();
+    }
+
+    /** Дерево категорий (корни с вложенными children). Фильтр по роли и признакам пользовательского каталога (ТЗ). */
+    public static function getTree(bool $hideEmpty = false, ?int $manufacturerProfileId = null, ?Role $catalogRole = null): \Illuminate\Support\Collection
+    {
+        $query = self::active()
+            ->where('shown_in_customer_catalog', true)
+            ->where(function ($outer) use ($catalogRole) {
+                $outer->where('restrict_catalog_by_roles', false);
+                if ($catalogRole instanceof Role) {
+                    $outer->orWhere(function ($nested) use ($catalogRole) {
+                        $nested->where('restrict_catalog_by_roles', true)
+                            ->whereHas('catalogRoles', fn ($r) => $r->where('roles.id', $catalogRole->id));
+                    });
+                }
+            })
+            ->orderBy('sort_order');
+
+        $all = $query->get();
         $keyed = $all->keyBy('id');
         foreach ($all as $cat) {
             $cat->setRelation('children', collect());
@@ -119,6 +197,7 @@ class ProductCategory extends Model
         if ($hideEmpty && $manufacturerProfileId !== null) {
             $roots = self::filterTreeByProducts($roots, $manufacturerProfileId);
         }
+
         return $roots;
     }
 
@@ -131,11 +210,12 @@ class ProductCategory extends Model
                 ->whereNotNull('category_id')
                 ->whereIn('category_id', $childIds)
                 ->exists();
-            if (!$hasProducts) {
+            if (! $hasProducts) {
                 return null;
             }
             $filteredChildren = self::filterTreeByProducts($node->children, $manufacturerProfileId);
             $node->setRelation('children', $filteredChildren->filter());
+
             return $node;
         })->filter();
     }

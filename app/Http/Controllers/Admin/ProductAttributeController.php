@@ -35,6 +35,8 @@ class ProductAttributeController extends Controller
         return view('admin.catalog.attributes.create', [
             'categories' => ProductCategory::query()->active()->orderBy('name')->get(),
             'types' => ProductAttribute::typeLabels(),
+            'filterDisplayTypes' => ProductAttribute::filterDisplayLabels(),
+            'filterValuesSources' => ProductAttribute::filterValuesSourceLabels(),
         ]);
     }
 
@@ -48,10 +50,24 @@ class ProductAttributeController extends Controller
 
     public function edit(ProductAttribute $attribute): View
     {
+        $valueStats = $attribute->values()
+            ->select('value')
+            ->selectRaw('COUNT(*) as usage_count')
+            ->whereNotNull('value')
+            ->where('value', '!=', '')
+            ->groupBy('value')
+            ->orderByDesc('usage_count')
+            ->orderBy('value')
+            ->limit(100)
+            ->get();
+
         return view('admin.catalog.attributes.edit', [
             'attribute' => $attribute,
             'categories' => ProductCategory::query()->active()->orderBy('name')->get(),
             'types' => ProductAttribute::typeLabels(),
+            'filterDisplayTypes' => ProductAttribute::filterDisplayLabels(),
+            'filterValuesSources' => ProductAttribute::filterValuesSourceLabels(),
+            'valueStats' => $valueStats,
         ]);
     }
 
@@ -93,6 +109,10 @@ class ProductAttributeController extends Controller
             'is_filterable' => ['sometimes', 'boolean'],
             'is_required' => ['sometimes', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'filter_sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'filter_display_type' => ['nullable', 'string', Rule::in(array_keys(ProductAttribute::filterDisplayLabels()))],
+            'filter_values_source' => ['required', Rule::in(array_keys(ProductAttribute::filterValuesSourceLabels()))],
+            'filter_allow_multiple' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
@@ -111,6 +131,14 @@ class ProductAttributeController extends Controller
             'is_filterable' => $request->boolean('is_filterable'),
             'is_required' => $request->boolean('is_required'),
             'sort_order' => $validated['sort_order'] ?? 0,
+            'filter_sort_order' => isset($validated['filter_sort_order']) && $validated['filter_sort_order'] !== ''
+                ? (int) $validated['filter_sort_order']
+                : null,
+            'filter_display_type' => filled($validated['filter_display_type'] ?? null)
+                ? $validated['filter_display_type']
+                : null,
+            'filter_values_source' => $validated['filter_values_source'],
+            'filter_allow_multiple' => $request->boolean('filter_allow_multiple'),
             'is_active' => $request->boolean('is_active'),
         ];
     }

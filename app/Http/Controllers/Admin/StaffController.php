@@ -3,17 +3,19 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class StaffController extends Controller
 {
-    /** Роли, которые считаются «сотрудниками платформы» (админ + менеджер). */
-    private const STAFF_ROLE_SLUGS = [Role::SLUG_ADMIN, Role::SLUG_MANAGER];
+    /** Роли, которые считаются «сотрудниками платформы» (админ + менеджер + аналитик). */
+    private const STAFF_ROLE_SLUGS = [Role::SLUG_ADMIN, Role::SLUG_MANAGER, Role::SLUG_ANALYST];
 
     /** ID главного администратора — редактирование и удаление запрещены. */
     public const PROTECTED_ADMIN_ID = 1;
@@ -61,8 +63,9 @@ class StaffController extends Controller
     public function create(): View
     {
         $roleOptions = Role::whereIn('slug', self::STAFF_ROLE_SLUGS)->orderBy('sort_order')->get();
+        $permissionGroups = $this->permissionGroups();
 
-        return view('admin.staff.create', compact('roleOptions'));
+        return view('admin.staff.create', compact('roleOptions', 'permissionGroups'));
     }
 
     /**
@@ -75,11 +78,14 @@ class StaffController extends Controller
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
             'role_id' => 'required|exists:roles,id',
+            'permission_overrides' => 'nullable|array',
+            'permission_overrides.*' => 'nullable|in:inherit,allow,deny',
         ], [], [
             'name' => 'Имя',
             'email' => 'Email',
             'password' => 'Пароль',
             'role_id' => 'Роль',
+            'permission_overrides' => 'Переопределения прав',
         ]);
 
         $role = Role::findOrFail($validated['role_id']);
@@ -95,6 +101,7 @@ class StaffController extends Controller
         ]);
 
         $user->roles()->attach($role->id);
+        $this->syncPermissionOverrides($user, $validated['permission_overrides'] ?? []);
 
         return redirect()->route('admin.staff.index')->with('success', 'Сотрудник успешно создан.');
     }
@@ -108,9 +115,13 @@ class StaffController extends Controller
         $this->rejectProtectedAdmin($staff);
 
         $roleOptions = Role::whereIn('slug', self::STAFF_ROLE_SLUGS)->orderBy('sort_order')->get();
-        $staff->load('roles');
+        $permissionGroups = $this->permissionGroups();
+        $staff->load(['roles', 'userPermissions']);
+        $permissionOverrides = $staff->userPermissions
+            ->mapWithKeys(fn (Permission $permission) => [$permission->id => $permission->pivot->is_allowed ? 'allow' : 'deny'])
+            ->all();
 
-        return view('admin.staff.edit', compact('staff', 'roleOptions'));
+        return view('admin.staff.edit', compact('staff', 'roleOptions', 'permissionGroups', 'permissionOverrides'));
     }
 
     /**
@@ -126,11 +137,14 @@ class StaffController extends Controller
             'email' => 'required|string|email|max:255|unique:users,email,' . $staff->id,
             'password' => 'nullable|string|min:8|confirmed',
             'role_id' => 'required|exists:roles,id',
+            'permission_overrides' => 'nullable|array',
+            'permission_overrides.*' => 'nullable|in:inherit,allow,deny',
         ], [], [
             'name' => 'Имя',
             'email' => 'Email',
             'password' => 'Пароль',
             'role_id' => 'Роль',
+            'permission_overrides' => 'Переопределения прав',
         ]);
 
         $role = Role::findOrFail($validated['role_id']);
@@ -148,6 +162,7 @@ class StaffController extends Controller
         // Синхронизируем только роли «сотрудника платформы»: снять админ/менеджер, надеть выбранную
         $staff->roles()->whereIn('slug', self::STAFF_ROLE_SLUGS)->detach();
         $staff->roles()->attach($role->id);
+        $this->syncPermissionOverrides($staff, $validated['permission_overrides'] ?? []);
 
         return redirect()->route('admin.staff.index')->with('success', 'Данные сотрудника обновлены.');
     }
@@ -225,5 +240,43 @@ class StaffController extends Controller
         if ($user->id === self::PROTECTED_ADMIN_ID) {
             abort(403, 'Редактирование и удаление главного администратора запрещены.');
         }
+    }
+
+    private function permissionGroups(): array
+    {
+        $permissions = Permission::query()
+            ->orderBy('group_key')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        return $permissions
+            ->groupBy(fn (Permission $permission) => $permission->group_key ?: 'other')
+            ->mapWithKeys(function ($items, string $groupKey): array {
+                $label = Str::headline(str_replace('_', ' ', $groupKey));
+
+                return [$label => $items];
+            })
+            ->all();
+    }
+
+    /**
+     * @param  array<string, string|null>  $overrides
+     */
+    private function syncPermissionOverrides(User $user, array $overrides): void
+    {
+        $allowedPermissionIds = Permission::query()->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $validOverrides = array_intersect_key($overrides, array_flip($allowedPermissionIds));
+
+        $syncPayload = [];
+        foreach ($validOverrides as $permissionId => $mode) {
+            if ($mode === 'allow') {
+                $syncPayload[(int) $permissionId] = ['is_allowed' => true];
+            } elseif ($mode === 'deny') {
+                $syncPayload[(int) $permissionId] = ['is_allowed' => false];
+            }
+        }
+
+        $user->userPermissions()->sync($syncPayload);
     }
 }

@@ -37,6 +37,7 @@
                 'selectedCategoryId' => $selectedCategoryId,
                 'filterableAttributes' => $filterableAttributes ?? collect(),
                 'appliedFilters' => $appliedFilters ?? [],
+                'manufacturerProfileId' => $manufacturerProfileId ?? null,
             ])
         </div>
     </main>

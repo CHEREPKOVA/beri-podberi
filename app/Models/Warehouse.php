@@ -28,6 +28,7 @@ class Warehouse extends Model
         'phone',
         'notes',
         'working_hours',
+        'shipping_conditions',
         'is_active',
     ];
 

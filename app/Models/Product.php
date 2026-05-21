@@ -8,7 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 /** @use HasFactory<ProductFactory> */
 class Product extends Model
@@ -114,6 +116,32 @@ class Product extends Model
     {
         return $this->belongsToMany(Product::class, 'product_analogs', 'analog_product_id', 'product_id')
             ->withTimestamps();
+    }
+
+    /**
+     * Все ID аналогов (прямые и обратные связи) без дублей.
+     *
+     * @return array<int, int>
+     */
+    public function allAnalogIds(): array
+    {
+        return $this->analogs()
+            ->pluck('products.id')
+            ->merge($this->analogOf()->pluck('products.id'))
+            ->map(static fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Достаточность характеристик для быстрой оценки аналога.
+     */
+    public function hasEnoughCharacteristicsForAnalog(?int $minimum = null): bool
+    {
+        $minimum ??= (int) config('catalog.analogs.min_attributes', 1);
+
+        return $this->attributeValues()->count() >= max(1, $minimum);
     }
 
     public function unitType(): BelongsTo
@@ -223,20 +251,134 @@ class Product extends Model
         return $query->where('manufacturer_profile_id', $profileId);
     }
 
-    /** Фильтр по значениям атрибутов (массив [attribute_id => value] или [attribute_id => [values]]) */
+    /**
+     * Совместимые товары: из той же основной/доп. категории либо с пересечением доп.категорий.
+     */
+    public function scopeCompatibleWithProduct($query, Product $product)
+    {
+        $product->loadMissing('additionalCategories:id');
+
+        $baseCategoryIds = collect([$product->category_id])
+            ->merge($product->additionalCategories->pluck('id'))
+            ->filter()
+            ->map(static fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($baseCategoryIds->isEmpty()) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $ids = $baseCategoryIds->all();
+
+        return $query->where(function ($q) use ($ids) {
+            $q->whereIn('category_id', $ids)
+                ->orWhereHas('additionalCategories', fn ($aq) => $aq->whereIn('product_categories.id', $ids));
+        });
+    }
+
+    /**
+     * Фильтр по значениям атрибутов:
+     * - attribute_id => одно значение или список (чекбоксы/списки),
+     * - attribute_id => ['min'=>?, 'max'=>?] для числа или типа «диапазон» у товара.
+     */
     public function scopeWithAttributeFilters($query, array $filters)
     {
         foreach ($filters as $attributeId => $value) {
             if ($value === null || $value === '') {
                 continue;
             }
-            $values = is_array($value) ? $value : [$value];
-            $query->whereHas('attributeValues', function ($q) use ($attributeId, $values) {
-                $q->where('product_attribute_id', $attributeId)->whereIn('value', $values);
+            $attributeId = (int) $attributeId;
+            if ($attributeId <= 0) {
+                continue;
+            }
+
+            $attr = ProductAttribute::query()->find($attributeId);
+            if (! $attr instanceof ProductAttribute) {
+                continue;
+            }
+
+            if (is_array($value) && self::attributeFilterPayloadIsNumericRange($value)) {
+                $fmin = isset($value['min']) && $value['min'] !== '' ? (float) $value['min'] : null;
+                $fmax = isset($value['max']) && $value['max'] !== '' ? (float) $value['max'] : null;
+                if ($fmin === null && $fmax === null) {
+                    continue;
+                }
+                self::applyAttributeNumericRangeConstraint($query, $attr, $fmin, $fmax);
+
+                continue;
+            }
+
+            $scalarValues = is_array($value) ? $value : [$value];
+            $scalarValues = array_values(array_filter(array_map(static fn ($v) => is_scalar($v) ? (string) $v : null, $scalarValues), static fn ($v) => $v !== null && $v !== ''));
+            if ($scalarValues === []) {
+                continue;
+            }
+
+            $query->whereHas('attributeValues', function ($q) use ($attributeId, $scalarValues) {
+                $q->where('product_attribute_id', $attributeId)->whereIn('value', $scalarValues);
             });
         }
 
         return $query;
+    }
+
+    /**
+     * @param  array<string, mixed>  $value
+     */
+    protected static function attributeFilterPayloadIsNumericRange(array $value): bool
+    {
+        return array_key_exists('min', $value) || array_key_exists('max', $value);
+    }
+
+    protected static function applyAttributeNumericRangeConstraint($query, ProductAttribute $attr, ?float $fmin, ?float $fmax): void
+    {
+        if ($attr->type === ProductAttribute::TYPE_RANGE) {
+            $driver = DB::connection()->getDriverName();
+            $query->whereHas('attributeValues', function ($q) use ($attr, $fmin, $fmax, $driver) {
+                $q->where('product_attribute_id', $attr->id);
+                if ($driver === 'sqlite') {
+                    if ($fmin !== null) {
+                        $q->whereRaw('CAST(json_extract(product_attribute_values.value, \'$.max\') AS REAL) >= ?', [$fmin]);
+                    }
+                    if ($fmax !== null) {
+                        $q->whereRaw('CAST(json_extract(product_attribute_values.value, \'$.min\') AS REAL) <= ?', [$fmax]);
+                    }
+                } elseif ($driver === 'mysql') {
+                    if ($fmin !== null) {
+                        $q->whereRaw(
+                            'CAST(JSON_UNQUOTE(JSON_EXTRACT(product_attribute_values.value, \'$.max\')) AS DECIMAL(40,15)) >= ?',
+                            [$fmin]
+                        );
+                    }
+                    if ($fmax !== null) {
+                        $q->whereRaw(
+                            'CAST(JSON_UNQUOTE(JSON_EXTRACT(product_attribute_values.value, \'$.min\')) AS DECIMAL(40,15)) <= ?',
+                            [$fmax]
+                        );
+                    }
+                } else {
+                    if ($fmin !== null) {
+                        $q->whereRaw('CAST(json_extract(product_attribute_values.value, \'$.max\') AS REAL) >= ?', [$fmin]);
+                    }
+                    if ($fmax !== null) {
+                        $q->whereRaw('CAST(json_extract(product_attribute_values.value, \'$.min\') AS REAL) <= ?', [$fmax]);
+                    }
+                }
+            });
+
+            return;
+        }
+
+        $query->whereHas('attributeValues', function ($q) use ($attr, $fmin, $fmax) {
+            $q->where('product_attribute_id', $attr->id);
+            if ($fmin !== null) {
+                $q->whereRaw('CAST(product_attribute_values.value AS REAL) >= ?', [$fmin]);
+            }
+            if ($fmax !== null) {
+                $q->whereRaw('CAST(product_attribute_values.value AS REAL) <= ?', [$fmax]);
+            }
+        });
     }
 
     /** Товары в данной категории или в любой из её подкатегорий */
@@ -327,5 +469,33 @@ class Product extends Model
             ->sum(fn ($s) => max(0, $s->quantity - $s->reserved));
 
         return (int) $quantity;
+    }
+
+    /**
+     * Видимые остатки по складам с учетом активности склада и региона пользователя.
+     *
+     * @return Collection<int, ProductStock>
+     */
+    public function visibleStocksForRegion(?int $regionId): Collection
+    {
+        $stocks = $this->relationLoaded('stocks')
+            ? $this->stocks
+            : $this->stocks()->with('warehouse.region')->get();
+
+        return $stocks
+            ->filter(function (ProductStock $stock) use ($regionId): bool {
+                $warehouse = $stock->warehouse;
+                if (! $warehouse || ! $warehouse->is_active) {
+                    return false;
+                }
+
+                if ($regionId !== null && (int) $warehouse->region_id !== $regionId) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->sortByDesc('stock_updated_at')
+            ->values();
     }
 }

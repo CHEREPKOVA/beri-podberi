@@ -21,6 +21,10 @@
             Назад в каталог
         </a>
         <div class="flex flex-wrap items-center gap-2">
+            <a href="{{ route('manufacturer.products.edit', ['product' => $product, 'tab' => 'analogs']) }}"
+               class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                Управлять аналогами
+            </a>
             <a href="{{ route('manufacturer.products.edit', $product) }}"
                class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                 Редактировать характеристики

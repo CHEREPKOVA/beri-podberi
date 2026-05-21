@@ -24,6 +24,10 @@ class TestUsersSeeder extends Seeder
             'name' => 'Менеджер Тестовый',
             'email' => 'manager@test.com',
         ],
+        Role::SLUG_ANALYST => [
+            'name' => 'Аналитик Тестовый',
+            'email' => 'analyst@test.com',
+        ],
         Role::SLUG_DISTRIBUTOR => [
             'name' => 'Дистрибьютор Тестовый',
             'email' => 'distributor@test.com',

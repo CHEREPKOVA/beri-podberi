@@ -10,10 +10,22 @@
 
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-            <form method="GET" class="flex items-center gap-3">
-                <input type="text" name="search" value="{{ request('search') }}" placeholder="Поиск по названию или SKU" class="w-72 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
-                <button class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">Найти</button>
-            </form>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <form method="GET" class="flex items-center gap-3">
+                    <input type="text" name="search" value="{{ request('search') }}" placeholder="Поиск по названию или SKU" class="w-72 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />
+                    <button class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">Найти</button>
+                </form>
+                <div class="flex flex-wrap items-center gap-2">
+                    <a href="{{ route('admin.catalog.analogs.export') }}" class="px-3 py-2 rounded-lg text-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        Экспорт CSV
+                    </a>
+                    <form method="POST" action="{{ route('admin.catalog.analogs.import') }}" enctype="multipart/form-data" class="flex items-center gap-2">
+                        @csrf
+                        <input type="file" name="file" accept=".csv,.txt" class="text-xs" required />
+                        <button class="px-3 py-2 rounded-lg text-sm bg-[#c3242a] text-white hover:bg-[#a01e24]">Импорт CSV</button>
+                    </form>
+                </div>
+            </div>
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">

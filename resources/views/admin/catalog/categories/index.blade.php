@@ -23,7 +23,7 @@
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Название</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Slug</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Родитель</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Статус</th>
+                        <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Каталог / товары</th>
                         <th class="w-24 px-4 py-3"></th>
                     </tr>
                 </thead>
@@ -33,7 +33,14 @@
                         <td class="px-4 py-3 text-sm">{{ $category->name }}</td>
                         <td class="px-4 py-3 text-sm text-gray-500">{{ $category->slug }}</td>
                         <td class="px-4 py-3 text-sm text-gray-500">{{ $category->parent?->name ?? '—' }}</td>
-                        <td class="px-4 py-3 text-sm">{{ $category->is_active ? 'Активна' : 'Неактивна' }}</td>
+                        <td class="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                            <div>{{ $category->is_active ? 'Активна' : 'Неактивна' }}</div>
+                            <div>{{ $category->shown_in_customer_catalog ? 'В каталоге пользователя' : 'Скрыта в каталоге' }}</div>
+                            <div>{{ $category->accepts_products ? 'Принимает товары' : 'Только контейнер' }}</div>
+                            @if($category->restrict_catalog_by_roles)
+                                <div class="mt-1">По ролям: {{ $category->catalog_roles_count }}</div>
+                            @endif
+                        </td>
                         <td class="px-4 py-3 text-right">
                             <a href="{{ route('admin.catalog.categories.edit', $category) }}" class="text-sm text-[#c3242a] hover:underline">Изменить</a>
                         </td>

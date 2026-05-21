@@ -16,7 +16,7 @@ class EnsureUserIsActive
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        $isProtectedArea = $request->is('dashboard') || $request->is('admin/*') || $request->is('manufacturer/*');
+        $isProtectedArea = $request->is('admin/*') || $request->is('manufacturer/*');
 
         if ($isProtectedArea) {
             Log::info('EnsureUserIsActive: start', [

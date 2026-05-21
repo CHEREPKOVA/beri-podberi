@@ -49,8 +49,12 @@ class ProductAttributeFactory extends Factory
             'type' => $type,
             'options' => $options,
             'is_filterable' => fake()->boolean(40),
+            'filter_display_type' => null,
+            'filter_values_source' => ProductAttribute::FILTER_VALUES_FIXED,
+            'filter_allow_multiple' => fake()->boolean(30),
             'is_required' => fake()->boolean(20),
             'sort_order' => fake()->numberBetween(1, 50),
+            'filter_sort_order' => null,
             'is_active' => true,
         ];
     }

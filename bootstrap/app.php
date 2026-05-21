@@ -15,7 +15,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role.selected' => \App\Http\Middleware\EnsureCurrentRoleSelected::class,
             'role' => \App\Http\Middleware\RequireRole::class,
+            'permission' => \App\Http\Middleware\RequirePermission::class,
+            'admin.audit' => \App\Http\Middleware\LogAdminAction::class,
             'user.active' => \App\Http\Middleware\EnsureUserIsActive::class,
+            'manufacturer.partner' => \App\Http\Middleware\EnsureManufacturerPartnerCatalogAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

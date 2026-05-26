@@ -5,17 +5,17 @@ namespace App\Http\Controllers\Manufacturer;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductAttribute;
-use App\Models\Role;
 use App\Models\ProductAttributeValue;
 use App\Models\ProductCategory;
 use App\Models\ProductDocument;
 use App\Models\ProductImage;
 use App\Models\ProductRegionalPrice;
 use App\Models\ProductStock;
+use App\Models\Role;
 use App\Models\UnitType;
 use App\Services\CurrentRoleService;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -814,40 +814,21 @@ class ProductController extends Controller
 
     private function importCsv($file, $profile, array $stats): array
     {
-        $handle = fopen($file->getPathname(), 'r');
+        $handle = $this->openCsvImportStream($file);
 
-        $header = fgetcsv($handle, 0, ';');
-        $header = array_map(fn ($h) => mb_strtolower(trim($h)), $header);
-
-        $mapping = [
-            'артикул' => 'sku',
-            'sku' => 'sku',
-            'наименование' => 'name',
-            'название' => 'name',
-            'name' => 'name',
-            'категория' => 'category',
-            'category' => 'category',
-            'цена' => 'base_price',
-            'price' => 'base_price',
-            'остаток' => 'stock',
-            'stock' => 'stock',
-            'описание' => 'description',
-            'description' => 'description',
-        ];
-
-        $headerMap = [];
-        foreach ($header as $index => $col) {
-            if (isset($mapping[$col])) {
-                $headerMap[$mapping[$col]] = $index;
-            }
+        $header = fgetcsv($handle, 0, ';', escape: '\\');
+        if ($header === false) {
+            throw new \Exception('Файл пуст или неверный формат CSV');
         }
 
+        $headerMap = $this->buildCsvHeaderMap($header);
+
         if (! isset($headerMap['sku']) || ! isset($headerMap['name'])) {
-            throw new \Exception('Файл должен содержать колонки "Артикул" и "Наименование"');
+            throw new \Exception('Файл должен содержать колонки «Артикул» и «Наименование» (или SKU / Name)');
         }
 
         $row = 1;
-        while (($data = fgetcsv($handle, 0, ';')) !== false) {
+        while (($data = fgetcsv($handle, 0, ';', escape: '\\')) !== false) {
             $row++;
 
             $sku = trim($data[$headerMap['sku']] ?? '');
@@ -923,14 +904,15 @@ class ProductController extends Controller
     private function importYml($file, $profile, array $stats): array
     {
         $xml = simplexml_load_file($file->getPathname());
+        $shop = $xml->shop ?? null;
 
-        if (! $xml || ! isset($xml->shop->offers->offer)) {
+        if (! $xml || ! $shop || ! isset($shop->offers->offer)) {
             throw new \Exception('Неверный формат YML файла');
         }
 
         $categories = [];
-        if (isset($xml->shop->categories->category)) {
-            foreach ($xml->shop->categories->category as $cat) {
+        if (isset($shop->categories->category)) {
+            foreach ($shop->categories->category as $cat) {
                 $catId = (string) $cat['id'];
                 $catName = (string) $cat;
                 $categories[$catId] = ProductCategory::firstOrCreate(
@@ -940,45 +922,191 @@ class ProductController extends Controller
             }
         }
 
-        foreach ($xml->shop->offers->offer as $offer) {
-            $sku = (string) ($offer['id'] ?? $offer->vendorCode ?? '');
-            $name = (string) ($offer->name ?? '');
+        foreach ($shop->offers->offer as $offer) {
+            $sku = trim((string) ($offer['id'] ?? $offer->vendorCode ?? ''));
 
-            if (empty($sku) || empty($name)) {
+            if ($sku === '') {
                 $stats['skipped']++;
+                $stats['errors'][] = 'Пропущен offer без артикула (id / vendorCode)';
 
                 continue;
             }
 
-            $productData = [
-                'name' => $name,
-                'sku' => $sku,
-                'manufacturer_profile_id' => $profile->id,
-                'description' => (string) ($offer->description ?? null),
-                'base_price' => isset($offer->price) ? (float) $offer->price : null,
-                'price_updated_at' => isset($offer->price) ? now() : null,
-            ];
-
-            if (isset($offer->categoryId) && isset($categories[(string) $offer->categoryId])) {
-                $productData['category_id'] = $categories[(string) $offer->categoryId]->id;
-            }
+            $name = $this->extractYmlOfferName($offer);
 
             $existing = Product::where('manufacturer_profile_id', $profile->id)
                 ->where('sku', $sku)
                 ->first();
 
+            if ($name === '' && ! $existing) {
+                $stats['skipped']++;
+                $stats['errors'][] = "Товар «{$sku}»: в YML нет названия, товар не найден в каталоге (сначала загрузите CSV)";
+
+                continue;
+            }
+
+            $productData = [
+                'manufacturer_profile_id' => $profile->id,
+            ];
+
+            if ($name !== '') {
+                $productData['name'] = $name;
+            }
+
+            $description = trim((string) ($offer->description ?? ''));
+            if ($description !== '') {
+                $productData['description'] = $description;
+            }
+
+            if (isset($offer->price)) {
+                $productData['base_price'] = (float) $offer->price;
+                $productData['price_updated_at'] = now();
+            }
+
+            if (isset($offer->categoryId) && isset($categories[(string) $offer->categoryId])) {
+                $productData['category_id'] = $categories[(string) $offer->categoryId]->id;
+            }
+
             if ($existing) {
                 $existing->update($productData);
+                $product = $existing;
                 $stats['updated']++;
             } else {
+                $productData['name'] = $name;
+                $productData['sku'] = $sku;
                 $productData['sync_source'] = 'yml';
                 $productData['synced_at'] = now();
-                Product::create($productData);
+                $product = Product::create($productData);
                 $stats['created']++;
+            }
+
+            $stockQty = $this->extractYmlOfferStock($offer);
+            if ($stockQty !== null) {
+                $warehouse = $profile->warehouses()->active()->first();
+                if ($warehouse) {
+                    ProductStock::updateOrCreate(
+                        [
+                            'product_id' => $product->id,
+                            'warehouse_id' => $warehouse->id,
+                        ],
+                        [
+                            'quantity' => $stockQty,
+                            'stock_updated_at' => now(),
+                            'stock_updated_by_user_id' => $profile->user_id,
+                        ]
+                    );
+                }
             }
         }
 
         return $stats;
+    }
+
+    /**
+     * @return resource
+     */
+    private function openCsvImportStream($file)
+    {
+        $content = file_get_contents($file->getPathname());
+
+        if ($content === false) {
+            throw new \Exception('Не удалось прочитать CSV файл');
+        }
+
+        if (str_starts_with($content, "\xEF\xBB\xBF")) {
+            $content = substr($content, 3);
+        } elseif (! mb_check_encoding($content, 'UTF-8')) {
+            $encoding = mb_detect_encoding($content, ['UTF-8', 'Windows-1251', 'CP1251', 'ISO-8859-5'], true);
+            $content = mb_convert_encoding($content, 'UTF-8', $encoding ?: 'Windows-1251');
+        }
+
+        $handle = fopen('php://memory', 'r+');
+        fwrite($handle, $content);
+        rewind($handle);
+
+        return $handle;
+    }
+
+    /**
+     * @param  array<int, string|null>  $header
+     * @return array<string, int>
+     */
+    private function buildCsvHeaderMap(array $header): array
+    {
+        $aliases = [
+            'sku' => ['артикул', 'sku', 'код', 'code', 'vendorcode'],
+            'name' => ['наименование', 'название', 'name', 'title', 'товар'],
+            'category' => ['категория', 'category'],
+            'base_price' => ['цена', 'price', 'base_price', 'базовая цена'],
+            'stock' => ['остаток', 'stock', 'quantity', 'количество'],
+            'description' => ['описание', 'description'],
+        ];
+
+        $headerMap = [];
+
+        foreach ($header as $index => $col) {
+            $normalized = $this->normalizeCsvHeaderColumn((string) $col);
+
+            foreach ($aliases as $field => $keys) {
+                if (isset($headerMap[$field])) {
+                    continue;
+                }
+
+                foreach ($keys as $key) {
+                    if ($normalized === $key || str_starts_with($normalized, $key.' ') || str_contains($normalized, $key)) {
+                        $headerMap[$field] = $index;
+
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return $headerMap;
+    }
+
+    private function normalizeCsvHeaderColumn(string $col): string
+    {
+        $col = mb_strtolower(trim($col));
+        $col = preg_replace('/^\x{FEFF}/u', '', $col) ?? $col;
+
+        if (str_contains($col, '/')) {
+            $col = trim(explode('/', $col, 2)[0]);
+        }
+
+        return trim($col);
+    }
+
+    private function extractYmlOfferName(\SimpleXMLElement $offer): string
+    {
+        foreach (['name', 'model', 'vendorCode'] as $field) {
+            $value = trim((string) ($offer->{$field} ?? ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function extractYmlOfferStock(\SimpleXMLElement $offer): ?int
+    {
+        if (isset($offer->count)) {
+            return (int) $offer->count;
+        }
+
+        if (! isset($offer->outlets->outlet)) {
+            return null;
+        }
+
+        $maxStock = 0;
+
+        foreach ($offer->outlets->outlet as $outlet) {
+            $maxStock = max($maxStock, (int) ($outlet['instock'] ?? 0));
+        }
+
+        return $maxStock;
     }
 
     public function catalog(Request $request, ?ProductCategory $category = null): View

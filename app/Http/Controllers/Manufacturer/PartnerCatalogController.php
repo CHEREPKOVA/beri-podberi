@@ -38,7 +38,7 @@ class PartnerCatalogController extends Controller
 
         $regions = Region::active()->orderBy('name')->get();
         $filterableCategories = $this->catalog->filterableCategories($manufacturer);
-        $defaultCategoryIds = $this->catalog->manufacturerProductCategoryIds($manufacturer)->all();
+        $defaultCategoryIds = $this->catalog->manufacturerCategoryIdsForPartnerFilter($manufacturer);
 
         if ($catalogType === ManufacturerPartnerCatalogService::CATALOG_COMPANIES) {
             $items = $this->catalog->paginateCompanies($filters, $sort, $direction);

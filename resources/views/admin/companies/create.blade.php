@@ -10,6 +10,37 @@
             @csrf
 
             <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Типы компании <span class="text-red-500">*</span></label>
+                @php
+                    $oldTypes = old('company_types', []);
+                    if (! is_array($oldTypes)) {
+                        $oldTypes = [];
+                    }
+                @endphp
+                <div class="space-y-2 rounded-lg border border-gray-300 dark:border-gray-600 p-3">
+                    @foreach(($companyTypes ?? collect()) as $companyType)
+                        <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <input
+                                type="checkbox"
+                                name="company_types[]"
+                                value="{{ $companyType->slug }}"
+                                {{ in_array($companyType->slug, $oldTypes, true) ? 'checked' : '' }}
+                                class="mt-0.5 rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]"
+                            />
+                            <span>{{ $companyType->label() }}</span>
+                        </label>
+                    @endforeach
+                </div>
+                @error('company_types')
+                    <p class="mt-1 text-sm text-red-500">{{ $message }}</p>
+                @enderror
+                @error('company_types.*')
+                    <p class="mt-1 text-sm text-red-500">{{ $message }}</p>
+                @enderror
+                <p class="mt-1 text-xs text-gray-500">Можно выбрать несколько ролей сразу.</p>
+            </div>
+
+            <div>
                 <label for="full_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Полное наименование <span class="text-red-500">*</span></label>
                 <input
                     type="text"
@@ -58,6 +89,7 @@
                 @error('email')
                     <p class="mt-1 text-sm text-red-500">{{ $message }}</p>
                 @enderror
+                <p class="mt-1 text-xs text-gray-500">Если пользователь с этим email уже существует, компания будет привязана к нему.</p>
             </div>
 
             <div>
@@ -72,7 +104,7 @@
                 @error('password')
                     <p class="mt-1 text-sm text-red-500">{{ $message }}</p>
                 @enderror
-                <p class="mt-1 text-xs text-gray-500">Минимум 8 символов.</p>
+                <p class="mt-1 text-xs text-gray-500">Для нового пользователя обязателен (минимум 8 символов). Для существующего email можно оставить пустым.</p>
             </div>
 
             <div>

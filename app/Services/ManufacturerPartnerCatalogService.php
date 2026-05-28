@@ -48,6 +48,46 @@ class ManufacturerPartnerCatalogService
     }
 
     /**
+     * ID категорий производителя с предками (для сопоставления с профилем дистрибьютора).
+     *
+     * @return list<int>
+     */
+    public function manufacturerCategoryIdsForPartnerFilter(ManufacturerProfile $manufacturer): array
+    {
+        return $this->expandCategoryIdsWithAncestors(
+            $this->manufacturerProductCategoryIds($manufacturer)->all()
+        );
+    }
+
+    /**
+     * @param  array<int|string>|Collection<int, int|string>  $ids
+     * @return list<int>
+     */
+    public function expandCategoryIdsWithAncestors(array|Collection $ids): array
+    {
+        $expanded = collect($ids)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($expanded->isEmpty()) {
+            return [];
+        }
+
+        ProductCategory::query()
+            ->whereIn('id', $expanded)
+            ->get()
+            ->each(function (ProductCategory $category) use ($expanded): void {
+                foreach ($category->ancestorIds() as $ancestorId) {
+                    $expanded->push($ancestorId);
+                }
+            });
+
+        return $expanded->unique()->values()->all();
+    }
+
+    /**
      * @return Collection<int, ProductCategory>
      */
     public function filterableCategories(ManufacturerProfile $manufacturer): Collection
@@ -87,11 +127,12 @@ class ManufacturerPartnerCatalogService
             ->unique();
 
         $query = DistributorProfile::query()
+            ->visibleToManufacturer($manufacturer)
+            ->withCompletePartnerProfile()
             ->with([
                 'regions',
                 'productCategories',
                 'user',
-                'primaryContact',
             ])
             ->withCount(['platformOrders as orders_count']);
 
@@ -110,12 +151,19 @@ class ManufacturerPartnerCatalogService
         }
 
         $categoryIds = $filters['category_ids'] ?? null;
-        if ($categoryIds === null && empty($filters['categories_reset'])) {
-            $categoryIds = $this->manufacturerProductCategoryIds($manufacturer)->all();
+        $useDefaultCategoryFilter = $categoryIds === null && empty($filters['categories_reset']);
+
+        if ($useDefaultCategoryFilter) {
+            $categoryIds = $this->manufacturerCategoryIdsForPartnerFilter($manufacturer);
         }
+
         if (! empty($categoryIds)) {
-            $categoryIds = array_map('intval', (array) $categoryIds);
-            $query->whereHas('productCategories', fn (Builder $q) => $q->whereIn('product_categories.id', $categoryIds));
+            $expandedCategoryIds = $this->expandCategoryIdsWithAncestors((array) $categoryIds);
+
+            $query->whereHas(
+                'productCategories',
+                fn (Builder $sub) => $sub->whereIn('product_categories.id', $expandedCategoryIds)
+            );
         }
 
         $allowedSorts = [
@@ -210,7 +258,7 @@ class ManufacturerPartnerCatalogService
     public function paginateCompanies(array $filters = [], string $sort = 'name', string $direction = 'asc'): LengthAwarePaginator
     {
         $query = EndCompanyProfile::query()
-            ->with(['user', 'primaryContact', 'deliveryAddresses.region'])
+            ->with(['user', 'deliveryAddresses.region'])
             ->withCount(['platformOrders as orders_count']);
 
         if (! empty($filters['search'])) {

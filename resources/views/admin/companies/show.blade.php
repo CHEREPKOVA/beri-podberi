@@ -62,8 +62,29 @@
                         @endif
                     </div>
                     <div>
-                        <label class="block text-sm mb-1">Тип</label>
-                        <input type="text" value="{{ config('roles.labels.' . $company->type, $company->type) }}" disabled class="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-sm">
+                        <label class="block text-sm mb-1">Типы компании</label>
+                        <div class="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-sm min-h-[42px] flex flex-wrap items-center gap-1.5">
+                            @forelse($companyRoleSlugs ?? [] as $typeSlug)
+                                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                    {{ config('roles.short_labels.' . $typeSlug, $typeSlug) }}
+                                </span>
+                            @empty
+                                <span class="text-gray-500">—</span>
+                            @endforelse
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Основной тип карточки: {{ config('roles.short_labels.' . $company->type, $company->type) }}</p>
+                        @if(($companyRoleSlugs ?? []) !== [])
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                @foreach($companyRoleSlugs as $typeSlug)
+                                    @if(($companyRoleKeys[$typeSlug] ?? null) && $typeSlug !== $company->type)
+                                        <a href="{{ route('admin.companies.show', $companyRoleKeys[$typeSlug]) }}?tab=company"
+                                           class="inline-flex items-center px-2.5 py-1 rounded-md text-xs bg-white border border-gray-300 text-gray-700 hover:border-[#c3242a] hover:text-[#c3242a] transition-colors">
+                                            Открыть как {{ config('roles.short_labels.' . $typeSlug, $typeSlug) }}
+                                        </a>
+                                    @endif
+                                @endforeach
+                            </div>
+                        @endif
                     </div>
                     <div>
                         <label class="block text-sm mb-1">Статус</label>
@@ -295,7 +316,7 @@
                                 @if($employee->is_active)
                                     <form method="POST" action="{{ route('admin.companies.users.suspend', [$companyKey, $employee]) }}">@csrf<button class="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs">Заблокировать</button></form>
                                 @else
-                                    <form method="POST" action="{{ route('admin.companies.users.activate', [$companyKey, $employee]) }}">@csrf<button class="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 text-xs">Разблокировать</button></form>
+                                    <form method="POST" action="{{ route('admin.companies.users.activate', [$companyKey, $employee]) }}">@csrf<button class="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 text-xs">Разблокировать</button></form>
                                 @endif
                                 <form method="POST" action="{{ route('admin.companies.users.reset-password', [$companyKey, $employee]) }}">@csrf<button class="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs">Сбросить пароль</button></form>
                                 <form method="POST" action="{{ route('admin.companies.users.delete', [$companyKey, $employee]) }}" onsubmit="return confirm('Удалить пользователя из компании?');">@csrf @method('DELETE')<button class="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 text-xs">Удалить</button></form>

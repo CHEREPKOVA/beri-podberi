@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -160,6 +161,44 @@ class DistributorProfile extends Model
         }
 
         return $query->whereHas('regions', fn ($q) => $q->where('regions.id', $regionId));
+    }
+
+    /** Профиль заполнен для показа в каталоге партнёров (регион и тип продукции). */
+    public function scopeWithCompletePartnerProfile(Builder $query): Builder
+    {
+        return $query
+            ->whereHas('regions')
+            ->whereHas('productCategories');
+    }
+
+    /**
+     * Дистрибьюторы, доступные производителю в общем каталоге партнёров.
+     */
+    public function scopeVisibleToManufacturer(Builder $query, ManufacturerProfile $manufacturer): Builder
+    {
+        return $query
+            ->whereHas('user.roles', function (Builder $roleQuery): void {
+                $roleQuery
+                    ->where('roles.slug', Role::SLUG_DISTRIBUTOR)
+                    ->where(function (Builder $statusQuery): void {
+                        $statusQuery
+                            ->whereNull('role_user.company_status')
+                            ->orWhere('role_user.company_status', 'active')
+                            ->orWhere('role_user.company_status', '');
+                    });
+            })
+            ->where('user_id', '!=', $manufacturer->user_id)
+            ->when(filled($manufacturer->inn), function (Builder $q) use ($manufacturer): void {
+                $q->where(function (Builder $innQuery) use ($manufacturer): void {
+                    $innQuery
+                        ->whereNull('inn')
+                        ->orWhere('inn', '')
+                        ->orWhere('inn', '!=', $manufacturer->inn);
+                });
+            })
+            ->whereDoesntHave('user.manufacturerProfile', function (Builder $mfrQuery) use ($manufacturer): void {
+                $mfrQuery->where('manufacturer_profiles.id', $manufacturer->id);
+            });
     }
 
     public function isFieldLocked(string $field): bool

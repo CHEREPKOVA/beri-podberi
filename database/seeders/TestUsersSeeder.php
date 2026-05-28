@@ -72,7 +72,7 @@ class TestUsersSeeder extends Seeder
         $distributorRole = Role::findBySlug(Role::SLUG_DISTRIBUTOR);
         $endCompanyRole = Role::findBySlug(Role::SLUG_END_COMPANY);
         $multiRoleUser->roles()->sync([
-            $distributorRole->id => ['company_name' => 'АккумТрейд'],
+            $distributorRole->id => ['company_name' => 'АккумТрейд Опт'],
             $endCompanyRole->id => ['company_name' => 'СТО-АвтоПлюс'],
         ]);
     }

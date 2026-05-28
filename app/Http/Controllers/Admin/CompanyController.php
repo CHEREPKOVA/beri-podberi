@@ -14,16 +14,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class CompanyController extends Controller
 {
-    private const CORPORATE_TYPES = [
-        Role::SLUG_MANUFACTURER,
-        Role::SLUG_DISTRIBUTOR,
-        Role::SLUG_END_COMPANY,
-    ];
-
     private const COMPANY_STATUSES = ['active', 'pending', 'blocked'];
 
     public function index(Request $request): View
@@ -31,12 +26,14 @@ class CompanyController extends Controller
         $rows = DB::table('role_user')
             ->join('roles', 'roles.id', '=', 'role_user.role_id')
             ->leftJoin('users', 'users.id', '=', 'role_user.user_id')
-            ->whereIn('roles.slug', self::CORPORATE_TYPES)
+            ->whereIn('roles.slug', $this->corporateTypes())
             ->whereNotNull('role_user.company_name')
             ->where('role_user.company_name', '!=', '')
             ->selectRaw('
                 role_user.company_name as name,
                 COALESCE(MAX(role_user.company_type), MAX(roles.slug)) as type,
+                GROUP_CONCAT(DISTINCT roles.slug ORDER BY roles.sort_order SEPARATOR ",") as types_csv,
+                COUNT(DISTINCT roles.slug) as types_count,
                 COALESCE(MAX(role_user.company_status), "active") as status,
                 MAX(role_user.company_region) as region,
                 MAX(role_user.company_legal_name) as legal_name,
@@ -52,8 +49,8 @@ class CompanyController extends Controller
             $rows->havingRaw('name LIKE ?', ["%{$search}%"]);
         }
 
-        if ($request->filled('type') && in_array($request->string('type')->toString(), self::CORPORATE_TYPES, true)) {
-            $rows->having('type', '=', $request->string('type')->toString());
+        if ($request->filled('type') && in_array($request->string('type')->toString(), $this->corporateTypes(), true)) {
+            $rows->where('roles.slug', '=', $request->string('type')->toString());
         }
 
         if ($request->filled('status') && in_array($request->string('status')->toString(), self::COMPANY_STATUSES, true)) {
@@ -70,41 +67,62 @@ class CompanyController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $companyTypes = Role::whereIn('slug', self::CORPORATE_TYPES)->orderBy('sort_order')->get();
+        $companyTypes = Role::whereIn('slug', $this->corporateTypes())->orderBy('sort_order')->get();
 
         return view('admin.companies.index', compact('companies', 'companyTypes'));
     }
 
     public function create(): View
     {
-        return view('admin.companies.create');
+        $companyTypes = Role::whereIn('slug', $this->corporateTypes())
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.companies.create', compact('companyTypes'));
     }
 
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
+            'company_types' => ['required', 'array', 'min:1'],
+            'company_types.*' => ['required', 'string', Rule::in($this->corporateTypes())],
             'full_name' => 'required|string|max:255',
             'inn' => ['required', 'string', 'regex:/^\d{10,12}$/'],
-            'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+            'email' => 'required|string|email|max:255',
+            'password' => 'nullable|string|min:8|confirmed',
         ], [], [
+            'company_types' => 'Типы компании',
+            'company_types.*' => 'Тип компании',
             'full_name' => 'Полное наименование',
             'inn' => 'ИНН',
             'email' => 'Email для входа',
             'password' => 'Пароль',
         ]);
 
-        $companyType = Role::SLUG_MANUFACTURER;
-        $role = Role::findBySlug($companyType);
-        abort_if(! $role, 500, 'Роль производителя не настроена.');
+        $selectedTypes = $this->normalizeSelectedCompanyTypes($validated['company_types']);
+        abort_if($selectedTypes === [], 422, 'Выберите хотя бы один тип компании.');
+        $primaryCompanyType = $selectedTypes[0];
+        $rolesBySlug = Role::query()
+            ->whereIn('slug', $selectedTypes)
+            ->get()
+            ->keyBy('slug');
+        abort_if($rolesBySlug->count() !== count($selectedTypes), 500, 'Одна или несколько ролей компании не настроены.');
 
         $companyName = trim($validated['full_name']);
         $inn = $validated['inn'];
         $email = trim($validated['email']);
+        $existingUser = User::where('email', $email)->first();
+
+        if (! $existingUser && empty($validated['password'])) {
+            return back()
+                ->withInput()
+                ->withErrors(['password' => 'Укажите пароль для нового пользователя.']);
+        }
 
         $exists = DB::table('role_user')
             ->where('company_name', $companyName)
-            ->where('company_type', $companyType)
+            ->whereIn('company_type', $this->corporateTypes())
             ->exists();
         if ($exists) {
             return back()
@@ -112,39 +130,73 @@ class CompanyController extends Controller
                 ->withErrors(['full_name' => 'Компания с таким наименованием уже существует.']);
         }
 
-        $user = User::create([
+        $user = $existingUser ?: User::create([
             'name' => $companyName,
             'email' => $email,
-            'password' => Hash::make($validated['password']),
+            'password' => Hash::make((string) $validated['password']),
             'is_active' => true,
         ]);
 
-        $user->roles()->attach($role->id, [
-            'company_name' => $companyName,
-            'company_type' => $companyType,
-            'company_status' => 'active',
-            'company_legal_name' => $companyName,
-        ]);
+        $attachPayload = [];
+        foreach ($selectedTypes as $companyType) {
+            /** @var Role|null $role */
+            $role = $rolesBySlug->get($companyType);
+            if (! $role) {
+                continue;
+            }
 
-        ManufacturerProfile::updateOrCreate(
-            ['user_id' => $user->id],
-            [
-                'full_name' => $companyName,
-                'inn' => $inn,
-            ]
-        );
+            $alreadyAssigned = DB::table('role_user')
+                ->where('user_id', $user->id)
+                ->where('role_id', $role->id)
+                ->where('company_name', $companyName)
+                ->exists();
+            if ($alreadyAssigned) {
+                continue;
+            }
 
-        $companyKey = $this->encodeCompanyKey($companyType, $companyName);
+            $attachPayload[$role->id] = [
+                'company_name' => $companyName,
+                'company_type' => $companyType,
+                'company_status' => 'active',
+                'company_legal_name' => $companyName,
+            ];
+        }
+
+        if ($attachPayload !== []) {
+            $user->roles()->attach($attachPayload);
+        }
+
+        if (in_array(Role::SLUG_MANUFACTURER, $selectedTypes, true) && (! $existingUser || ! $user->manufacturerProfile()->exists())) {
+            ManufacturerProfile::updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'full_name' => $companyName,
+                    'inn' => $inn,
+                ]
+            );
+        }
+
+        $companyKey = $this->encodeCompanyKey($primaryCompanyType, $companyName);
 
         return redirect()
             ->route('admin.companies.show', $companyKey)
-            ->with('success', 'Компания создана. Доступ для входа в личный кабинет добавлен.');
+            ->with('success', $existingUser
+                ? 'Компания создана и привязана к существующему пользователю.'
+                : 'Компания создана. Доступ для входа в личный кабинет добавлен.');
     }
 
     public function show(Request $request, string $companyKey): View
     {
         [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
         $tab = $request->string('tab', 'company')->toString();
+        $companyRoleSlugs = DB::table('role_user')
+            ->join('roles', 'roles.id', '=', 'role_user.role_id')
+            ->where('role_user.company_name', '=', $companyName)
+            ->whereIn('roles.slug', $this->corporateTypes())
+            ->orderBy('roles.sort_order')
+            ->distinct()
+            ->pluck('roles.slug')
+            ->all();
 
         $company = DB::table('role_user')
             ->join('roles', 'roles.id', '=', 'role_user.role_id')
@@ -192,6 +244,10 @@ class CompanyController extends Controller
             ]);
 
         $roleOptions = Role::whereIn('slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE])->orderBy('sort_order')->get();
+        $companyRoleKeys = [];
+        foreach ($companyRoleSlugs as $roleSlug) {
+            $companyRoleKeys[$roleSlug] = $this->encodeCompanyKey($roleSlug, $companyName);
+        }
         $statusOptions = self::COMPANY_STATUSES;
         $companyKey = $this->encodeCompanyKey($companyType, $companyName);
         $companyProfile = null;
@@ -207,7 +263,7 @@ class CompanyController extends Controller
         $deliveryMethods = DeliveryMethod::active()->orderBy('sort_order')->get();
         $transportCompanies = TransportCompany::active()->orderBy('name')->get();
 
-        return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies'));
+        return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies', 'companyRoleSlugs', 'companyRoleKeys'));
     }
 
     public function updateCompany(Request $request, string $companyKey): RedirectResponse
@@ -407,9 +463,37 @@ class CompanyController extends Controller
         abort_if($decoded === false || ! str_contains($decoded, '|'), 404, 'Некорректный идентификатор компании.');
 
         [$type, $name] = explode('|', $decoded, 2);
-        abort_unless(in_array($type, self::CORPORATE_TYPES, true) && $name !== '', 404, 'Компания не найдена.');
+        abort_unless(in_array($type, $this->corporateTypes(), true) && $name !== '', 404, 'Компания не найдена.');
 
         return [$type, $name];
+    }
+
+    /**
+     * Корпоративные роли, которые можно создавать через раздел компаний.
+     *
+     * @return array<int, string>
+     */
+    private function corporateTypes(): array
+    {
+        return Role::corporateSlugsWithEmployees();
+    }
+
+    /**
+     * @param  array<int, string>  $selectedTypes
+     * @return array<int, string>
+     */
+    private function normalizeSelectedCompanyTypes(array $selectedTypes): array
+    {
+        $selectedLookup = array_fill_keys($selectedTypes, true);
+        $normalized = [];
+
+        foreach ($this->corporateTypes() as $corporateType) {
+            if (isset($selectedLookup[$corporateType])) {
+                $normalized[] = $corporateType;
+            }
+        }
+
+        return $normalized;
     }
 
 }

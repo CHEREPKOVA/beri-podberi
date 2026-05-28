@@ -4,7 +4,7 @@
 @section('heading', $distributor->displayName())
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6" x-data="{ addModalOpen: false }">
     <div>
         <a href="{{ route('manufacturer.partners.index') }}" class="text-sm text-[#c3242a] hover:underline">← К каталогу</a>
     </div>
@@ -88,13 +88,11 @@
                         </form>
                         @endif
                     @else
-                        <form method="POST" action="{{ route('manufacturer.partners.distributors.add', $distributor) }}"
-                            onsubmit="return confirm('Добавить дистрибьютора в мои?')">
-                            @csrf
-                            <button type="submit" class="w-full px-4 py-2 bg-[#c3242a] text-white text-sm rounded-lg hover:bg-[#a01e24]">
+                        <button type="button"
+                            @click="addModalOpen = true"
+                            class="w-full px-4 py-2 bg-[#c3242a] text-white text-sm rounded-lg hover:bg-[#a01e24]">
                                 Добавить к своим
-                            </button>
-                        </form>
+                        </button>
                     @endif
                 @endif
                 @if($permissions->canAssignExclusive(auth()->user()))
@@ -123,13 +121,23 @@
     <div id="exclusive" class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Назначить эксклюзив</h3>
         <p class="text-sm text-gray-500 mb-4">Выберите регионы для эксклюзивного партнёрства</p>
+        @php
+            $assignedExclusiveRegionIds = $exclusiveRegions->pluck('region_id')->map(fn ($id) => (int) $id)->all();
+        @endphp
         <form method="POST" action="{{ route('manufacturer.partners.distributors.exclusive', $distributor) }}" class="space-y-4">
             @csrf
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-lg p-4">
                 @foreach($availableExclusiveRegions as $region)
-                <label class="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" name="region_ids[]" value="{{ $region->id }}" class="rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]">
-                    {{ $region->name }}
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        name="region_ids[]"
+                        value="{{ $region->id }}"
+                        class="sr-only peer"
+                        @checked(in_array((int) $region->id, $assignedExclusiveRegionIds, true))
+                    >
+                    <span class="h-5 w-5 rounded border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 transition-colors peer-checked:bg-[#c3242a] peer-checked:border-[#c3242a] peer-focus:ring-2 peer-focus:ring-[#c3242a]/30 flex items-center justify-center after:content-[''] after:w-2.5 after:h-1.5 after:border-l-2 after:border-b-2 after:border-white after:-rotate-45 after:scale-0 after:transition-transform peer-checked:after:scale-100"></span>
+                    <span>{{ $region->name }}</span>
                 </label>
                 @endforeach
             </div>
@@ -202,5 +210,37 @@
         </ul>
     </div>
     @endif
+
+    <div
+        x-show="addModalOpen"
+        x-cloak
+        x-transition.opacity
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+        @keydown.escape.window="addModalOpen = false"
+    >
+        <div
+            x-show="addModalOpen"
+            x-transition
+            class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700"
+            @click.away="addModalOpen = false"
+        >
+            <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Добавить дистрибьютора в мои?</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $distributor->displayName() }}</p>
+            </div>
+            <form method="POST" action="{{ route('manufacturer.partners.distributors.add', $distributor) }}" class="px-6 py-4 flex items-center justify-end gap-3">
+                @csrf
+                <button type="button"
+                    @click="addModalOpen = false"
+                    class="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Отменить
+                </button>
+                <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-[#c3242a] rounded-lg hover:bg-[#a01e24]">
+                    Добавить
+                </button>
+            </form>
+        </div>
+    </div>
 </div>
 @endsection

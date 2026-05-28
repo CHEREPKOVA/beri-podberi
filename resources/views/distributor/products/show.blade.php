@@ -20,7 +20,7 @@
         <div class="flex flex-wrap gap-2">
             @if($product->status !== \App\Models\DistributorProduct::STATUS_ACTIVE)
             <form method="POST" action="{{ route('distributor.products.publish', $product) }}">@csrf
-                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Опубликовать товар</button>
+                <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">Опубликовать товар</button>
             </form>
             @else
             <form method="POST" action="{{ route('distributor.products.hide', $product) }}">@csrf

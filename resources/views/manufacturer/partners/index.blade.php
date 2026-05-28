@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Каталог партнёров')
-@section('heading', 'Каталог дистрибьюторов и компаний')
+@section('title', 'Дистрибьюторы')
+@section('heading', 'Дистрибьюторы')
 
 @section('content')
 @php
@@ -16,7 +16,7 @@
     }
 @endphp
 
-<div class="space-y-6" x-data="{ addModal: false, exclusiveModal: false, exclusiveDistributorId: null }">
+<div class="space-y-6" x-data="{ addModalOpen: false, addAction: '', addDistributorName: '' }">
     @if(session('success'))
     <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 px-4 py-3 rounded-lg">
         {{ session('success') }}
@@ -59,24 +59,24 @@
 
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Регион</label>
-                <select name="region_ids[]" multiple size="4"
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
-                    @foreach($regions as $region)
-                        <option value="{{ $region->id }}" @selected(in_array($region->id, array_map('intval', $selectedRegionIds)))>{{ $region->name }}</option>
-                    @endforeach
-                </select>
-                <p class="text-xs text-gray-500 mt-1">Ctrl/Cmd для нескольких регионов</p>
+                <x-multi-select-filter
+                    name="region_ids[]"
+                    :options="$regions"
+                    :selected="$selectedRegionIds"
+                    placeholder="Все регионы"
+                    :searchable="true"
+                />
             </div>
 
             @if($isDistributors && $filterableCategories->isNotEmpty())
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Тип продукции</label>
-                <select name="category_ids[]" multiple size="4"
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
-                    @foreach($filterableCategories as $category)
-                        <option value="{{ $category->id }}" @selected(in_array($category->id, array_map('intval', $selectedCategoryIds)))>{{ $category->name }}</option>
-                    @endforeach
-                </select>
+                <x-multi-select-filter
+                    name="category_ids[]"
+                    :options="$filterableCategories"
+                    :selected="$selectedCategoryIds"
+                    placeholder="Все типы"
+                />
             </div>
             @endif
         </div>
@@ -159,21 +159,41 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 text-right">
-                                    <div class="opacity-0 group-hover:opacity-100 transition-opacity inline-flex gap-2 justify-end">
-                                        <a href="{{ route('manufacturer.partners.distributors.show', $item) }}" class="text-sm text-[#c3242a] hover:underline">Просмотреть</a>
+                                    <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <a href="{{ route('manufacturer.partners.distributors.show', $item) }}"
+                                           class="p-1.5 text-gray-400 hover:text-[#c3242a] rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                           title="Просмотреть">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                            </svg>
+                                        </a>
                                         @if($permissions->canAddPartner(auth()->user()))
                                             @if($isPartner)
-                                                <span class="text-sm text-gray-400">Уже в моих</span>
+                                                <span class="p-1.5 text-green-500 rounded-lg cursor-default" title="Уже в моих">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    </svg>
+                                                </span>
                                             @else
-                                                <form method="POST" action="{{ route('manufacturer.partners.distributors.add', $item) }}" class="inline"
-                                                    onsubmit="return confirm('Добавить дистрибьютора в мои?')">
-                                                    @csrf
-                                                    <button type="submit" class="text-sm text-[#c3242a] hover:underline">Добавить к моим</button>
-                                                </form>
+                                                <button type="button"
+                                                    @click="addAction = '{{ route('manufacturer.partners.distributors.add', $item) }}'; addDistributorName = {{ json_encode($item->displayName()) }}; addModalOpen = true"
+                                                    class="p-1.5 text-gray-400 hover:text-[#c3242a] rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                    title="Добавить к моим">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                                                    </svg>
+                                                </button>
                                             @endif
                                         @endif
                                         @if($permissions->canAssignExclusive(auth()->user()) && ! $hasExclusive)
-                                            <a href="{{ route('manufacturer.partners.distributors.show', $item) }}#exclusive" class="text-sm text-amber-600 hover:underline">Эксклюзив</a>
+                                            <a href="{{ route('manufacturer.partners.distributors.show', $item) }}#exclusive"
+                                               class="p-1.5 text-gray-400 hover:text-amber-600 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                               title="Эксклюзив">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                                                </svg>
+                                            </a>
                                         @endif
                                     </div>
                                 </td>
@@ -202,7 +222,11 @@
                     @empty
                         <tr>
                             <td colspan="{{ $isDistributors ? 7 : 6 }}" class="px-4 py-10 text-center text-sm text-gray-500">
-                                {{ $isDistributors ? 'Дистрибьюторы не найдены.' : 'Компании не найдены.' }}
+                                @if($isDistributors)
+                                    Дистрибьюторы не найдены. В каталог попадают только партнёры с указанным регионом и типом продукции.
+                                @else
+                                    Компании не найдены.
+                                @endif
                             </td>
                         </tr>
                     @endforelse
@@ -215,6 +239,38 @@
             {{ $items->links('vendor.pagination.tailwind') }}
         </div>
         @endif
+    </div>
+    <div
+        x-show="addModalOpen"
+        x-cloak
+        x-transition.opacity
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+        @keydown.escape.window="addModalOpen = false"
+    >
+        <div
+            x-show="addModalOpen"
+            x-transition
+            class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700"
+            @click.away="addModalOpen = false"
+        >
+            <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Добавить дистрибьютора в мои?</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400" x-text="addDistributorName"></p>
+            </div>
+
+            <form method="POST" :action="addAction" class="px-6 py-4 flex items-center justify-end gap-3">
+                @csrf
+                <button type="button"
+                    @click="addModalOpen = false"
+                    class="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Отменить
+                </button>
+                <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-[#c3242a] rounded-lg hover:bg-[#a01e24]">
+                    Добавить
+                </button>
+            </form>
+        </div>
     </div>
 </div>
 @endsection

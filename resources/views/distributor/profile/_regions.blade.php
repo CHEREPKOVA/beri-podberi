@@ -70,7 +70,7 @@
             <button
                 type="button"
                 @click="selectedRegions = @js($regions->pluck('id')->toArray())"
-                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-900/30 transition"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition"
             >
                 Выбрать все
             </button>

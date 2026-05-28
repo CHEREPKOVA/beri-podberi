@@ -1,6 +1,11 @@
 @php
     $filterDisplayTypes = $filterDisplayTypes ?? \App\Models\ProductAttribute::filterDisplayLabels();
     $filterValuesSources = $filterValuesSources ?? \App\Models\ProductAttribute::filterValuesSourceLabels();
+    $optionsRawValue = old('options_raw', isset($attribute) && is_array($attribute->options ?? null) ? implode("\n", $attribute->options) : '');
+    $optionsItems = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', (string) $optionsRawValue))));
+    if (empty($optionsItems)) {
+        $optionsItems = [''];
+    }
 @endphp
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div>
@@ -56,8 +61,37 @@
     </div>
 </div>
 <div class="mt-6">
-    <label class="block text-sm mb-2">Опции списка (каждая с новой строки; для типа «Список» и фиксированного набора фильтра)</label>
-    <textarea name="options_raw" rows="4" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">{{ old('options_raw', isset($attribute) && is_array($attribute->options ?? null) ? implode("\n", $attribute->options) : '') }}</textarea>
+    <label class="block text-sm mb-2">Опции списка (для типа «Список» и фиксированного набора фильтра)</label>
+    <div data-options-editor class="space-y-2">
+        <input type="hidden" name="options_raw" value="{{ $optionsRawValue }}" data-options-raw />
+        <div data-options-list class="space-y-2">
+            @foreach($optionsItems as $optionItem)
+                <div class="flex items-center gap-2" data-option-row>
+                    <input
+                        type="text"
+                        value="{{ $optionItem }}"
+                        data-option-input
+                        placeholder="Введите значение"
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                    />
+                    <button
+                        type="button"
+                        data-remove-option
+                        class="px-3 py-2 text-sm text-red-600 border border-red-200 dark:border-red-500/40 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10"
+                    >
+                        Удалить
+                    </button>
+                </div>
+            @endforeach
+        </div>
+        <button
+            type="button"
+            data-add-option
+            class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
+            + Добавить значение
+        </button>
+    </div>
     @include('admin.partials.field-error', ['field' => 'options_raw'])
 </div>
 
@@ -104,3 +138,73 @@
     <label class="inline-flex items-center gap-2"><input type="checkbox" name="is_required" value="1" @checked(old('is_required', $attribute->is_required ?? false)) class="h-4 w-4 rounded border-gray-300 focus:ring-[#c3242a]" style="accent-color: #c3242a;" /> Обязательно к заполнению</label>
     <label class="inline-flex items-center gap-2"><input type="checkbox" name="is_active" value="1" @checked(old('is_active', $attribute->is_active ?? true)) class="h-4 w-4 rounded border-gray-300 focus:ring-[#c3242a]" style="accent-color: #c3242a;" /> Активно</label>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-options-editor]').forEach(function (editor) {
+            var list = editor.querySelector('[data-options-list]');
+            var rawInput = editor.querySelector('[data-options-raw]');
+            var addButton = editor.querySelector('[data-add-option]');
+            var form = editor.closest('form');
+
+            if (!list || !rawInput || !addButton || !form) {
+                return;
+            }
+
+            var buildRow = function (value) {
+                var row = document.createElement('div');
+                row.className = 'flex items-center gap-2';
+                row.setAttribute('data-option-row', '');
+
+                row.innerHTML = '' +
+                    '<input type="text" data-option-input placeholder="Введите значение" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />' +
+                    '<button type="button" data-remove-option class="px-3 py-2 text-sm text-red-600 border border-red-200 dark:border-red-500/40 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10">Удалить</button>';
+
+                row.querySelector('[data-option-input]').value = value || '';
+
+                return row;
+            };
+
+            var syncRawInput = function () {
+                var values = Array.from(list.querySelectorAll('[data-option-input]'))
+                    .map(function (input) { return input.value.trim(); })
+                    .filter(function (value) { return value.length > 0; });
+
+                rawInput.value = values.join("\n");
+            };
+
+            var ensureAtLeastOneRow = function () {
+                if (!list.querySelector('[data-option-row]')) {
+                    list.appendChild(buildRow(''));
+                }
+            };
+
+            addButton.addEventListener('click', function () {
+                list.appendChild(buildRow(''));
+            });
+
+            list.addEventListener('click', function (event) {
+                var removeButton = event.target.closest('[data-remove-option]');
+                if (!removeButton) {
+                    return;
+                }
+
+                var row = removeButton.closest('[data-option-row]');
+                if (row) {
+                    row.remove();
+                    ensureAtLeastOneRow();
+                    syncRawInput();
+                }
+            });
+
+            list.addEventListener('input', function (event) {
+                if (event.target.matches('[data-option-input]')) {
+                    syncRawInput();
+                }
+            });
+
+            form.addEventListener('submit', syncRawInput);
+            syncRawInput();
+        });
+    });
+</script>

@@ -73,6 +73,7 @@
                 @forelse($companies as $company)
                     @php
                         $companyKey = rtrim(strtr(base64_encode($company->type . '|' . $company->name), '+/', '-_'), '=');
+                        $types = array_filter(explode(',', (string) ($company->types_csv ?? '')));
                     @endphp
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <td class="px-4 py-3">
@@ -83,7 +84,21 @@
                                 <div class="text-xs text-gray-500">{{ $company->legal_name }}</div>
                             @endif
                         </td>
-                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{{ config('roles.short_labels.' . $company->type, $company->type) }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                            <div class="flex flex-wrap gap-1">
+                                @if($types !== [])
+                                    @foreach($types as $typeSlug)
+                                        <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                            {{ config('roles.short_labels.' . $typeSlug, $typeSlug) }}
+                                        </span>
+                                    @endforeach
+                                @else
+                                    <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                        {{ config('roles.short_labels.' . $company->type, $company->type) }}
+                                    </span>
+                                @endif
+                            </div>
+                        </td>
                         <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{{ $company->region ?: '—' }}</td>
                         <td class="px-4 py-3">
                             @if($company->status === 'active')

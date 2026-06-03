@@ -15,11 +15,31 @@
             <div>
                 <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ $product->name }}</h1>
                 <p class="text-sm text-gray-500 mt-1">Артикул: {{ $product->sku }}</p>
-                <p class="text-sm text-gray-600 mt-2">Поставщик: {{ $product->manufacturerProfile?->short_name ?: $product->manufacturerProfile?->full_name }}</p>
+                <p class="text-sm text-gray-600 mt-2">Производитель: {{ $product->manufacturerProfile?->short_name ?: $product->manufacturerProfile?->full_name }}</p>
+                @if(($distributors ?? collect())->isNotEmpty())
+                    <p class="text-sm text-gray-600 mt-1">
+                        Дистрибьюторы в вашем регионе:
+                        {{ $distributors->map(fn ($d) => $d->displayName())->implode(', ') }}
+                    </p>
+                @endif
             </div>
             <p class="text-xl font-semibold text-[#c3242a]">{{ $product->base_price ? number_format((float) $product->base_price, 2, ',', ' ') . ' ₽' : '—' }}</p>
         </div>
     </section>
+
+    @if(($categoryAttributes ?? collect())->isNotEmpty())
+    <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Характеристики</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            @foreach($categoryAttributes as $value)
+                <div>
+                    <span class="text-gray-500 dark:text-gray-400">{{ $value->attribute->name }}</span>
+                    <p class="text-gray-900 dark:text-white font-medium">{{ $value->value }}</p>
+                </div>
+            @endforeach
+        </div>
+    </section>
+    @endif
 
     <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
         <h2 class="text-lg font-semibold mb-4">Остатки по складам</h2>

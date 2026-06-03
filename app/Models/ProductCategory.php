@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 /** @use HasFactory<ProductCategoryFactory> */
 class ProductCategory extends Model
@@ -57,6 +58,17 @@ class ProductCategory extends Model
         return $this->hasMany(ProductAttribute::class, 'product_category_id');
     }
 
+    /** Свойства, явно привязанные к категории (в т.ч. через несколько категорий). */
+    public function catalogAttributes(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ProductAttribute::class,
+            'product_attribute_category',
+            'product_category_id',
+            'product_attribute_id'
+        )->withTimestamps();
+    }
+
     /** Доступ в пользовательском каталоге ограничен этими ролями (если restrict_catalog_by_roles = true). */
     public function catalogRoles(): BelongsToMany
     {
@@ -102,10 +114,14 @@ class ProductCategory extends Model
 
         return ProductAttribute::query()
             ->where('is_active', true)
+            ->whereNull('product_id')
             ->where(function ($q) use ($ancestorIds) {
-                $q->whereNull('product_category_id');
+                $q->where(function ($global) {
+                    $global->whereDoesntHave('categories')->whereNull('product_category_id');
+                });
                 foreach ($ancestorIds as $aid) {
-                    $q->orWhere('product_category_id', $aid);
+                    $q->orWhereHas('categories', fn ($cq) => $cq->where('product_categories.id', $aid))
+                        ->orWhere('product_category_id', $aid);
                 }
             })
             ->pluck('id')
@@ -160,8 +176,81 @@ class ProductCategory extends Model
             && $this->catalogRoles()->where('roles.id', $catalogRole->id)->exists();
     }
 
+    /** Slug предков (для раскрытия ветки в дереве каталога). */
+    public function ancestorSlugs(): array
+    {
+        $slugs = [];
+        $parent = $this->parent;
+        while ($parent) {
+            $slugs[] = $parent->slug;
+            $parent = $parent->parent;
+        }
+
+        return $slugs;
+    }
+
+    /** Подгружает цепочку parent для ancestorSlugs(). */
+    public function loadAncestors(): self
+    {
+        if ($this->parent_id) {
+            $this->loadMissing('parent');
+            $this->parent?->loadAncestors();
+        }
+
+        return $this;
+    }
+
+    /**
+     * Начальное раскрытие узлов дерева каталога: все родители или путь к выбранной категории.
+     *
+     * @return array<string, true>
+     */
+    public static function initialOpenSlugsForCatalogTree(Collection $roots, ?self $selected): array
+    {
+        $open = [];
+        if ($selected) {
+            foreach ($selected->ancestorSlugs() as $slug) {
+                $open[$slug] = true;
+            }
+            $nodeInTree = self::findInCatalogTree($roots, $selected->slug);
+            if ($nodeInTree && $nodeInTree->children->isNotEmpty()) {
+                $open[$selected->slug] = true;
+            }
+        } else {
+            self::collectOpenSlugsForAllParents($roots, $open);
+        }
+
+        return $open;
+    }
+
+    public static function findInCatalogTree(Collection $nodes, string $slug): ?self
+    {
+        foreach ($nodes as $node) {
+            if ($node->slug === $slug) {
+                return $node;
+            }
+            $found = self::findInCatalogTree($node->children, $slug);
+            if ($found) {
+                return $found;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param  array<string, true>  $open */
+    protected static function collectOpenSlugsForAllParents(Collection $nodes, array &$open): void
+    {
+        foreach ($nodes as $node) {
+            if ($node->children->isNotEmpty()) {
+                $open[$node->slug] = true;
+                self::collectOpenSlugsForAllParents($node->children, $open);
+            }
+        }
+    }
+
     /** Дерево категорий (корни с вложенными children). Фильтр по роли и признакам пользовательского каталога (ТЗ). */
-    public static function getTree(bool $hideEmpty = false, ?int $manufacturerProfileId = null, ?Role $catalogRole = null): \Illuminate\Support\Collection
+    public static function getTree(bool $hideEmpty = false, ?int $manufacturerProfileId = null, ?Role $catalogRole = null): Collection
     {
         $query = self::active()
             ->where('shown_in_customer_catalog', true)
@@ -194,27 +283,42 @@ class ProductCategory extends Model
                 }
             }
         }
-        if ($hideEmpty && $manufacturerProfileId !== null) {
-            $roots = self::filterTreeByProducts($roots, $manufacturerProfileId);
+        if ($hideEmpty) {
+            if ($manufacturerProfileId !== null) {
+                $roots = self::filterTreeByProductVisibility(
+                    $roots,
+                    fn (array $categoryIds): bool => Product::forManufacturer($manufacturerProfileId)
+                        ->visibleInCatalog()
+                        ->inAnyCategoryIds($categoryIds)
+                        ->exists()
+                );
+            }
         }
 
         return $roots;
     }
 
-    /** Оставляет только ветки, в которых есть товары производителя (в категории или подкатегориях). */
-    protected static function filterTreeByProducts(\Illuminate\Support\Collection $nodes, int $manufacturerProfileId): \Illuminate\Support\Collection
-    {
-        return $nodes->map(function ($node) use ($manufacturerProfileId) {
-            $childIds = $node->descendant_ids;
-            $hasProducts = Product::forManufacturer($manufacturerProfileId)
-                ->whereNotNull('category_id')
-                ->whereIn('category_id', $childIds)
-                ->exists();
-            if (! $hasProducts) {
+    /**
+     * Оставляет ветки с товарами по произвольному предикату (регион, партнёрство и т.д.).
+     *
+     * @param  callable(array<int, int>): bool  $hasProductsInCategories
+     */
+    public static function filterTreeByProductVisibility(
+        Collection $nodes,
+        callable $hasProductsInCategories,
+    ): Collection {
+        return $nodes->map(function ($node) use ($hasProductsInCategories) {
+            $children = self::filterTreeByProductVisibility($node->children, $hasProductsInCategories)
+                ->sortBy('sort_order')
+                ->values();
+
+            $hasProducts = $hasProductsInCategories($node->descendant_ids);
+
+            if (! $hasProducts && $children->isEmpty()) {
                 return null;
             }
-            $filteredChildren = self::filterTreeByProducts($node->children, $manufacturerProfileId);
-            $node->setRelation('children', $filteredChildren->filter());
+
+            $node->setRelation('children', $children);
 
             return $node;
         })->filter();
@@ -231,5 +335,79 @@ class ProductCategory extends Model
         }
 
         return implode(' / ', $path);
+    }
+
+    /** Дерево категорий, в которые можно назначать товары (для форм и фильтров). */
+    public static function assignableTree(): Collection
+    {
+        $categories = self::active()
+            ->assignableForProducts()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        return self::buildTree($categories);
+    }
+
+    /** Дерево всех активных категорий (формы админки). */
+    public static function adminTree(): Collection
+    {
+        return self::buildTree(
+            self::active()->orderBy('sort_order')->orderBy('name')->get()
+        );
+    }
+
+    /**
+     * Плоский список для селекта с отступами по уровню вложенности.
+     *
+     * @return list<array{value: int, label: string}>
+     */
+    public static function selectOptionsFromTree(Collection $roots, int $depth = 0): array
+    {
+        $options = [];
+        foreach ($roots as $node) {
+            $indent = $depth > 0 ? str_repeat(' ', $depth).'↳ ' : '';
+            $options[] = [
+                'value' => $node->id,
+                'label' => $indent.$node->name,
+            ];
+            if ($node->children->isNotEmpty()) {
+                $options = array_merge($options, self::selectOptionsFromTree($node->children, $depth + 1));
+            }
+        }
+
+        return $options;
+    }
+
+    /** @param  Collection<int, self>  $categories */
+    public static function buildTree(Collection $categories): Collection
+    {
+        $keyed = $categories->keyBy('id');
+        foreach ($categories as $category) {
+            $category->setRelation('children', collect());
+        }
+
+        $roots = collect();
+        foreach ($categories as $category) {
+            if ($category->parent_id === null || ! $keyed->has($category->parent_id)) {
+                $roots->push($category);
+            } else {
+                $keyed->get($category->parent_id)->children->push($category);
+            }
+        }
+
+        return self::sortTreeNodes($roots);
+    }
+
+    /** @param  Collection<int, self>  $nodes */
+    protected static function sortTreeNodes(Collection $nodes): Collection
+    {
+        return $nodes->sortBy('sort_order')->values()->map(function (self $node) {
+            if ($node->children->isNotEmpty()) {
+                $node->setRelation('children', self::sortTreeNodes($node->children));
+            }
+
+            return $node;
+        });
     }
 }

@@ -235,10 +235,11 @@ class ProfileController extends Controller
     {
         $profile = $request->user()->manufacturerProfile;
         $warehouses = $profile->warehouses()->with('region')->get();
+        $exportFilename = 'Список складов '.now()->format('d.m.Y').'.csv';
 
         $headers = [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="warehouses.csv"',
+            'Content-Disposition' => 'attachment; filename="'.$exportFilename.'"; filename*=UTF-8\'\''.rawurlencode($exportFilename),
         ];
 
         $callback = function () use ($warehouses) {

@@ -63,7 +63,27 @@ class ProductAttributeFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'product_category_id' => $category?->id,
-        ]);
+        ])->afterCreating(function (ProductAttribute $attribute) use ($category): void {
+            if ($category) {
+                $attribute->syncCatalogCategories([$category->id]);
+            }
+        });
+    }
+
+    /**
+     * @param  list<int>|list<ProductCategory>  $categories
+     */
+    public function forCategories(array $categories): static
+    {
+        $ids = collect($categories)->map(function ($item): int {
+            return $item instanceof ProductCategory ? (int) $item->id : (int) $item;
+        })->filter()->values()->all();
+
+        return $this->state(fn (array $attributes) => [
+            'product_category_id' => $ids[0] ?? null,
+        ])->afterCreating(function (ProductAttribute $attribute) use ($ids): void {
+            $attribute->syncCatalogCategories($ids);
+        });
     }
 
     public function inactive(): static

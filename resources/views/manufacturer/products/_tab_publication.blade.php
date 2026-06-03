@@ -1,6 +1,6 @@
 <div class="space-y-8">
     <div>
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Статус публикации</h3>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Статус товара</h3>
 
         @if($product && !$product->canBePublished())
         <div class="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg mb-4">
@@ -9,8 +9,8 @@
                     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
                 </svg>
                 <div>
-                    <p class="font-medium">Невозможно опубликовать товар</p>
-                    <p class="text-sm mt-1">Заполните обязательные поля для публикации:</p>
+                    <p class="font-medium">Невозможно опубликовать товар: заполните обязательные поля.</p>
+                    <p class="text-sm mt-1">Не заполнено:</p>
                     <ul class="text-sm mt-2 list-disc list-inside">
                         @if(empty($product->name))<li>Наименование товара</li>@endif
                         @if(empty($product->base_price))<li>Базовая цена</li>@endif
@@ -34,7 +34,7 @@
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-900">Активен</p>
-                        <p class="text-xs text-gray-500">Виден в каталоге</p>
+                        <p class="text-xs text-gray-500">Виден дистрибьюторам и клиентам.</p>
                     </div>
                 </div>
             </label>
@@ -50,7 +50,7 @@
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-900">Скрыт</p>
-                        <p class="text-xs text-gray-500">Не виден в каталоге</p>
+                        <p class="text-xs text-gray-500">Не отображается в каталоге, но доступен для редактирования.</p>
                     </div>
                 </div>
             </label>
@@ -66,7 +66,7 @@
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-900">Черновик</p>
-                        <p class="text-xs text-gray-500">В процессе заполнения</p>
+                        <p class="text-xs text-gray-500">Не отображается в каталоге. Доступен для редактирования до публикации.</p>
                     </div>
                 </div>
             </label>
@@ -81,7 +81,7 @@
             <input type="datetime-local" name="published_at"
                 value="{{ old('published_at', $product?->published_at?->format('Y-m-d\TH:i')) }}"
                 class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent" />
-            <p class="mt-1 text-xs text-gray-500">Оставьте пустым для немедленной публикации</p>
+            <p class="mt-1 text-xs text-gray-500">Укажите дату и время, если публикация запланирована на будущее. Оставьте пустым для немедленной публикации.</p>
         </div>
 
         <div x-data="{ checked: {{ old('show_in_catalog', $product?->show_in_catalog) ? 'true' : 'false' }} }" class="flex items-center">
@@ -99,8 +99,8 @@
                     </div>
                 </div>
                 <div>
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Показывать в общем каталоге</span>
-                    <p class="text-xs text-gray-500">Товар будет виден всем покупателям</p>
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Отображение в общем каталоге</span>
+                    <p class="text-xs text-gray-500">Товар будет отображаться в общем каталоге платформы</p>
                 </div>
             </label>
         </div>

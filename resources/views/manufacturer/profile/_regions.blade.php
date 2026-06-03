@@ -2,7 +2,36 @@
     selectedRegions: @js($profile->regions->pluck('id')->toArray()),
     primaryRegion: {{ $profile->regions->where('pivot.is_primary', true)->first()?->id ?? 'null' }},
     search: '',
-    selectedDistrict: ''
+    selectedDistrict: '',
+    scrollInList(el) {
+        if (!el || !this.$refs.regionsList) return;
+        const container = this.$refs.regionsList;
+        const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+        container.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
+    },
+    scrollToRegion(regionId) {
+        this.$nextTick(() => {
+            const el = document.getElementById('region-' + regionId);
+            if (el) this.scrollInList(el);
+        });
+    },
+    scrollToDistrict(district, clearFilter = false) {
+        if (clearFilter) this.selectedDistrict = '';
+        const scroll = () => {
+            const blocks = this.$refs.regionsList?.querySelectorAll('[data-district]') ?? [];
+            const el = [...blocks].find(b => b.dataset.district === district);
+            if (el) this.scrollInList(el);
+        };
+        this.$nextTick(() => {
+            if (clearFilter) this.$nextTick(scroll);
+            else scroll();
+        });
+    },
+    init() {
+        this.$watch('selectedDistrict', (val) => {
+            if (val) this.scrollToDistrict(val);
+        });
+    }
 }">
     <div class="flex items-center justify-between mb-6">
         <div>
@@ -60,9 +89,13 @@
                         selectedRegions = selectedRegions.filter(id => !ids.includes(id));
                     } else {
                         selectedRegions = [...new Set([...selectedRegions, ...ids])];
+                        scrollToDistrict(@js($district), true);
                     }
                 "
-                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 transition text-gray-700 dark:text-gray-300"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border transition"
+                :class="@js($districtRegionIds).every(id => selectedRegions.includes(id))
+                    ? 'border-[#c3242a] bg-red-50 text-[#c3242a] dark:border-[#c3242a] dark:bg-red-900/20 dark:text-red-400'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700'"
             >
                 {{ $district }}
             </button>
@@ -91,21 +124,22 @@
         </div>
 
         {{-- Список регионов --}}
-        <div class="max-h-[500px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-white dark:bg-gray-800/30">
+        <div x-ref="regionsList" class="max-h-[500px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-white dark:bg-gray-800/30">
             @foreach($regions->groupBy('federal_district') as $district => $districtRegions)
             <template x-if="selectedDistrict === '' || selectedDistrict === '{{ $district }}'">
-                <div class="mb-6 last:mb-0">
+                <div class="mb-6 last:mb-0" data-district="{{ $district }}">
                     <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 sticky top-0 bg-white dark:bg-gray-800/30 py-2">{{ $district }} федеральный округ</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         @foreach($districtRegions as $region)
                         <template x-if="search === '' || '{{ mb_strtolower($region->name) }}'.includes(search.toLowerCase())">
-                            <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition has-[:checked]:border-[#c3242a] has-[:checked]:bg-red-50 dark:has-[:checked]:bg-red-900/20">
+                            <label id="region-{{ $region->id }}" class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition has-[:checked]:border-[#c3242a] has-[:checked]:bg-red-50 dark:has-[:checked]:bg-red-900/20">
                                 <input
                                     type="checkbox"
                                     name="regions[]"
                                     value="{{ $region->id }}"
                                     x-model="selectedRegions"
                                     :value="{{ $region->id }}"
+                                    @change="if ($event.target.checked) scrollToRegion({{ $region->id }})"
                                     class="h-4 w-4 rounded border-gray-300 accent-[#c3242a] text-[#c3242a] focus:ring-[#c3242a]"
                                 >
                                 <span class="flex-1 text-sm text-gray-700 dark:text-gray-300">{{ $region->name }}</span>

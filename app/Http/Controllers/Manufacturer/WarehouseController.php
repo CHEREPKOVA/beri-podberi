@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Manufacturer;
 
 use App\Http\Controllers\Controller;
+use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\Region;
 use Illuminate\Http\RedirectResponse;
@@ -14,7 +15,7 @@ class WarehouseController extends Controller
     public function index(Request $request): View
     {
         $profile = $request->user()->getOrCreateManufacturerProfile();
-        $profile->load(['warehouses.region']);
+        $profile->load(['warehouses.region', 'contacts']);
 
         $regions = Region::active()->orderBy('name')->get();
         $warehouseIds = $profile->warehouses->pluck('id')->all();
@@ -76,7 +77,7 @@ class WarehouseController extends Controller
 
         if ((int) $validated['quantity'] === 0) {
             $stock->product?->update([
-                'status' => \App\Models\Product::STATUS_HIDDEN,
+                'status' => Product::STATUS_HIDDEN,
                 'show_in_catalog' => false,
             ]);
         }

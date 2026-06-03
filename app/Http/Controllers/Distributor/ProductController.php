@@ -7,7 +7,6 @@ use App\Models\DistributorProduct;
 use App\Models\DistributorProductDocument;
 use App\Models\DistributorProductPriceHistory;
 use App\Models\DistributorProductStock;
-use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Services\DistributorProductLogger;
 use Illuminate\Http\RedirectResponse;
@@ -63,12 +62,27 @@ class ProductController extends Controller
         }
 
         $sortField = $request->get('sort', 'updated_at');
-        $allowedSorts = ['name', 'internal_sku', 'retail_price', 'purchase_price', 'updated_at'];
+        $allowedSorts = [
+            'name', 'internal_sku', 'manufacturer_sku', 'brand', 'retail_price',
+            'purchase_price', 'updated_at', 'status', 'category', 'stock', 'sync_source',
+        ];
         if (! in_array($sortField, $allowedSorts, true)) {
             $sortField = 'updated_at';
         }
         $sortDir = $request->get('dir', 'desc') === 'asc' ? 'asc' : 'desc';
-        $query->orderBy($sortField, $sortDir);
+
+        match ($sortField) {
+            'category' => $query->orderBy(
+                ProductCategory::select('name')
+                    ->whereColumn('product_categories.id', 'distributor_products.product_category_id')
+                    ->limit(1),
+                $sortDir
+            ),
+            'stock' => $query->orderByRaw(
+                '(SELECT COALESCE(SUM(quantity - reserved), 0) FROM distributor_product_stocks WHERE distributor_product_id = distributor_products.id) '.$sortDir
+            ),
+            default => $query->orderBy($sortField, $sortDir),
+        };
 
         $products = $query->paginate(25)->withQueryString();
 

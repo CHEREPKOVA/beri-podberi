@@ -4,6 +4,24 @@
 @section('heading', 'Номенклатура')
 
 @section('content')
+@php
+    $sort = request('sort', 'updated_at');
+    $dir = request('dir', 'desc') === 'asc' ? 'asc' : 'desc';
+    $sortUrl = function (string $column) use ($sort, $dir) {
+        $nextDir = ($sort === $column && $dir === 'asc') ? 'desc' : 'asc';
+
+        return request()->fullUrlWithQuery(['sort' => $column, 'dir' => $nextDir]);
+    };
+    $sortIcon = function (string $column) use ($sort, $dir) {
+        if ($sort !== $column) {
+            return '<span class="text-gray-300 dark:text-gray-600 ml-0.5" aria-hidden="true">↕</span>';
+        }
+
+        return $dir === 'asc'
+            ? '<span class="text-[#c3242a] ml-0.5" aria-hidden="true">↑</span>'
+            : '<span class="text-[#c3242a] ml-0.5" aria-hidden="true">↓</span>';
+    };
+@endphp
 <div x-data="{
     selectedProducts: [],
     selectAll: false,
@@ -33,6 +51,29 @@
     </div>
     @endif
 
+    @if(isset($trashedMatches) && $trashedMatches->isNotEmpty())
+    <div class="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg">
+        <p class="font-medium mb-2">В активной номенклатуре ничего не найдено, но есть удалённые товары:</p>
+        <ul class="space-y-2 text-sm">
+            @foreach($trashedMatches as $trashed)
+            <li class="flex flex-wrap items-center gap-3">
+                <span>
+                    <span class="font-mono">{{ $trashed->sku }}</span>
+                    — {{ $trashed->name }}
+                    <span class="text-amber-700">(удалён {{ $trashed->deleted_at?->format('d.m.Y H:i') }})</span>
+                </span>
+                <form action="{{ route('manufacturer.products.restore', $trashed->id) }}" method="POST" class="inline">
+                    @csrf
+                    <button type="submit" class="px-3 py-1 bg-[#c3242a] text-white rounded-lg hover:bg-[#a01e24] text-xs font-medium">
+                        Восстановить
+                    </button>
+                </form>
+            </li>
+            @endforeach
+        </ul>
+    </div>
+    @endif
+
     @if(session('warning'))
     <div class="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg">
         {{ session('warning') }}
@@ -50,6 +91,12 @@
         <div class="p-6 border-b border-gray-200 dark:border-gray-700">
             <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <form method="GET" class="flex flex-wrap items-center gap-3">
+                    @if(request('sort'))
+                    <input type="hidden" name="sort" value="{{ request('sort') }}" />
+                    @endif
+                    @if(request('dir'))
+                    <input type="hidden" name="dir" value="{{ request('dir') }}" />
+                    @endif
                     <div class="relative">
                         <input type="text" name="search" value="{{ request('search') }}"
                             placeholder="Поиск по артикулу или названию..."
@@ -59,18 +106,18 @@
                         </svg>
                     </div>
 
-                    <div class="relative">
-                        <select name="category" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                            <option value="">Все категории</option>
-                            @foreach($categories as $category)
-                            <option value="{{ $category->id }}" {{ request('category') == $category->id ? 'selected' : '' }}>
-                                {{ $category->name }}
-                            </option>
-                            @endforeach
-                        </select>
-                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                        </svg>
+                    <div class="min-w-[11rem] max-w-[14rem]">
+                        @include('manufacturer.products._category_tree_select', [
+                            'name' => 'category',
+                            'tree' => $categoryTree,
+                            'categories' => $categories,
+                            'selectedId' => request()->filled('category') ? (int) request('category') : null,
+                            'placeholder' => 'Все категории',
+                            'inputId' => 'products-index-category-filter',
+                            'allowClear' => true,
+                            'clearLabel' => 'Все категории',
+                            'buttonClass' => 'w-full flex items-center justify-between gap-2 pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-left text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer',
+                        ])
                     </div>
 
                     <div class="relative">
@@ -97,7 +144,8 @@
                     </div>
 
                     <div x-data="{ checked: {{ request('needs_update') ? 'true' : 'false' }} }">
-                        <label class="flex cursor-pointer items-center text-sm font-medium text-gray-700 dark:text-gray-400 select-none">
+                        <label class="flex cursor-pointer items-center text-sm font-medium text-gray-700 dark:text-gray-400 select-none"
+                            title="Нет доступного остатка или цена не обновлялась более {{ $productPriceStaleDays ?? 30 }} дн. (срок задаётся в системных настройках)">
                             <div class="relative">
                                 <input type="checkbox" name="needs_update" value="1" class="sr-only" x-model="checked">
                                 <div :class="checked ? 'border-[#c3242a] bg-[#c3242a]' : 'bg-transparent border-gray-300 dark:border-gray-600'"
@@ -113,10 +161,10 @@
                         </label>
                     </div>
 
-                    <button type="submit" class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium">
+                    <button type="submit" class="px-4 py-2 bg-white dark:bg-gray-800 border border-[#c3242a] text-[#c3242a] dark:text-red-400 dark:border-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm font-medium transition-colors">
                         Применить
                     </button>
-                    @if(request()->hasAny(['search', 'category', 'status', 'has_stock', 'needs_update']))
+                    @if(request()->hasAny(['search', 'category', 'status', 'has_stock', 'needs_update', 'sort', 'dir']))
                     <a href="{{ route('manufacturer.products.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Сбросить</a>
                     @endif
                 </form>
@@ -149,9 +197,9 @@
             </div>
         </div>
 
-        <div x-show="selectedProducts.length > 0" x-cloak class="p-4 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-gray-700">
-            <div class="flex items-center justify-between">
-                <span class="text-sm text-blue-700 dark:text-blue-300">
+        <div x-show="selectedProducts.length > 0" x-cloak class="p-4 bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-900/40 border-l-4 border-l-[#c3242a]">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <span class="text-sm font-medium text-[#c3242a] dark:text-red-400">
                     Выбрано товаров: <strong x-text="selectedProducts.length"></strong>
                 </span>
                 <div class="flex items-center gap-2">
@@ -183,34 +231,49 @@
                 <thead class="bg-gray-50 dark:bg-gray-700">
                     <tr>
                         <th class="w-12 px-4 py-3">
-                            <input type="checkbox" x-model="selectAll" @change="toggleAll()"
-                                class="rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]" />
+                            <label class="inline-flex cursor-pointer select-none" title="Выбрать все на странице">
+                                <input type="checkbox" x-model="selectAll" @change="toggleAll()" class="sr-only peer" />
+                                <span class="flex h-5 w-5 items-center justify-center rounded-md border-[1.25px] border-gray-300 bg-white transition-colors hover:border-[#c3242a] peer-checked:border-[#c3242a] peer-checked:bg-[#c3242a] peer-checked:[&>svg]:opacity-100 dark:border-gray-600 dark:bg-gray-800 dark:hover:border-[#c3242a] dark:peer-checked:border-[#c3242a] dark:peer-checked:bg-[#c3242a]">
+                                    <svg class="h-3.5 w-3.5 text-white opacity-0 transition-opacity" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                        <path d="M11.6666 3.5L5.24992 9.91667L2.33325 7" stroke="currentColor" stroke-width="1.94437" stroke-linecap="round" stroke-linejoin="round" />
+                                    </svg>
+                                </span>
+                            </label>
                         </th>
                         <th class="w-16 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Фото</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            <a href="{{ request()->fullUrlWithQuery(['sort' => 'sku', 'dir' => request('sort') === 'sku' && request('dir') === 'asc' ? 'desc' : 'asc']) }}" class="hover:text-gray-700">
-                                Артикул
-                                @if(request('sort') === 'sku')
-                                <span class="ml-1">{{ request('dir') === 'asc' ? '↑' : '↓' }}</span>
-                                @endif
+                            <a href="{{ $sortUrl('sku') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Артикул {!! $sortIcon('sku') !!}
                             </a>
                         </th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            <a href="{{ request()->fullUrlWithQuery(['sort' => 'name', 'dir' => request('sort') === 'name' && request('dir') === 'asc' ? 'desc' : 'asc']) }}" class="hover:text-gray-700">
-                                Наименование
+                            <a href="{{ $sortUrl('name') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Наименование {!! $sortIcon('name') !!}
                             </a>
                         </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Категория</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            <a href="{{ request()->fullUrlWithQuery(['sort' => 'base_price', 'dir' => request('sort') === 'base_price' && request('dir') === 'asc' ? 'desc' : 'asc']) }}" class="hover:text-gray-700">
-                                Цена
+                            <a href="{{ $sortUrl('category') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Категория {!! $sortIcon('category') !!}
                             </a>
                         </th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Остаток</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Статус</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            <a href="{{ request()->fullUrlWithQuery(['sort' => 'updated_at', 'dir' => request('sort') === 'updated_at' && request('dir') === 'asc' ? 'desc' : 'asc']) }}" class="hover:text-gray-700">
-                                Обновлён
+                            <a href="{{ $sortUrl('base_price') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Цена {!! $sortIcon('base_price') !!}
+                            </a>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <a href="{{ $sortUrl('stock') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Остаток {!! $sortIcon('stock') !!}
+                            </a>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <a href="{{ $sortUrl('status') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Статус {!! $sortIcon('status') !!}
+                            </a>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <a href="{{ $sortUrl('updated_at') }}" class="inline-flex items-center hover:text-gray-700 dark:hover:text-gray-200">
+                                Обновлён {!! $sortIcon('updated_at') !!}
                             </a>
                         </th>
                         <th class="w-24 px-4 py-3"></th>
@@ -220,8 +283,14 @@
                     @forelse($products as $product)
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 group" data-product-id="{{ $product->id }}">
                         <td class="px-4 py-3">
-                            <input type="checkbox" value="{{ $product->id }}" x-model="selectedProducts"
-                                class="rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]" />
+                            <label class="inline-flex cursor-pointer select-none">
+                                <input type="checkbox" value="{{ $product->id }}" x-model="selectedProducts" class="sr-only peer" />
+                                <span class="flex h-5 w-5 items-center justify-center rounded-md border-[1.25px] border-gray-300 bg-white transition-colors hover:border-[#c3242a] peer-checked:border-[#c3242a] peer-checked:bg-[#c3242a] peer-checked:[&>svg]:opacity-100 dark:border-gray-600 dark:bg-gray-800 dark:hover:border-[#c3242a] dark:peer-checked:border-[#c3242a] dark:peer-checked:bg-[#c3242a]">
+                                    <svg class="h-3.5 w-3.5 text-white opacity-0 transition-opacity" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                        <path d="M11.6666 3.5L5.24992 9.91667L2.33325 7" stroke="currentColor" stroke-width="1.94437" stroke-linecap="round" stroke-linejoin="round" />
+                                    </svg>
+                                </span>
+                            </label>
                         </td>
                         <td class="px-4 py-3">
                             @if($product->primaryImage())
@@ -291,9 +360,9 @@
                                     </svg>
                                 </a>
                                 <button type="button"
-                                    @click="deleteFormAction = '{{ route('manufacturer.products.destroy', $product) }}'; deleteMessage = {{ json_encode('Удалить товар «' . $product->name . '»? Это действие нельзя отменить.') }}; showDeleteModal = true"
+                                    @click="deleteFormAction = '{{ route('manufacturer.products.destroy', $product) }}'; deleteMessage = {{ json_encode('Удалить товар «' . $product->name . '» (артикул ' . $product->sku . ')? Товар скроется из списка; восстановить можно через поиск по артикулу.') }}; showDeleteModal = true"
                                     class="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"
-                                    title="Удалить">
+                                    title="Удалить из номенклатуры">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
@@ -345,16 +414,15 @@
                 <template x-if="bulkAction === 'change_category'">
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Новая категория</label>
-                        <div class="relative">
-                            <select name="category_id" class="w-full appearance-none pl-3 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm cursor-pointer">
-                                @foreach($categories as $category)
-                                <option value="{{ $category->id }}">{{ $category->name }}</option>
-                                @endforeach
-                            </select>
-                            <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </div>
+                        @include('manufacturer.products._category_tree_select', [
+                            'name' => 'category_id',
+                            'tree' => $categoryTree,
+                            'categories' => $categories,
+                            'selectedId' => null,
+                            'placeholder' => 'Выберите категорию',
+                            'inputId' => 'products-bulk-category-picker',
+                            'dropdownClass' => 'absolute z-[60] left-0 mt-1 min-w-full w-max max-w-[min(calc(100vw-2rem),36rem)] max-h-60 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1',
+                        ])
                     </div>
                 </template>
 

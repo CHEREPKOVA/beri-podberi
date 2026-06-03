@@ -21,7 +21,7 @@
                 <thead class="bg-gray-50 dark:bg-gray-700">
                     <tr>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Свойство</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Категория</th>
+                        <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Категории</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Тип</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Параметры</th>
                         <th class="w-24 px-4 py-3"></th>
@@ -36,7 +36,15 @@
                             </a>
                             <span class="text-gray-500">({{ $attribute->slug }})</span>
                         </td>
-                        <td class="px-4 py-3 text-sm text-gray-500">{{ $attribute->productCategory?->name ?? 'Глобальное' }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">
+                            @php
+                                $categoryNames = $attribute->categories->pluck('name');
+                                if ($categoryNames->isEmpty() && $attribute->productCategory) {
+                                    $categoryNames = collect([$attribute->productCategory->name]);
+                                }
+                            @endphp
+                            {{ $categoryNames->isNotEmpty() ? $categoryNames->implode(', ') : 'Глобальное' }}
+                        </td>
                         <td class="px-4 py-3 text-sm text-gray-500">{{ \App\Models\ProductAttribute::typeLabels()[$attribute->type] ?? $attribute->type }}</td>
                         <td class="px-4 py-3 text-sm text-gray-500">
                             {{ $attribute->is_required ? 'Обязательное' : 'Необязательное' }},

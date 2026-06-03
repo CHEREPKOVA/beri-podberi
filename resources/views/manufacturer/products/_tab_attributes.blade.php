@@ -1,4 +1,24 @@
 <div class="space-y-6">
+    <div
+        x-show="categoryPendingSave"
+        x-cloak
+        class="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+    >
+        <svg class="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <div>
+            <p class="font-medium">Список характеристик устарел</p>
+            <p class="mt-1 text-amber-800/90 dark:text-amber-200/90">
+                Вы изменили основную категорию, но ещё не сохранили товар. Ниже показаны поля для прежней категории.
+                Нажмите «Сохранить» внизу страницы, затем вернитесь сюда — набор полей перестроится под новую категорию.
+            </p>
+            <button type="button" @click="activeTab = 'basic'" class="mt-2 font-medium text-[#c3242a] hover:underline">
+                Перейти к категории
+            </button>
+        </div>
+    </div>
+
     <div>
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Характеристики товара</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">
@@ -46,21 +66,15 @@
                         @break
 
                     @case('select')
-                        <div class="relative">
-                            <select name="attributes[{{ $attribute->id }}]"
-                                {{ $attribute->is_required ? 'required' : '' }}
-                                class="w-full appearance-none pl-4 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                                <option value="">Выберите...</option>
-                                @foreach($attribute->options ?? [] as $option)
-                                <option value="{{ $option }}" {{ old('attributes.' . $attribute->id, $existingValue?->value) === $option ? 'selected' : '' }}>
-                                    {{ $option }}
-                                </option>
-                                @endforeach
-                            </select>
-                            <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </div>
+                        @include('manufacturer.products._flat_select', [
+                            'name' => 'attributes[' . $attribute->id . ']',
+                            'options' => collect($attribute->options ?? [])->mapWithKeys(fn ($option) => [$option => $option])->all(),
+                            'selected' => old('attributes.' . $attribute->id, $existingValue?->value),
+                            'placeholder' => 'Выберите...',
+                            'inputId' => 'product-attribute-' . $attribute->id,
+                            'required' => $attribute->is_required,
+                            'allowClear' => ! $attribute->is_required,
+                        ])
                         @break
 
                     @case('range')
@@ -118,7 +132,17 @@
         @endif
     </div>
 
-    <div x-data="{ customAttributes: {{ json_encode($product?->attributeValues->filter(fn($av) => !$attributes->contains('id', $av->product_attribute_id))->map(fn($av) => ['key' => $av->attribute?->name ?? '', 'value' => $av->value])->values()->toArray() ?? []) }} }">
+    @php
+        $savedCustomAttributes = $product
+            ? $product->attributeValues
+                ->filter(fn ($av) => $av->attribute && (int) $av->attribute->product_id === (int) $product->id)
+                ->map(fn ($av) => ['key' => $av->attribute->name, 'value' => $av->value])
+                ->values()
+                ->all()
+            : [];
+    @endphp
+    <div x-data="{ customAttributes: {{ json_encode($savedCustomAttributes, JSON_UNESCAPED_UNICODE) }} }">
+        <input type="hidden" name="_custom_attributes_present" value="1" />
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white">Дополнительные характеристики</h3>
             <button type="button" @click="customAttributes.push({key: '', value: ''})"

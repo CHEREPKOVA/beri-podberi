@@ -125,8 +125,11 @@
 
                 {{-- Раздел для Производителя --}}
                 @if($currentRole?->slug === 'manufacturer')
-                <div class="pt-4">
-
+                @php
+                    $manufacturerCatalogActive = str_starts_with($currentRoute ?? '', 'manufacturer.catalog');
+                    $manufacturerPartnersActive = str_starts_with($currentRoute ?? '', 'manufacturer.partners');
+                @endphp
+                <div class="pt-4 space-y-1">
                     <a href="{{ route('manufacturer.profile') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'manufacturer.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -145,10 +148,17 @@
                         <span x-show="sidebarOpen" x-transition>Склады</span>
                     </a>
 
-                    @php
-                        $manufacturerCatalogActive = str_starts_with($currentRoute ?? '', 'manufacturer.catalog');
-                        $manufacturerPartnersActive = str_starts_with($currentRoute ?? '', 'manufacturer.partners');
-                    @endphp
+                    <a href="{{ route('manufacturer.products.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.products') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Номенклатура</span>
+                    </a>
+                </div>
+
+                <div class="pt-4 mt-2 border-t border-gray-200 dark:border-gray-700 space-y-1">
                     <a href="{{ route('manufacturer.catalog.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ $manufacturerCatalogActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -166,16 +176,6 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Дистрибьюторы</span>
                     </a>
-
-                    <a href="{{ route('manufacturer.products.index') }}"
-                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.products') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
-                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                        </svg>
-                        <span x-show="sidebarOpen" x-transition>Номенклатура</span>
-                    </a>
-
                 </div>
                 @endif
 
@@ -278,7 +278,7 @@
                         @endphp
                         <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-600 p-3 transition hover:bg-gray-50 dark:hover:bg-gray-700/50 has-[:checked]:border-[#c3242a] has-[:checked]:ring-2 has-[:checked]:ring-[#c3242a]/20">
                             <input type="radio" name="role_id" value="{{ $role->id }}" required
-                                class="h-4 w-4 shrink-0 border-gray-300 text-[#c3242a] focus:ring-[#c3242a]" />
+                                class="h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]" />
                             <span class="text-sm font-medium text-gray-900 dark:text-white">{{ $optionLabel }}</span>
                         </label>
                     @endforeach
@@ -310,7 +310,7 @@
                         @endphp
                         <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-600 p-3 transition hover:bg-gray-50 dark:hover:bg-gray-700/50 has-[:checked]:border-[#c3242a] has-[:checked]:ring-2 has-[:checked]:ring-[#c3242a]/20">
                             <input type="radio" name="role_id" value="{{ $role->id }}" @checked($currentRole?->id === $role->id) required
-                                class="h-4 w-4 shrink-0 border-gray-300 text-[#c3242a] focus:ring-[#c3242a]" />
+                                class="h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]" />
                             <span class="text-sm font-medium text-gray-900 dark:text-white">{{ $optionLabel }}</span>
                         </label>
                     @endforeach

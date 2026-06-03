@@ -26,6 +26,7 @@
                         'company' => 'Информация о компании',
                         'contacts' => 'Контактные данные',
                         'regions' => 'Регионы присутствия',
+                        'product_categories' => 'Типы продукции',
                         'delivery' => 'Доставка и логистика',
                         'integration' => 'Интеграция (CSV / YML / 1С)',
                         'documents' => 'Документы',
@@ -59,6 +60,11 @@
             {{-- Таб: Регионы присутствия --}}
             <div x-show="activeTab === 'regions'" x-cloak>
                 @include('distributor.profile._regions', ['profile' => $profile, 'regions' => $regions, 'federalDistricts' => $federalDistricts])
+            </div>
+
+            {{-- Таб: Типы продукции --}}
+            <div x-show="activeTab === 'product_categories'" x-cloak>
+                @include('distributor.profile._product_categories', ['profile' => $profile, 'productCategoryRoots' => $productCategoryRoots])
             </div>
 
             {{-- Таб: Доставка и логистика --}}

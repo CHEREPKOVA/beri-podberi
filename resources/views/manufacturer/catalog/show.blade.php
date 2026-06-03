@@ -7,7 +7,7 @@
 @php
     $primaryImage = $product->primaryImage();
     $images = $product->images;
-    $attributes = $product->attributeValues->filter(fn ($item) => $item->attribute);
+    $attributes = $categoryAttributes ?? $product->attributeValuesVisibleInCategory();
     $stocks = $product->stocks->sortByDesc('stock_updated_at');
     $documents = $product->documents;
     $analogs = $product->analogs;
@@ -199,8 +199,8 @@
         <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Логистические параметры</h2>
             <div class="space-y-2 text-sm">
-                <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Вес:</span> Не задан</p>
-                <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Габариты:</span> Не заданы</p>
+                <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Вес:</span> {{ $product->attributeValueBySlug('ves-kg') ?: 'Не задан' }}</p>
+                <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Габариты:</span> {{ $product->attributeValueBySlug('gabarity-dshv-mm') ?: 'Не заданы' }}</p>
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Объём/кубатура:</span> Не задан</p>
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Паллетные нормы:</span> Не заданы</p>
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Требования к упаковке:</span> {{ $product->storage_conditions ?: 'Не заданы' }}</p>

@@ -19,58 +19,62 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Основная категория</label>
-            <div class="relative">
-                <select name="category_id"
-                    class="w-full appearance-none pl-4 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                    <option value="">Выберите категорию</option>
-                    @foreach($categories as $category)
-                    <option value="{{ $category->id }}" {{ old('category_id', $product?->category_id) == $category->id ? 'selected' : '' }}>
-                        {{ $category->full_path }}
-                    </option>
-                    @endforeach
-                </select>
-                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Основная категория <span class="text-red-500">*</span>
+            </label>
+            @include('manufacturer.products._category_tree_select', [
+                'name' => 'category_id',
+                'tree' => $categoryTree,
+                'categories' => $categories,
+                'selectedId' => $product?->category_id,
+                'placeholder' => 'Выберите категорию',
+                'inputId' => 'product-main-category',
+                'notifyCategoryChange' => true,
+            ])
+            <div
+                x-show="categoryPendingSave"
+                x-cloak
+                class="mt-2 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+            >
+                <svg class="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
+                <p>
+                    Категория изменена. Нажмите «Сохранить» — после этого на вкладке
+                    <button type="button" @click="activeTab = 'attributes'" class="font-medium text-[#c3242a] hover:underline">«Характеристики»</button>
+                    обновится набор полей под новую категорию.
+                </p>
             </div>
         </div>
 
         <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Единица измерения</label>
-            <div class="relative">
-                <select name="unit_type_id"
-                    class="w-full appearance-none pl-4 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                    <option value="">Выберите единицу</option>
-                    @foreach($unitTypes as $unit)
-                    <option value="{{ $unit->id }}" {{ old('unit_type_id', $product?->unit_type_id) == $unit->id ? 'selected' : '' }}>
-                        {{ $unit->name }} ({{ $unit->short_name }})
-                    </option>
-                    @endforeach
-                </select>
-                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                </svg>
-            </div>
+            @include('manufacturer.products._flat_select', [
+                'name' => 'unit_type_id',
+                'options' => $unitTypes->mapWithKeys(fn ($unit) => [
+                    $unit->id => $unit->name . ' (' . $unit->short_name . ')',
+                ])->all(),
+                'selected' => $product?->unit_type_id,
+                'placeholder' => 'Выберите единицу',
+                'inputId' => 'product-unit-type',
+                'allowClear' => true,
+                'clearLabel' => 'Не выбрано',
+            ])
         </div>
     </div>
 
     <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Дополнительные категории</label>
         <p class="text-xs text-gray-500 mb-2">Для аналогов и вспомогательной фильтрации. Основная категория не дублируется.</p>
-        <div class="relative">
-            <select name="additional_category_ids[]" multiple
-                class="w-full min-h-[100px] pl-4 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
-                @foreach($categories as $category)
-                <option value="{{ $category->id }}" {{ in_array($category->id, old('additional_category_ids', $product?->additionalCategories->pluck('id')->toArray() ?? [])) ? 'selected' : '' }}>
-                    {{ $category->full_path }}
-                </option>
-                @endforeach
-            </select>
-            <svg class="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-        </div>
+        @include('manufacturer.products._category_tree_select', [
+            'name' => 'additional_category_ids',
+            'tree' => $categoryTree,
+            'categories' => $categories,
+            'selectedIds' => $product?->additionalCategories->pluck('id')->toArray() ?? [],
+            'multiple' => true,
+            'placeholder' => 'Выберите дополнительные категории',
+            'inputId' => 'product-additional-categories',
+        ])
     </div>
 
     <div>
@@ -101,7 +105,7 @@
         </div>
     </div>
 
-    <div x-data="{ images: {{ json_encode($product?->images->map(fn($img) => ['id' => $img->id, 'url' => $img->url, 'is_primary' => $img->is_primary])->toArray() ?? []) }}, showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }">
+    <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Фотографии товара <span class="text-xs text-gray-500">(до 5 изображений)</span>
         </label>
@@ -113,17 +117,15 @@
                 <img src="{{ $image->url }}" alt="" class="w-full h-32 object-cover rounded-lg border-2 {{ $image->is_primary ? 'border-[#c3242a]' : 'border-gray-200' }}" />
                 <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
                     @if(!$image->is_primary)
-                    <form action="{{ route('manufacturer.products.image.primary', $image) }}" method="POST" class="inline">
-                        @csrf
-                        <button type="submit" class="p-1.5 bg-white rounded-full text-gray-700 hover:text-[#c3242a]" title="Сделать основным">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                            </svg>
-                        </button>
-                    </form>
+                    <button type="submit" form="set-primary-image-{{ $image->id }}"
+                        class="p-1.5 bg-white rounded-full text-gray-700 hover:text-[#c3242a]" title="Сделать основным">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                    </button>
                     @endif
                     <button type="button"
-                        @click="deleteFormAction = '{{ route('manufacturer.products.image.delete', $image) }}'; deleteMessage = 'Удалить это изображение?'; showDeleteModal = true"
+                        @click="$dispatch('open-aux-delete', { action: '{{ route('manufacturer.products.image.delete', $image) }}', message: 'Удалить это изображение?' })"
                         class="p-1.5 bg-white rounded-full text-gray-700 hover:text-red-600"
                         title="Удалить">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -155,19 +157,17 @@
                 <p class="text-xs text-gray-500">PNG, JPG, JPEG до 5 МБ</p>
             </label>
         </div>
-
-        {{-- Модальное окно подтверждения удаления изображения --}}
-        <div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showDeleteModal = false">
-            <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6" @click.stop>
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Удаление изображения</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-6" x-text="deleteMessage"></p>
-                <form :action="deleteFormAction" method="POST" class="flex justify-end gap-3">
-                    @csrf
-                    @method('DELETE')
-                    <button type="button" @click="showDeleteModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Отмена</button>
-                    <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Удалить</button>
-                </form>
-            </div>
-        </div>
     </div>
 </div>
+
+@if($product)
+@push('product-external-forms')
+    @foreach($product->images as $image)
+        @if(!$image->is_primary)
+        <form id="set-primary-image-{{ $image->id }}" action="{{ route('manufacturer.products.image.primary', $image) }}" method="POST" class="hidden">
+            @csrf
+        </form>
+        @endif
+    @endforeach
+@endpush
+@endif

@@ -22,7 +22,7 @@
                                 @endphp
                                 <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-white p-4 transition hover:border-[#c3242a]/40 hover:bg-gray-50/50 has-[:checked]:border-[#c3242a] has-[:checked]:ring-2 has-[:checked]:ring-[#c3242a]/20">
                                     <input type="radio" name="role_id" value="{{ $role->id }}" {{ old('role_id') == $role->id ? 'checked' : '' }}
-                                        class="mt-1 h-4 w-4 border-gray-300 text-[#c3242a] focus:ring-[#c3242a]" />
+                                        class="mt-1 h-4 w-4 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]" />
                                     <span class="text-sm font-medium text-gray-900">{{ $optionLabel }}</span>
                                 </label>
                             @endforeach

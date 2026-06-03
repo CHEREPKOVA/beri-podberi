@@ -15,7 +15,7 @@ class ProductAttributeController extends Controller
 {
     public function index(Request $request): View
     {
-        $query = ProductAttribute::query()->with('productCategory');
+        $query = ProductAttribute::query()->with(['productCategory', 'categories']);
 
         if ($request->filled('search')) {
             $s = (string) $request->search;
@@ -32,18 +32,17 @@ class ProductAttributeController extends Controller
 
     public function create(): View
     {
-        return view('admin.catalog.attributes.create', [
-            'categories' => ProductCategory::query()->active()->orderBy('name')->get(),
-            'types' => ProductAttribute::typeLabels(),
-            'filterDisplayTypes' => ProductAttribute::filterDisplayLabels(),
-            'filterValuesSources' => ProductAttribute::filterValuesSourceLabels(),
-        ]);
+        return view('admin.catalog.attributes.create', array_merge(
+            $this->attributeFormContext(),
+            ['attribute' => null],
+        ));
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $validated = $this->validateData($request);
-        ProductAttribute::query()->create($validated);
+        [$validated, $categoryIds] = $this->validateData($request);
+        $attribute = ProductAttribute::query()->create($validated);
+        $attribute->syncCatalogCategories($categoryIds);
 
         return redirect()->route('admin.catalog.attributes.index')->with('success', 'Свойство добавлено.');
     }
@@ -61,20 +60,36 @@ class ProductAttributeController extends Controller
             ->limit(100)
             ->get();
 
-        return view('admin.catalog.attributes.edit', [
-            'attribute' => $attribute,
-            'categories' => ProductCategory::query()->active()->orderBy('name')->get(),
+        $attribute->load('categories');
+
+        return view('admin.catalog.attributes.edit', array_merge(
+            $this->attributeFormContext(),
+            [
+                'attribute' => $attribute,
+                'valueStats' => $valueStats,
+            ],
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function attributeFormContext(): array
+    {
+        return [
+            'categoryTree' => ProductCategory::adminTree(),
+            'categories' => ProductCategory::active()->orderBy('sort_order')->orderBy('name')->get(),
             'types' => ProductAttribute::typeLabels(),
             'filterDisplayTypes' => ProductAttribute::filterDisplayLabels(),
             'filterValuesSources' => ProductAttribute::filterValuesSourceLabels(),
-            'valueStats' => $valueStats,
-        ]);
+        ];
     }
 
     public function update(Request $request, ProductAttribute $attribute): RedirectResponse
     {
-        $validated = $this->validateData($request, $attribute);
+        [$validated, $categoryIds] = $this->validateData($request, $attribute);
         $attribute->update($validated);
+        $attribute->syncCatalogCategories($categoryIds);
 
         return redirect()->route('admin.catalog.attributes.index')->with('success', 'Свойство обновлено.');
     }
@@ -91,17 +106,21 @@ class ProductAttributeController extends Controller
         return redirect()->route('admin.catalog.attributes.index')->with('success', 'Свойство удалено.');
     }
 
+    /**
+     * @return array{0: array<string, mixed>, 1: list<int>}
+     */
     private function validateData(Request $request, ?ProductAttribute $attribute = null): array
     {
         $validated = $request->validate([
-            'product_category_id' => ['nullable', 'exists:product_categories,id'],
+            'product_category_ids' => ['nullable', 'array'],
+            'product_category_ids.*' => ['integer', 'exists:product_categories,id'],
             'name' => ['required', 'string', 'max:255'],
             'slug' => [
                 'nullable',
                 'string',
                 'max:255',
                 Rule::unique('product_attributes', 'slug')
-                    ->where(fn ($q) => $q->where('product_category_id', $request->input('product_category_id')))
+                    ->where(fn ($q) => $q->whereNull('product_id'))
                     ->ignore($attribute?->id),
             ],
             'type' => ['required', Rule::in(array_keys(ProductAttribute::typeLabels()))],
@@ -122,24 +141,31 @@ class ProductAttributeController extends Controller
             $options = array_values(array_filter(array_map('trim', $items)));
         }
 
+        $categoryIds = array_values(array_unique(array_map(
+            'intval',
+            $validated['product_category_ids'] ?? []
+        )));
+
         return [
-            'product_category_id' => $validated['product_category_id'] ?? null,
-            'name' => $validated['name'],
-            'slug' => Str::slug($validated['slug'] ?: $validated['name']),
-            'type' => $validated['type'],
-            'options' => $options,
-            'is_filterable' => $request->boolean('is_filterable'),
-            'is_required' => $request->boolean('is_required'),
-            'sort_order' => $validated['sort_order'] ?? 0,
-            'filter_sort_order' => isset($validated['filter_sort_order']) && $validated['filter_sort_order'] !== ''
-                ? (int) $validated['filter_sort_order']
-                : null,
-            'filter_display_type' => filled($validated['filter_display_type'] ?? null)
-                ? $validated['filter_display_type']
-                : null,
-            'filter_values_source' => $validated['filter_values_source'],
-            'filter_allow_multiple' => $request->boolean('filter_allow_multiple'),
-            'is_active' => $request->boolean('is_active'),
+            [
+                'name' => $validated['name'],
+                'slug' => Str::slug($validated['slug'] ?: $validated['name']),
+                'type' => $validated['type'],
+                'options' => $options,
+                'is_filterable' => $request->boolean('is_filterable'),
+                'is_required' => $request->boolean('is_required'),
+                'sort_order' => $validated['sort_order'] ?? 0,
+                'filter_sort_order' => isset($validated['filter_sort_order']) && $validated['filter_sort_order'] !== ''
+                    ? (int) $validated['filter_sort_order']
+                    : null,
+                'filter_display_type' => filled($validated['filter_display_type'] ?? null)
+                    ? $validated['filter_display_type']
+                    : null,
+                'filter_values_source' => $validated['filter_values_source'],
+                'filter_allow_multiple' => $request->boolean('filter_allow_multiple'),
+                'is_active' => $request->boolean('is_active'),
+            ],
+            $categoryIds,
         ];
     }
 }

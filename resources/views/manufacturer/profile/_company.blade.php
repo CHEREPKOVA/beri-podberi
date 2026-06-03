@@ -28,7 +28,7 @@
                         Полное название организации
                     </label>
                     <p class="text-gray-900 dark:text-white py-2">{{ $profile->full_name }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Изменить может только администратор в карточке компании.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Можно изменить только по запросу.</p>
                 </div>
 
                 {{-- Сокращенное название --}}
@@ -70,7 +70,7 @@
                         ИНН
                     </label>
                     <p class="text-gray-900 dark:text-white py-2">{{ $profile->inn ?: '—' }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Изменить может только администратор в карточке компании.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Можно изменить только по запросу.</p>
                 </div>
 
                 {{-- КПП --}}

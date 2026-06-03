@@ -72,12 +72,9 @@ class CatalogProductController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'category_id' => [
-                'nullable',
+                'required',
                 'exists:product_categories,id',
                 function (string $attribute, mixed $value, \Closure $fail): void {
-                    if ($value === null || $value === '') {
-                        return;
-                    }
                     $cat = ProductCategory::query()->find((int) $value);
                     if ($cat && ! $cat->accepts_products) {
                         $fail('Категория только для подкатегорий: выберите категорию, куда допускается привязка товаров.');
@@ -93,7 +90,7 @@ class CatalogProductController extends Controller
 
         $product->update([
             'name' => $validated['name'],
-            'category_id' => $validated['category_id'] ?? null,
+            'category_id' => $validated['category_id'],
             'description' => $validated['description'] ?? null,
             'status' => $validated['status'],
             'show_in_catalog' => $request->boolean('show_in_catalog'),

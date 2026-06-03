@@ -8,8 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /** @use HasFactory<ProductFactory> */
@@ -102,6 +103,12 @@ class Product extends Model
     {
         return $this->belongsToMany(ProductCategory::class, 'product_category_product', 'product_id', 'product_category_id')
             ->withTimestamps();
+    }
+
+    /** Позиции дистрибьюторов, привязанные к товару производителя. */
+    public function distributorProducts(): HasMany
+    {
+        return $this->hasMany(DistributorProduct::class, 'source_product_id');
     }
 
     /** Прямо назначенные аналоги товара */
@@ -200,17 +207,54 @@ class Product extends Model
         return $this->available_stock > 0;
     }
 
+    /** Порог (дней) для фильтра «Требуют обновления» — из системных настроек. */
+    public static function priceStaleDays(): int
+    {
+        $days = SystemSetting::getActiveParsed('timings.product_price_stale_days', 30);
+
+        return max(1, (int) $days);
+    }
+
+    public static function priceStaleThreshold(): Carbon
+    {
+        return now()->subDays(self::priceStaleDays());
+    }
+
+    public function hasStalePrice(): bool
+    {
+        if ($this->price_updated_at === null) {
+            return true;
+        }
+
+        return $this->price_updated_at->lt(self::priceStaleThreshold());
+    }
+
     public function needsUpdate(): bool
     {
-        if ($this->available_stock <= 0) {
+        if (! $this->hasStock()) {
             return true;
         }
 
-        if ($this->price_updated_at && $this->price_updated_at->diffInDays(now()) > 30) {
-            return true;
-        }
+        return $this->hasStalePrice();
+    }
 
-        return false;
+    /** Есть доступный остаток: сумма max(quantity − reserved, 0) по складам > 0. */
+    public function scopeWithAvailableStock($query)
+    {
+        return $query->whereRaw(
+            '(SELECT COALESCE(SUM(GREATEST(product_stocks.quantity - product_stocks.reserved, 0)), 0)
+              FROM product_stocks
+              WHERE product_stocks.product_id = products.id) > 0'
+        );
+    }
+
+    public function scopeWithoutAvailableStock($query)
+    {
+        return $query->whereRaw(
+            '(SELECT COALESCE(SUM(GREATEST(product_stocks.quantity - product_stocks.reserved, 0)), 0)
+              FROM product_stocks
+              WHERE product_stocks.product_id = products.id) <= 0'
+        );
     }
 
     public function isSynced(): bool
@@ -237,12 +281,29 @@ class Product extends Model
             ->where('show_in_catalog', true);
     }
 
+    /** Опубликован в каталоге и привязан к основной категории. */
+    public function scopeVisibleInCatalog($query)
+    {
+        return $query->published()->whereNotNull('category_id');
+    }
+
+    public function isVisibleInCatalog(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE
+            && $this->show_in_catalog
+            && $this->category_id !== null;
+    }
+
     public function scopeNeedsUpdate($query)
     {
-        return $query->where(function ($q) {
-            $q->whereDoesntHave('stocks', function ($sq) {
-                $sq->where('quantity', '>', 0);
-            })->orWhere('price_updated_at', '<', now()->subDays(30));
+        $threshold = self::priceStaleThreshold();
+
+        return $query->where(function ($q) use ($threshold) {
+            $q->withoutAvailableStock()
+                ->orWhere(function ($priceQuery) use ($threshold) {
+                    $priceQuery->whereNull('price_updated_at')
+                        ->orWhere('price_updated_at', '<', $threshold);
+                });
         });
     }
 
@@ -381,7 +442,27 @@ class Product extends Model
         });
     }
 
-    /** Товары в данной категории или в любой из её подкатегорий */
+    /**
+     * Товар в одной из категорий ветки: основная или дополнительная (ТЗ).
+     *
+     * @param  list<int>  $categoryIds
+     */
+    public function scopeInAnyCategoryIds($query, array $categoryIds)
+    {
+        if ($categoryIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(function ($q) use ($categoryIds) {
+            $q->whereIn('category_id', $categoryIds)
+                ->orWhereHas(
+                    'additionalCategories',
+                    fn ($aq) => $aq->whereIn('product_categories.id', $categoryIds)
+                );
+        });
+    }
+
+    /** Товары в данной категории или в любой из её подкатегорий (основная или доп.). */
     public function scopeInCategory($query, $categoryId)
     {
         if (! $categoryId) {
@@ -391,22 +472,91 @@ class Product extends Model
         if (! $category) {
             return $query;
         }
-        $ids = $category->descendant_ids;
 
-        return $query->whereIn('category_id', $ids);
+        return $query->inAnyCategoryIds($category->descendant_ids);
+    }
+
+    /**
+     * Конечная компания: товар доступен через активного дистрибьютора в регионе (ТЗ).
+     */
+    public function scopeVisibleViaDistributorsInRegion($query, ?int $regionId)
+    {
+        if ($regionId === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereHas('distributorProducts', function ($dq) use ($regionId) {
+            $dq->where('status', DistributorProduct::STATUS_ACTIVE)
+                ->whereColumn('distributor_products.manufacturer_profile_id', 'products.manufacturer_profile_id')
+                ->whereHas('profile', fn ($profile) => $profile->inRegion($regionId))
+                ->whereHas('profile.manufacturerPartnerships', function ($partnership) {
+                    $partnership->where('status', ManufacturerDistributorPartnership::STATUS_ACTIVE)
+                        ->whereColumn(
+                            'manufacturer_distributor_partnerships.manufacturer_profile_id',
+                            'products.manufacturer_profile_id'
+                        );
+                });
+        });
+    }
+
+    /** Значение характеристики товара по slug (для логистики и карточки). */
+    public function attributeValueBySlug(string $slug): ?string
+    {
+        $this->loadMissing('attributeValues.attribute');
+
+        foreach ($this->attributeValues as $value) {
+            if ($value->attribute && $value->attribute->slug === $slug && $value->value !== null && $value->value !== '') {
+                return (string) $value->value;
+            }
+        }
+
+        return null;
     }
 
     public function scopeSearch($query, ?string $search)
     {
-        if (empty($search)) {
+        $search = trim((string) $search);
+        if ($search === '') {
             return $query;
         }
 
-        return $query->where(function ($q) use ($search) {
-            $q->where('name', 'like', "%{$search}%")
-                ->orWhere('sku', 'like', "%{$search}%")
-                ->orWhere('manufacturer_sku', 'like', "%{$search}%");
+        $compact = preg_replace('/\s+/u', '', $search);
+
+        return $query->where(function ($q) use ($search, $compact) {
+            $q->where('name', 'like', "%{$search}%");
+
+            foreach (['sku', 'manufacturer_sku', 'distributor_sku', 'ean', 'barcode'] as $field) {
+                $q->orWhere($field, 'like', "%{$search}%")
+                    ->orWhereRaw(
+                        "REPLACE(REPLACE(COALESCE({$field}, ''), ' ', ''), CHAR(9), '') LIKE ?",
+                        ["%{$compact}%"]
+                    );
+            }
+
+            $q->orWhereHas('attributeValues', function ($av) use ($search) {
+                $av->where('value', 'like', "%{$search}%");
+            });
         });
+    }
+
+    /** Значения атрибутов, актуальных для категории товара (карточка и каталог). */
+    public function attributeValuesVisibleInCategory(?int $categoryId = null): Collection
+    {
+        $this->loadMissing(['attributeValues.attribute']);
+        $categoryId ??= $this->category_id;
+        if (! $categoryId) {
+            return collect();
+        }
+
+        $allowedIds = ProductAttribute::query()
+            ->active()
+            ->forCategory($categoryId)
+            ->pluck('id');
+
+        return $this->attributeValues
+            ->filter(fn ($value) => $value->attribute && $allowedIds->contains($value->product_attribute_id))
+            ->sortBy(fn ($value) => $value->attribute->sort_order ?? 0)
+            ->values();
     }
 
     /**

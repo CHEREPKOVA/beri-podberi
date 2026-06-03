@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Manufacturer;
 
+use App\Http\Controllers\Concerns\BuildsCatalogListing;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductAttribute;
@@ -13,6 +14,7 @@ use App\Models\ProductRegionalPrice;
 use App\Models\ProductStock;
 use App\Models\Role;
 use App\Models\UnitType;
+use App\Services\Catalog\CatalogQueryService;
 use App\Services\CurrentRoleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -26,6 +28,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProductController extends Controller
 {
+    use BuildsCatalogListing;
+
     public function index(Request $request): View
     {
         $profile = $request->user()->manufacturerProfile;
@@ -35,7 +39,7 @@ class ProductController extends Controller
             ->withCount(['stocks']);
 
         if ($request->filled('search')) {
-            $query->search($request->search);
+            $query->search($request->string('search')->trim()->toString());
         }
 
         if ($request->filled('category')) {
@@ -56,27 +60,43 @@ class ProductController extends Controller
 
         if ($request->filled('has_stock')) {
             if ($request->has_stock === 'yes') {
-                $query->whereHas('stocks', fn ($q) => $q->where('quantity', '>', 0));
+                $query->withAvailableStock();
             } else {
-                $query->whereDoesntHave('stocks', fn ($q) => $q->where('quantity', '>', 0));
+                $query->withoutAvailableStock();
             }
         }
 
-        $sortField = $request->get('sort', 'updated_at');
-        $sortDir = $request->get('dir', 'desc');
-        $query->orderBy($sortField, $sortDir);
+        $this->applyIndexSorting($query, $request);
 
         $products = $query->paginate(25)->withQueryString();
 
+        $trashedMatches = collect();
+        if ($request->filled('search') && $products->isEmpty()) {
+            $trashedMatches = Product::onlyTrashed()
+                ->forManufacturer($profile->id)
+                ->search($request->string('search')->trim()->toString())
+                ->orderByDesc('deleted_at')
+                ->limit(5)
+                ->get(['id', 'name', 'sku', 'deleted_at']);
+        }
+
+        $categoryTree = ProductCategory::assignableTree();
         $categories = ProductCategory::active()->assignableForProducts()->orderBy('sort_order')->get();
 
-        return view('manufacturer.products.index', compact('products', 'categories'));
+        return view('manufacturer.products.index', [
+            'products' => $products,
+            'categoryTree' => $categoryTree,
+            'categories' => $categories,
+            'trashedMatches' => $trashedMatches,
+            'productPriceStaleDays' => Product::priceStaleDays(),
+        ]);
     }
 
     public function create(Request $request): View
     {
         $profile = $request->user()->manufacturerProfile;
 
+        $categoryTree = ProductCategory::assignableTree();
         $categories = ProductCategory::active()->assignableForProducts()->orderBy('sort_order')->get();
         $unitTypes = UnitType::active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->active()->get();
@@ -91,6 +111,7 @@ class ProductController extends Controller
 
         return view('manufacturer.products.form', [
             'product' => null,
+            'categoryTree' => $categoryTree,
             'categories' => $categories,
             'unitTypes' => $unitTypes,
             'warehouses' => $warehouses,
@@ -153,6 +174,7 @@ class ProductController extends Controller
             'analogOf:id,name,sku,manufacturer_profile_id',
         ]);
 
+        $categoryTree = ProductCategory::assignableTree();
         $categories = ProductCategory::active()->assignableForProducts()->orderBy('sort_order')->get();
         $unitTypes = UnitType::active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->active()->get();
@@ -167,6 +189,7 @@ class ProductController extends Controller
 
         return view('manufacturer.products.form', [
             'product' => $product,
+            'categoryTree' => $categoryTree,
             'categories' => $categories,
             'unitTypes' => $unitTypes,
             'warehouses' => $warehouses,
@@ -227,14 +250,16 @@ class ProductController extends Controller
             ]);
         }
 
+        $compact = preg_replace('/\s+/u', '', $search);
+
         $items = Product::query()
             ->where('id', '!=', $product->id)
-            ->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%")
-                    ->orWhere('manufacturer_sku', 'like', "%{$search}%");
-            })
-            ->orderByRaw('CASE WHEN sku = ? THEN 0 ELSE 1 END', [$search])
+            ->compatibleWithProduct($product)
+            ->search($search)
+            ->orderByRaw(
+                'CASE WHEN sku = ? OR REPLACE(COALESCE(sku, ""), " ", "") = ? THEN 0 ELSE 1 END',
+                [$search, $compact]
+            )
             ->orderBy('name')
             ->limit(30)
             ->get(['id', 'name', 'sku', 'manufacturer_profile_id']);
@@ -260,7 +285,22 @@ class ProductController extends Controller
 
         return redirect()
             ->route('manufacturer.products.index')
-            ->with('success', 'Товар удалён');
+            ->with('success', 'Товар удалён. Его можно восстановить через поиск по артикулу.');
+    }
+
+    public function restore(Request $request, int $productId): RedirectResponse
+    {
+        $profile = $request->user()->manufacturerProfile;
+
+        $product = Product::onlyTrashed()
+            ->forManufacturer($profile->id)
+            ->findOrFail($productId);
+
+        $product->restore();
+
+        return redirect()
+            ->route('manufacturer.products.edit', $product)
+            ->with('success', 'Товар восстановлен. Проверьте данные и сохраните изменения.');
     }
 
     public function publish(Request $request, Product $product): RedirectResponse
@@ -268,7 +308,7 @@ class ProductController extends Controller
         $this->authorizeProduct($request, $product);
 
         if (! $product->canBePublished()) {
-            return back()->with('error', 'Невозможно опубликовать товар: заполните обязательные поля (название, цена, категория) и добавьте остатки.');
+            return back()->with('error', 'Невозможно опубликовать товар: заполните обязательные поля.');
         }
 
         $product->update([
@@ -433,6 +473,10 @@ class ProductController extends Controller
         $query = Product::forManufacturer($profile->id)
             ->with(['category', 'unitType', 'stocks.warehouse']);
 
+        if ($request->filled('search')) {
+            $query->search($request->string('search')->trim()->toString());
+        }
+
         if ($request->get('filter') === 'active') {
             $query->active();
         } elseif ($request->get('filter') === 'modified') {
@@ -580,12 +624,9 @@ class ProductController extends Controller
             'name' => 'required|string|max:255',
             'sku' => $skuRule,
             'category_id' => [
-                'nullable',
+                'required',
                 'exists:product_categories,id',
                 function (string $attribute, mixed $value, \Closure $fail): void {
-                    if ($value === null || $value === '') {
-                        return;
-                    }
                     $cat = ProductCategory::query()->find((int) $value);
                     if ($cat && ! $cat->accepts_products) {
                         $fail('Эта категория только для подкатегорий; выберите конечную категорию, куда допускаются товары.');
@@ -685,21 +726,33 @@ class ProductController extends Controller
 
     private function handleAttributes(Request $request, Product $product): void
     {
-        if (! $request->has('attributes')) {
-            return;
+        if ($request->has('attributes')) {
+            $this->syncSystemAttributes($request, $product);
         }
 
+        $this->handleCustomAttributes($request, $product);
+    }
+
+    private function syncSystemAttributes(Request $request, Product $product): void
+    {
         $raw = $request->input('attributes', []);
         if (! is_array($raw)) {
             return;
         }
 
+        $systemAttributeIds = ProductAttribute::query()
+            ->active()
+            ->forCategory($product->category_id)
+            ->pluck('id');
+
+        $product->attributeValues()
+            ->whereIn('product_attribute_id', $systemAttributeIds)
+            ->delete();
+
         $attributesById = ProductAttribute::query()
             ->whereIn('id', array_map(static fn ($k): int => (int) $k, array_keys($raw)))
             ->get()
             ->keyBy('id');
-
-        $product->attributeValues()->delete();
 
         foreach ($raw as $attributeId => $value) {
             $attributeId = (int) $attributeId;
@@ -742,6 +795,77 @@ class ProductController extends Controller
                 }
             }
         }
+    }
+
+    private function handleCustomAttributes(Request $request, Product $product): void
+    {
+        if (! $request->has('_custom_attributes_present')) {
+            return;
+        }
+
+        $raw = $request->input('custom_attributes', []);
+        if (! is_array($raw)) {
+            $raw = [];
+        }
+
+        $existingCustomIds = ProductAttribute::query()
+            ->where('product_id', $product->id)
+            ->pluck('id');
+
+        if ($existingCustomIds->isNotEmpty()) {
+            $product->attributeValues()
+                ->whereIn('product_attribute_id', $existingCustomIds)
+                ->delete();
+            ProductAttribute::query()->whereIn('id', $existingCustomIds)->delete();
+        }
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $name = trim((string) ($item['key'] ?? ''));
+            $value = trim((string) ($item['value'] ?? ''));
+
+            if ($name === '' || $value === '') {
+                continue;
+            }
+
+            $attribute = ProductAttribute::create([
+                'product_id' => $product->id,
+                'product_category_id' => null,
+                'name' => $name,
+                'slug' => $this->uniqueCustomAttributeSlug($product, $name),
+                'type' => ProductAttribute::TYPE_TEXT,
+                'is_filterable' => false,
+                'is_required' => false,
+                'is_active' => true,
+            ]);
+
+            ProductAttributeValue::create([
+                'product_id' => $product->id,
+                'product_attribute_id' => $attribute->id,
+                'value' => $value,
+            ]);
+        }
+    }
+
+    private function uniqueCustomAttributeSlug(Product $product, string $name): string
+    {
+        $base = Str::slug(Str::limit($name, 80, ''));
+        if ($base === '') {
+            $base = 'attr';
+        }
+
+        $slug = 'p'.$product->id.'-'.$base;
+        $counter = 0;
+
+        while (ProductAttribute::query()->where('product_id', $product->id)->where('slug', $slug)->exists()) {
+            $counter++;
+            $slug = 'p'.$product->id.'-'.$base.'-'.$counter;
+        }
+
+        return $slug;
     }
 
     private function handleRegions(Request $request, Product $product): void
@@ -914,11 +1038,18 @@ class ProductController extends Controller
         if (isset($shop->categories->category)) {
             foreach ($shop->categories->category as $cat) {
                 $catId = (string) $cat['id'];
-                $catName = (string) $cat;
-                $categories[$catId] = ProductCategory::firstOrCreate(
-                    ['name' => $catName],
-                    ['slug' => Str::slug($catName), 'is_active' => true]
-                );
+                $catName = trim((string) $cat);
+                if ($catName === '') {
+                    continue;
+                }
+                $matched = ProductCategory::query()
+                    ->active()
+                    ->where('shown_in_customer_catalog', true)
+                    ->where('name', $catName)
+                    ->first();
+                if ($matched) {
+                    $categories[$catId] = $matched;
+                }
             }
         }
 
@@ -1111,73 +1242,43 @@ class ProductController extends Controller
 
     public function catalog(Request $request, ?ProductCategory $category = null): View
     {
-        $profile = $request->user()->manufacturerProfile;
         $catalogRole = app(CurrentRoleService::class)->get($request->user());
         if ($category !== null && ! $category->isShownInCatalogForRole($catalogRole)) {
             abort(404);
         }
 
-        $categoryTree = ProductCategory::getTree(true, $profile->id, $catalogRole);
-        $attributeFilters = $this->parseAttributeFilters($request);
-        $filterableAttributes = $category
-            ? ProductAttribute::active()->forCategory($category->id)->filterable()->orderedForFilters()->get()
-            : collect();
-        $query = Product::forManufacturer($profile->id)
-            ->with(['category', 'images'])
-            ->withCount(['analogs', 'analogOf'])
-            ->whereNotNull('category_id')
-            ->published();
-        if ($category) {
-            $query->inCategory($category->id);
-        }
-        $query->withAttributeFilters($attributeFilters);
-        $products = $query->orderBy('name')->paginate(24)->withQueryString();
+        $catalog = new CatalogQueryService($request->user());
+        $listing = $this->buildCatalogListing($request, $category, $catalog);
 
-        return view('manufacturer.catalog.index', [
-            'categoryTree' => $categoryTree,
-            'products' => $products,
+        return view('manufacturer.catalog.index', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
-            'filterableAttributes' => $filterableAttributes,
-            'appliedFilters' => $attributeFilters,
-            'manufacturerProfileId' => $profile->id,
-        ]);
+        ]));
     }
 
     public function catalogProducts(Request $request): Response
     {
-        $profile = $request->user()->manufacturerProfile;
-        $categorySlugOrId = $request->get('category');
         $catalogRole = app(CurrentRoleService::class)->get($request->user());
-        $category = $this->resolveCategoryFromRequest($catalogRole, $categorySlugOrId);
-        $attributeFilters = $this->parseAttributeFilters($request);
-        $filterableAttributes = $category
-            ? ProductAttribute::active()->forCategory($category->id)->filterable()->orderedForFilters()->get()
-            : collect();
-        $query = Product::forManufacturer($profile->id)
-            ->with(['category', 'images'])
-            ->withCount(['analogs', 'analogOf'])
-            ->whereNotNull('category_id')
-            ->published();
-        if ($category) {
-            $query->inCategory($category->id);
-        }
-        $query->withAttributeFilters($attributeFilters);
-        $products = $query->orderBy('name')->paginate(24)->withQueryString();
+        $category = $this->resolveCategoryFromRequest($catalogRole, $request->get('category'));
+        $catalog = new CatalogQueryService($request->user());
+        $listing = $this->buildCatalogListing($request, $category, $catalog);
 
-        return response()->view('manufacturer.catalog._products', [
-            'products' => $products,
+        return response()->view('catalog._products', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
-            'filterableAttributes' => $filterableAttributes,
-            'appliedFilters' => $attributeFilters,
-            'manufacturerProfileId' => $profile->id,
-        ])->header('Cache-Control', 'no-store');
+            'catalogIndexRoute' => 'manufacturer.catalog.index',
+            'catalogShowRoute' => 'manufacturer.catalog.show',
+            'showNomenclatureLink' => true,
+        ]))->header('Cache-Control', 'no-store');
     }
 
     public function catalogShow(Request $request, Product $product): View
     {
         $this->authorizeProduct($request, $product);
+
+        if (! $product->isVisibleInCatalog()) {
+            abort(404);
+        }
 
         $product->load([
             'manufacturerProfile.regions',
@@ -1192,6 +1293,8 @@ class ProductController extends Controller
             'analogs.category',
         ]);
 
+        $categoryAttributes = $product->attributeValuesVisibleInCategory();
+
         $supplierRows = collect([[
             'name' => $product->manufacturerProfile?->short_name ?: ($product->manufacturerProfile?->full_name ?? 'Производитель'),
             'price' => $product->base_price,
@@ -1202,6 +1305,7 @@ class ProductController extends Controller
 
         return view('manufacturer.catalog.show', [
             'product' => $product,
+            'categoryAttributes' => $categoryAttributes,
             'supplierRows' => $supplierRows,
         ]);
     }
@@ -1223,42 +1327,27 @@ class ProductController extends Controller
         return $category;
     }
 
-    /** Парсит параметры фильтров атрибутов из запроса (attr[id], attr[id][], attr[id][min/max]) */
-    private function parseAttributeFilters(Request $request): array
+    private function applyIndexSorting($query, Request $request): void
     {
-        $attr = $request->input('attr', $request->input('attributes', []));
-        if (! is_array($attr)) {
-            return [];
+        $sortField = $request->get('sort', 'updated_at');
+        $allowedSorts = ['sku', 'name', 'base_price', 'status', 'updated_at', 'category', 'stock'];
+        if (! in_array($sortField, $allowedSorts, true)) {
+            $sortField = 'updated_at';
         }
-        $out = [];
-        foreach ($attr as $id => $value) {
-            $id = (int) $id;
-            if ($id <= 0) {
-                continue;
-            }
-            if (is_array($value)) {
-                if (array_key_exists('min', $value) || array_key_exists('max', $value)) {
-                    $min = isset($value['min']) ? trim((string) $value['min']) : '';
-                    $max = isset($value['max']) ? trim((string) $value['max']) : '';
-                    if ($min !== '' || $max !== '') {
-                        $out[$id] = ['min' => $min, 'max' => $max];
-                    }
+        $sortDir = $request->get('dir', 'desc') === 'asc' ? 'asc' : 'desc';
 
-                    continue;
-                }
-                $filtered = array_values(array_filter(array_map('trim', $value)));
-                if ($filtered !== []) {
-                    $out[$id] = $filtered;
-                }
-            } else {
-                $value = trim((string) $value);
-                if ($value !== '') {
-                    $out[$id] = $value;
-                }
-            }
-        }
-
-        return $out;
+        match ($sortField) {
+            'category' => $query->orderBy(
+                ProductCategory::select('name')
+                    ->whereColumn('product_categories.id', 'products.category_id')
+                    ->limit(1),
+                $sortDir
+            ),
+            'stock' => $query->orderByRaw(
+                '(SELECT COALESCE(SUM(quantity - reserved), 0) FROM product_stocks WHERE product_id = products.id) '.$sortDir
+            ),
+            default => $query->orderBy($sortField, $sortDir),
+        };
     }
 
     private function authorizeProduct(Request $request, Product $product): void

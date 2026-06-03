@@ -6,6 +6,7 @@ use Database\Factories\ProductAttributeFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** @use HasFactory<ProductAttributeFactory> */
@@ -38,6 +39,7 @@ class ProductAttribute extends Model
 
     protected $fillable = [
         'product_category_id',
+        'product_id',
         'name',
         'slug',
         'type',
@@ -97,6 +99,54 @@ class ProductAttribute extends Model
         return $this->belongsTo(ProductCategory::class, 'product_category_id');
     }
 
+    /** Категории, к которым применяется свойство (пусто = глобальное). */
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ProductCategory::class,
+            'product_attribute_category',
+            'product_attribute_id',
+            'product_category_id'
+        )->withTimestamps();
+    }
+
+    public function isGlobalCatalogAttribute(): bool
+    {
+        if ($this->product_id !== null) {
+            return false;
+        }
+
+        if ($this->relationLoaded('categories')) {
+            return $this->categories->isEmpty() && $this->product_category_id === null;
+        }
+
+        return ! $this->categories()->exists() && $this->product_category_id === null;
+    }
+
+    /**
+     * @param  list<int|string>  $categoryIds
+     */
+    public function syncCatalogCategories(array $categoryIds): void
+    {
+        $ids = array_values(array_unique(array_filter(array_map(
+            static fn ($id): int => (int) $id,
+            $categoryIds
+        ), static fn (int $id): bool => $id > 0)));
+
+        $this->categories()->sync($ids);
+        $this->forceFill(['product_category_id' => $ids[0] ?? null])->save();
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function scopeNotProductCustom($query)
+    {
+        return $query->whereNull('product_id');
+    }
+
     public function values(): HasMany
     {
         return $this->hasMany(ProductAttributeValue::class);
@@ -114,8 +164,12 @@ class ProductAttribute extends Model
     public function scopeForCategory($query, ?int $categoryId)
     {
         if (! $categoryId) {
-            return $query->whereNull('product_category_id');
+            return $query
+                ->whereNull('product_id')
+                ->whereDoesntHave('categories')
+                ->whereNull('product_category_id');
         }
+
         $category = ProductCategory::find($categoryId);
         $ids = $category ? array_merge($category->ancestorIds(), [$categoryId]) : [];
         $excluded = $category
@@ -123,10 +177,14 @@ class ProductAttribute extends Model
             : [];
 
         return $query
+            ->whereNull('product_id')
             ->where(function ($q) use ($ids) {
-                $q->whereNull('product_category_id');
+                $q->where(function ($global) {
+                    $global->whereDoesntHave('categories')->whereNull('product_category_id');
+                });
                 if ($ids !== []) {
-                    $q->orWhereIn('product_category_id', $ids);
+                    $q->orWhereHas('categories', fn ($cq) => $cq->whereIn('product_categories.id', $ids))
+                        ->orWhereIn('product_category_id', $ids);
                 }
             })
             ->when($excluded !== [], fn ($q) => $q->whereNotIn('id', $excluded));
@@ -171,7 +229,7 @@ class ProductAttribute extends Model
         $q = ProductAttributeValue::query()
             ->where('product_attribute_id', $attributeId)
             ->whereHas('product', function ($p) use ($categoryIds, $manufacturerProfileId) {
-                $p->whereIn('category_id', $categoryIds)->published();
+                $p->inAnyCategoryIds($categoryIds)->visibleInCatalog();
                 if ($manufacturerProfileId !== null) {
                     $p->where('manufacturer_profile_id', $manufacturerProfileId);
                 }

@@ -2,84 +2,55 @@
 
 namespace App\Http\Controllers\Buyer;
 
+use App\Http\Controllers\Concerns\BuildsCatalogListing;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Role;
-use Illuminate\Support\Collection;
+use App\Services\Catalog\CatalogQueryService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class CatalogController extends Controller
 {
+    use BuildsCatalogListing;
+
     public function index(Request $request, ?ProductCategory $category = null): View
     {
         $user = $request->user();
-        $regionId = $user->currentCompanyRegionId();
         $catalogRole = $user->getCurrentRole();
         if ($category !== null && ! $category->isShownInCatalogForRole($catalogRole)) {
             abort(404);
         }
 
-        $categoryTree = ProductCategory::getTree(true, null, $catalogRole);
-        $query = Product::query()
-            ->with(['category', 'images', 'manufacturerProfile', 'stocks.warehouse.region'])
-            ->withCount(['analogs', 'analogOf'])
-            ->published();
+        $catalog = new CatalogQueryService($user);
+        $listing = $this->buildCatalogListing($request, $category, $catalog);
 
-        if ($category) {
-            $query->inCategory($category->id);
-        }
-
-        $query->availableInRegion($regionId);
-
-        if ($request->filled('search')) {
-            $query->search($request->string('search')->toString());
-        }
-
-        $products = $query->orderBy('name')->paginate(24)->withQueryString();
-
-        return view('buyer.catalog.index', [
-            'categoryTree' => $categoryTree,
-            'products' => $products,
+        return view('buyer.catalog.index', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
             'companyRegionName' => $user->currentCompanyRegionName(),
-            'companyRegionId' => $regionId,
-        ]);
+            'companyRegionId' => $user->currentCompanyRegionId(),
+        ]));
     }
 
     public function products(Request $request): Response
     {
         $user = $request->user();
-        $regionId = $user->currentCompanyRegionId();
         $catalogRole = $user->getCurrentRole();
         $category = $this->resolveCategoryFromRequest($catalogRole, $request->get('category'));
+        $catalog = new CatalogQueryService($user);
+        $listing = $this->buildCatalogListing($request, $category, $catalog);
 
-        $query = Product::query()
-            ->with(['category', 'images', 'manufacturerProfile', 'stocks.warehouse.region'])
-            ->withCount(['analogs', 'analogOf'])
-            ->published()
-            ->availableInRegion($regionId);
-
-        if ($category) {
-            $query->inCategory($category->id);
-        }
-
-        if ($request->filled('search')) {
-            $query->search($request->string('search')->toString());
-        }
-
-        $products = $query->orderBy('name')->paginate(24)->withQueryString();
-
-        return response()->view('buyer.catalog._products', [
-            'products' => $products,
+        return response()->view('catalog._products', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
             'companyRegionName' => $user->currentCompanyRegionName(),
-            'companyRegionId' => $regionId,
-        ])->header('Cache-Control', 'no-store');
+            'catalogIndexRoute' => 'buyer.catalog.index',
+            'catalogShowRoute' => 'buyer.catalog.show',
+        ]))->header('Cache-Control', 'no-store');
     }
 
     public function show(Request $request, Product $product): View
@@ -87,6 +58,7 @@ class CatalogController extends Controller
         $user = $request->user();
         $regionId = $user->currentCompanyRegionId();
         $catalogRole = $user->getCurrentRole();
+        $catalog = new CatalogQueryService($user);
 
         $product->load([
             'manufacturerProfile.regions',
@@ -101,48 +73,46 @@ class CatalogController extends Controller
             'analogOf',
         ]);
 
-        if (! $product->show_in_catalog || $product->status !== Product::STATUS_ACTIVE) {
+        if (! $product->isVisibleInCatalog()) {
             abort(404);
         }
-        if ($product->category && ! $product->category->isShownInCatalogForRole($catalogRole)) {
+        if (! $product->category->isShownInCatalogForRole($catalogRole)) {
             abort(404);
         }
-        if ($regionId !== null) {
-            $allowedByProduct = $product->availableRegions->isEmpty()
-                || $product->availableRegions->contains('id', $regionId);
-            $allowedByManufacturer = $product->manufacturerProfile?->regions?->contains('id', $regionId) ?? false;
-            if (! $allowedByProduct || ! $allowedByManufacturer) {
-                abort(404);
-            }
+        if (! $catalog->visibleProductsQuery()->where('products.id', $product->id)->exists()) {
+            abort(404);
         }
 
         $visibleStocks = $product->visibleStocksForRegion($regionId);
-        $currentRoleSlug = $catalogRole?->slug;
-        $analogs = $this->resolveVisibleAnalogs($product, $regionId, $currentRoleSlug);
+        $analogs = $this->resolveVisibleAnalogs($product, $catalog);
         $productUnavailable = $visibleStocks->sum('available_quantity') <= 0;
+        $categoryAttributes = $product->attributeValuesVisibleInCategory();
+        $distributors = $catalog->distributorsForProductInRegion($product);
 
         return view('buyer.catalog.show', [
             'product' => $product,
+            'categoryAttributes' => $categoryAttributes,
             'visibleStocks' => $visibleStocks,
             'companyRegionName' => $user->currentCompanyRegionName(),
             'companyRegionId' => $regionId,
             'analogs' => $analogs,
             'productUnavailable' => $productUnavailable,
-            'currentRoleSlug' => $currentRoleSlug,
+            'currentRoleSlug' => $catalogRole?->slug,
+            'distributors' => $distributors,
         ]);
     }
 
     /**
      * @return Collection<int, Product>
      */
-    private function resolveVisibleAnalogs(Product $product, ?int $regionId, ?string $currentRoleSlug): Collection
+    private function resolveVisibleAnalogs(Product $product, CatalogQueryService $catalog): Collection
     {
         $analogIds = $product->allAnalogIds();
         if ($analogIds === []) {
             return collect();
         }
 
-        $query = Product::query()
+        return $catalog->visibleProductsQuery()
             ->with([
                 'category',
                 'images',
@@ -151,20 +121,9 @@ class CatalogController extends Controller
                 'stocks.warehouse.region',
                 'additionalCategories',
             ])
-            ->whereIn('id', $analogIds)
-            ->where('id', '!=', $product->id)
-            ->published()
-            ->compatibleWithProduct($product);
-
-        if (in_array($currentRoleSlug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)) {
-            $query->availableInRegion($regionId);
-        } elseif ($currentRoleSlug === Role::SLUG_DISTRIBUTOR) {
-            $query->forRegion($regionId);
-        } else {
-            $query->availableInRegion($regionId);
-        }
-
-        return $query
+            ->whereIn('products.id', $analogIds)
+            ->where('products.id', '!=', $product->id)
+            ->compatibleWithProduct($product)
             ->orderBy('name')
             ->get()
             ->filter(fn (Product $candidate): bool => $candidate->hasEnoughCharacteristicsForAnalog())

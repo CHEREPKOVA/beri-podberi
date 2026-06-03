@@ -157,6 +157,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::get('/products/{product}/analogs/search', [ManufacturerProductController::class, 'analogSearch'])->name('products.analogs.search');
         Route::put('/products/{product}', [ManufacturerProductController::class, 'update'])->name('products.update');
         Route::delete('/products/{product}', [ManufacturerProductController::class, 'destroy'])->name('products.destroy');
+        Route::post('/products/{productId}/restore', [ManufacturerProductController::class, 'restore'])->whereNumber('productId')->name('products.restore');
         Route::post('/products/{product}/publish', [ManufacturerProductController::class, 'publish'])->name('products.publish');
         Route::post('/products/{product}/hide', [ManufacturerProductController::class, 'hide'])->name('products.hide');
         Route::delete('/products/images/{image}', [ManufacturerProductController::class, 'deleteImage'])->name('products.image.delete');
@@ -189,6 +190,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::put('/profile/contacts/{contact}', [DistributorProfileController::class, 'updateContact'])->name('profile.contacts.update');
         Route::delete('/profile/contacts/{contact}', [DistributorProfileController::class, 'deleteContact'])->name('profile.contacts.delete');
         Route::put('/profile/regions', [DistributorProfileController::class, 'updateRegions'])->name('profile.regions.update');
+        Route::put('/profile/product-categories', [DistributorProfileController::class, 'updateProductCategories'])->name('profile.product_categories.update');
         Route::get('/warehouses', [DistributorWarehouseController::class, 'index'])->name('warehouses.index');
         Route::get('/warehouses/export', [DistributorProfileController::class, 'exportWarehouses'])->name('warehouses.export');
         Route::post('/warehouses', [DistributorProfileController::class, 'storeWarehouse'])->name('warehouses.store');

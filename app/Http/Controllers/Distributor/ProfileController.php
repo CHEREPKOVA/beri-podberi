@@ -7,6 +7,7 @@ use App\Models\DeliveryMethod;
 use App\Models\DistributorContact;
 use App\Models\DistributorDocument;
 use App\Models\DistributorWarehouse;
+use App\Models\ProductCategory;
 use App\Models\Region;
 use App\Models\TransportCompany;
 use Illuminate\Http\RedirectResponse;
@@ -25,6 +26,7 @@ class ProfileController extends Controller
         $profile->load([
             'contacts',
             'regions',
+            'productCategories',
             'deliveryMethods',
             'transportCompanies',
             'documents',
@@ -34,6 +36,13 @@ class ProfileController extends Controller
         $deliveryMethods = DeliveryMethod::active()->orderBy('sort_order')->get();
         $transportCompanies = TransportCompany::active()->orderBy('name')->get();
         $federalDistricts = Region::federalDistricts();
+        $productCategoryRoots = ProductCategory::query()
+            ->active()
+            ->roots()
+            ->with(['children' => fn ($query) => $query->active()->orderBy('sort_order')->orderBy('name')])
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
 
         return view('distributor.profile.index', compact(
             'profile',
@@ -41,7 +50,8 @@ class ProfileController extends Controller
             'regions',
             'deliveryMethods',
             'transportCompanies',
-            'federalDistricts'
+            'federalDistricts',
+            'productCategoryRoots',
         ));
     }
 
@@ -196,6 +206,31 @@ class ProfileController extends Controller
             ->with('success', 'Регионы присутствия обновлены');
     }
 
+    public function updateProductCategories(Request $request): RedirectResponse
+    {
+        $profile = $request->user()->distributorProfile;
+
+        $validated = $request->validate([
+            'category_ids' => 'required|array|min:1',
+            'category_ids.*' => 'integer|exists:product_categories,id',
+        ], [
+            'category_ids.required' => 'Выберите хотя бы один тип продукции.',
+            'category_ids.min' => 'Выберите хотя бы один тип продукции.',
+        ]);
+
+        $allowedIds = ProductCategory::query()
+            ->active()
+            ->whereIn('id', $validated['category_ids'])
+            ->pluck('id')
+            ->all();
+
+        $profile->productCategories()->sync($allowedIds);
+
+        return redirect()
+            ->route('distributor.profile', ['tab' => 'product_categories'])
+            ->with('success', 'Типы продукции сохранены');
+    }
+
     public function storeWarehouse(Request $request): RedirectResponse
     {
         $profile = $request->user()->distributorProfile;
@@ -260,10 +295,11 @@ class ProfileController extends Controller
     {
         $profile = $request->user()->distributorProfile;
         $warehouses = $profile->warehouses()->with('region')->get();
+        $exportFilename = 'Список складов '.now()->format('d.m.Y').'.csv';
 
         $headers = [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="distributor-warehouses.csv"',
+            'Content-Disposition' => 'attachment; filename="'.$exportFilename.'"; filename*=UTF-8\'\''.rawurlencode($exportFilename),
         ];
 
         $callback = function () use ($warehouses) {

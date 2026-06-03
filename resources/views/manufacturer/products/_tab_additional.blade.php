@@ -69,7 +69,7 @@
         </div>
     </div>
 
-    <div x-data="{ showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }">
+    <div>
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white">Документы</h3>
         </div>
@@ -101,7 +101,7 @@
                         </svg>
                     </a>
                     <button type="button"
-                        @click="deleteFormAction = '{{ route('manufacturer.products.document.delete', $document) }}'; deleteMessage = {{ json_encode('Удалить документ «' . $document->name . '»?') }}; showDeleteModal = true"
+                        @click="$dispatch('open-aux-delete', { action: '{{ route('manufacturer.products.document.delete', $document) }}', message: {{ json_encode('Удалить документ «' . $document->name . '»?') }} })"
                         class="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"
                         title="Удалить">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,19 +113,6 @@
             @endforeach
         </div>
 
-        {{-- Модальное окно подтверждения удаления документа --}}
-        <div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showDeleteModal = false">
-            <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6" @click.stop>
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Удаление документа</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-6" x-text="deleteMessage"></p>
-                <form :action="deleteFormAction" method="POST" class="flex justify-end gap-3">
-                    @csrf
-                    @method('DELETE')
-                    <button type="button" @click="showDeleteModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Отмена</button>
-                    <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Удалить</button>
-                </form>
-            </div>
-        </div>
         @endif
 
         <div x-data="{ documents: [] }">
@@ -149,13 +136,13 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span class="flex-1 text-sm text-gray-700 dark:text-gray-300" x-text="file.name"></span>
-                            <div class="relative">
-                                <select :name="'document_types['+index+']'" class="appearance-none pl-2 pr-7 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <div class="relative min-w-[10rem]">
+                                <select :name="'document_types['+index+']'" class="w-full appearance-none pl-2 pr-8 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
                                     @foreach(\App\Models\ProductDocument::typeLabels() as $key => $label)
                                     <option value="{{ $key }}">{{ $label }}</option>
                                     @endforeach
                                 </select>
-                                <svg class="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                                 </svg>
                             </div>

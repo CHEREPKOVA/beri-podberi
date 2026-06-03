@@ -192,7 +192,7 @@
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Логистические параметры</h2>
             <div class="space-y-2 text-sm">
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Вес:</span> Не задан</p>
-                <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Габариты:</span> Не заданы</p>
+                <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Габариты:</span> {{ $product->attributeValueBySlug('gabarity-dshv-mm') ?: 'Не заданы' }}</p>
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Объём/кубатура:</span> Не задан</p>
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Паллетные нормы:</span> Не заданы</p>
                 <p class="text-gray-900 dark:text-white"><span class="text-gray-500 dark:text-gray-400">Требования к упаковке:</span> {{ $product->storage_conditions ?: 'Не заданы' }}</p>

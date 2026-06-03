@@ -71,6 +71,23 @@ class CatalogCategoriesAndFiltersTzTest extends TestCase
         $this->assertContains($closed->slug, $treeForA->pluck('slug')->all());
     }
 
+    public function test_attribute_linked_to_multiple_categories_appears_in_each_branch(): void
+    {
+        $batteries = ProductCategory::factory()->create(['name' => 'Аккумуляторы TZ']);
+        $fluids = ProductCategory::factory()->create(['name' => 'Масла TZ']);
+        $attr = ProductAttribute::factory()->forCategories([$batteries, $fluids])->create([
+            'slug' => 'multi-cat-attr',
+            'is_active' => true,
+        ]);
+
+        $batterySlugs = ProductAttribute::active()->forCategory($batteries->id)->pluck('slug')->all();
+        $fluidSlugs = ProductAttribute::active()->forCategory($fluids->id)->pluck('slug')->all();
+
+        $this->assertContains('multi-cat-attr', $batterySlugs);
+        $this->assertContains('multi-cat-attr', $fluidSlugs);
+        $this->assertCount(2, $attr->categories);
+    }
+
     public function test_attribute_numeric_range_filter_on_products(): void
     {
         $category = ProductCategory::factory()->create();

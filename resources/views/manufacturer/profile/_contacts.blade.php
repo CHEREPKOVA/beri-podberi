@@ -1,4 +1,31 @@
-<div x-data="{ showAddForm: false, editingId: null, showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }">
+<div x-data="{
+    showAddForm: false,
+    editingId: null,
+    showDeleteModal: false,
+    deleteFormAction: '',
+    deleteMessage: '',
+    formatPhone(e) {
+        const input = e.target;
+        let digits = input.value.replace(/\D/g, '');
+        if (digits.startsWith('8')) digits = digits.slice(1);
+        if (digits.startsWith('7')) digits = digits.slice(1);
+        digits = digits.slice(0, 10);
+        if (digits.length === 0) {
+            input.value = '';
+            return;
+        }
+        let result = '+7 (' + digits.slice(0, 3);
+        if (digits.length >= 3) result += ')';
+        if (digits.length > 3) result += ' ' + digits.slice(3, 6);
+        if (digits.length > 6) result += '-' + digits.slice(6, 8);
+        if (digits.length > 8) result += '-' + digits.slice(8, 10);
+        input.value = result;
+    },
+    clearPhoneIfEmpty(e) {
+        const v = e.target.value.replace(/\D/g, '');
+        if (v === '' || v === '7') e.target.value = '';
+    }
+}">
     <div class="flex items-center justify-between mb-6">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Контактные данные</h2>
         <button
@@ -13,9 +40,9 @@
     </div>
 
     {{-- Список контактов --}}
-    <div class="space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         @forelse($profile->contacts as $contact)
-        <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-gray-800/50" x-data="{ editing: false }">
+        <div class="h-full border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-gray-800/50" x-data="{ editing: false }">
             <div x-show="!editing">
                 <div class="flex items-start justify-between">
                     <div>
@@ -124,7 +151,7 @@
             </form>
         </div>
         @empty
-        <div class="text-center py-12 text-gray-500">
+        <div class="md:col-span-2 text-center py-12 text-gray-500">
             <svg class="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
             </svg>
@@ -171,13 +198,22 @@
                     </div>
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Телефон</label>
-                        <input type="text" name="phone" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        <input
+                            type="tel"
+                            name="phone"
+                            inputmode="tel"
+                            autocomplete="tel"
+                            placeholder="+7 (___) ___-__-__"
+                            @input="formatPhone($event)"
+                            @blur="clearPhoneIfEmpty($event)"
+                            class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                        >
                     </div>
-                    <div>
+                    <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Отдел</label>
                         <input type="text" name="department" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" placeholder="Отдел продаж, Техподдержка...">
                     </div>
-                    <div>
+                    <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Примечание</label>
                         <input type="text" name="notes" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                     </div>

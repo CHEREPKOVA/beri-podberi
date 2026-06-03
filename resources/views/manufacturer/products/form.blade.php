@@ -4,10 +4,29 @@
 @section('heading', $product ? 'Редактирование товара' : 'Новый товар')
 
 @section('content')
+@php
+    $initialCategoryId = old('category_id', $product?->category_id);
+    $initialCategoryId = $initialCategoryId !== null && $initialCategoryId !== '' ? (int) $initialCategoryId : null;
+@endphp
 <div x-data="{
     activeTab: '{{ $tab }}',
     unsavedChanges: false,
+    savedCategoryId: @js($initialCategoryId),
+    currentCategoryId: @js($initialCategoryId),
+    categoryPendingSave: false,
+    normalizeCategoryId(value) {
+        return value === null || value === undefined || value === '' ? '' : String(value);
+    },
+    syncCategoryPendingSave() {
+        this.categoryPendingSave = this.normalizeCategoryId(this.savedCategoryId) !== this.normalizeCategoryId(this.currentCategoryId);
+    },
+    onMainCategoryChanged(event) {
+        this.currentCategoryId = event.detail?.categoryId ?? null;
+        this.syncCategoryPendingSave();
+        this.unsavedChanges = true;
+    },
     init() {
+        this.syncCategoryPendingSave();
         this.$watch('unsavedChanges', (value) => {
             if (value) {
                 window.onbeforeunload = () => 'Изменения не сохранены. Сохранить перед выходом?';
@@ -16,7 +35,7 @@
             }
         });
     }
-}" @input="unsavedChanges = true" class="space-y-6">
+}" @input="unsavedChanges = true" @product-main-category-changed.window="onMainCategoryChanged($event)" class="space-y-6">
 
     @if(session('success'))
     <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
@@ -75,7 +94,7 @@
         @endif
     </div>
 
-    <form action="{{ $product ? route('manufacturer.products.update', $product) : route('manufacturer.products.store') }}"
+    <form id="product-edit-form" action="{{ $product ? route('manufacturer.products.update', $product) : route('manufacturer.products.store') }}"
         method="POST" enctype="multipart/form-data" @submit="unsavedChanges = false">
         @csrf
         @if($product)
@@ -93,7 +112,7 @@
                             'attributes' => 'Характеристики',
                             'analogs' => 'Аналоги',
                             'additional' => 'Дополнительно',
-                            'publication' => 'Публикация',
+                            'publication' => 'Публикация и доступность',
                         ];
                     @endphp
                     @foreach($tabs as $key => $label)
@@ -102,8 +121,16 @@
                         :class="activeTab === '{{ $key }}'
                             ? 'border-[#c3242a] text-[#c3242a]'
                             : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-                        class="whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors">
-                        {{ $label }}
+                        class="whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors inline-flex items-center gap-1.5">
+                        <span>{{ $label }}</span>
+                        @if($key === 'attributes')
+                        <span
+                            x-show="categoryPendingSave"
+                            x-cloak
+                            class="inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-[10px] font-bold leading-none"
+                            title="Категория изменена — сохраните товар, чтобы обновить список характеристик"
+                        >!</span>
+                        @endif
                     </button>
                     @endforeach
                 </nav>
@@ -112,7 +139,7 @@
             <div class="p-6">
                 {{-- Вкладка: Основная информация --}}
                 <div x-show="activeTab === 'basic'" x-cloak>
-                    @include('manufacturer.products._tab_basic', ['product' => $product, 'categories' => $categories, 'unitTypes' => $unitTypes])
+                    @include('manufacturer.products._tab_basic', ['product' => $product, 'categoryTree' => $categoryTree, 'categories' => $categories, 'unitTypes' => $unitTypes])
                 </div>
 
                 {{-- Вкладка: Цены и остатки --}}
@@ -160,6 +187,29 @@
             </div>
         </div>
     </form>
+
+    @stack('product-external-forms')
+
+    {{-- Вспомогательные DELETE-формы только снаружи основной формы (вложенные <form> ломали «Сохранить») --}}
+    @if($product)
+    <div x-data="{ auxDelete: { show: false, action: '', message: '' } }"
+        @open-aux-delete.window="auxDelete = { show: true, action: $event.detail.action, message: $event.detail.message }">
+        <div x-show="auxDelete.show" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            @click.self="auxDelete.show = false">
+            <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6" @click.stop>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Подтверждение</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-6" x-text="auxDelete.message"></p>
+                <form :action="auxDelete.action" method="POST" class="flex justify-end gap-3">
+                    @csrf
+                    @method('DELETE')
+                    <button type="button" @click="auxDelete.show = false"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Отмена</button>
+                    <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Удалить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    @endif
 </div>
 
 @push('styles')

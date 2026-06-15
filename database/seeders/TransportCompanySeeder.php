@@ -53,12 +53,6 @@ class TransportCompanySeeder extends Seeder
                 'tracking_url' => 'https://tkkit.ru/tracking/',
             ],
             [
-                'name' => 'Boxberry',
-                'slug' => 'boxberry',
-                'website' => 'https://boxberry.ru',
-                'tracking_url' => 'https://boxberry.ru/tracking-page?id=',
-            ],
-            [
                 'name' => 'DPD',
                 'slug' => 'dpd',
                 'website' => 'https://www.dpd.ru',

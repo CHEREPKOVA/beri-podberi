@@ -34,7 +34,7 @@ class SystemSettingController extends Controller
                 $row->value = $value !== null ? (string) $value : null;
             }
 
-            $row->is_active = $request->boolean("settings.$id.is_active");
+            $row->is_active = true;
             $row->save();
         }
 

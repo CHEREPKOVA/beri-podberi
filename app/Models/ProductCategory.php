@@ -379,6 +379,49 @@ class ProductCategory extends Model
         return $options;
     }
 
+    /**
+     * Дополняет набор категорий всеми предками (для иерархического отображения).
+     *
+     * @param  Collection<int, self>  $categories
+     * @return Collection<int, self>
+     */
+    public static function withAncestors(Collection $categories): Collection
+    {
+        if ($categories->isEmpty()) {
+            return collect();
+        }
+
+        $byId = $categories->keyBy('id');
+
+        $missingParentIds = $categories
+            ->pluck('parent_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->reject(fn (int $id) => $byId->has($id))
+            ->values()
+            ->all();
+
+        while ($missingParentIds !== []) {
+            $parents = self::query()->whereIn('id', $missingParentIds)->get();
+
+            foreach ($parents as $parent) {
+                $byId->put($parent->id, $parent);
+            }
+
+            $missingParentIds = $parents
+                ->pluck('parent_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->reject(fn (int $id) => $byId->has($id))
+                ->values()
+                ->all();
+        }
+
+        return $byId->values()->sortBy('sort_order')->values();
+    }
+
     /** @param  Collection<int, self>  $categories */
     public static function buildTree(Collection $categories): Collection
     {

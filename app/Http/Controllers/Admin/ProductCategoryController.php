@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ProductAttribute;
 use App\Models\ProductCategory;
 use App\Models\Role;
 use Illuminate\Http\RedirectResponse;
@@ -33,11 +34,13 @@ class ProductCategoryController extends Controller
 
     public function create(): View
     {
-        $parents = ProductCategory::query()->orderBy('name')->get();
         $roles = Role::query()->orderBy('sort_order')->orderBy('name')->get();
         $excludableAttributes = collect();
 
-        return view('admin.catalog.categories.create', compact('parents', 'roles', 'excludableAttributes'));
+        return view('admin.catalog.categories.create', array_merge(
+            $this->categoryPickerContext(),
+            compact('roles', 'excludableAttributes')
+        ));
     }
 
     public function store(Request $request): RedirectResponse
@@ -58,7 +61,6 @@ class ProductCategoryController extends Controller
 
     public function edit(ProductCategory $category): View
     {
-        $parents = ProductCategory::query()->where('id', '!=', $category->id)->orderBy('name')->get();
         $roles = Role::query()->orderBy('sort_order')->orderBy('name')->get();
         $excludableAttributes = ProductAttribute::query()
             ->whereIn('id', $category->excludableInheritedAttributeIds())
@@ -66,7 +68,10 @@ class ProductCategoryController extends Controller
             ->get();
         $category->load(['catalogRoles', 'excludedAttributes']);
 
-        return view('admin.catalog.categories.edit', compact('category', 'parents', 'roles', 'excludableAttributes'));
+        return view('admin.catalog.categories.edit', array_merge(
+            $this->categoryPickerContext($category),
+            compact('category', 'roles', 'excludableAttributes')
+        ));
     }
 
     public function update(Request $request, ProductCategory $category): RedirectResponse
@@ -152,6 +157,50 @@ class ProductCategoryController extends Controller
         $ids = $request->input('catalog_role_ids', []);
 
         return array_values(array_unique(array_filter(array_map('intval', $ids))));
+    }
+
+    /**
+     * @return array{categoryTree: \Illuminate\Support\Collection, categories: \Illuminate\Support\Collection<int, ProductCategory>}
+     */
+    private function categoryPickerContext(?ProductCategory $excludeCategory = null): array
+    {
+        $excludeIds = $this->excludedParentIds($excludeCategory);
+
+        $categories = ProductCategory::active()
+            ->when($excludeIds !== [], fn ($query) => $query->whereNotIn('id', $excludeIds))
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        return [
+            'categoryTree' => ProductCategory::buildTree($categories),
+            'categories' => $categories,
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function excludedParentIds(?ProductCategory $category): array
+    {
+        if ($category === null) {
+            return [];
+        }
+
+        $exclude = [$category->id];
+        $all = ProductCategory::query()->get(['id', 'parent_id']);
+
+        do {
+            $added = false;
+            foreach ($all as $row) {
+                if (in_array($row->parent_id, $exclude, true) && ! in_array($row->id, $exclude, true)) {
+                    $exclude[] = $row->id;
+                    $added = true;
+                }
+            }
+        } while ($added);
+
+        return $exclude;
     }
 
     /**

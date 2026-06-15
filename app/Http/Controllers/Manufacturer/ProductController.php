@@ -228,6 +228,17 @@ class ProductController extends Controller
             $this->handleDocuments($request, $product);
             $this->handleAnalogs($request, $product);
 
+            if ($request->get('tab') === 'publication') {
+                $product->update([
+                    'status' => $validated['status'] ?? $product->status,
+                    'published_at' => $validated['published_at'] ?? $product->published_at,
+                    'show_in_catalog' => $request->boolean('show_in_catalog'),
+                    'mark_is_new' => $request->boolean('mark_is_new'),
+                    'mark_on_sale' => $request->boolean('mark_on_sale'),
+                    'mark_discontinued' => $request->boolean('mark_discontinued'),
+                ]);
+            }
+
             DB::commit();
 
             return redirect()
@@ -662,6 +673,9 @@ class ProductController extends Controller
             'status' => 'nullable|in:active,hidden,draft',
             'show_in_catalog' => 'nullable|boolean',
             'published_at' => 'nullable|date',
+            'mark_is_new' => 'nullable|boolean',
+            'mark_on_sale' => 'nullable|boolean',
+            'mark_discontinued' => 'nullable|boolean',
         ]);
     }
 
@@ -1291,23 +1305,22 @@ class ProductController extends Controller
             'documents',
             'analogs.images',
             'analogs.category',
+            'analogs.attributeValues.attribute',
         ]);
 
-        $categoryAttributes = $product->attributeValuesVisibleInCategory();
+        $catalog = new \App\Services\Catalog\CatalogQueryService($request->user());
+        $card = new \App\Services\Catalog\ProductCatalogCardService($request->user(), $catalog);
+        $cardData = $card->build($product);
 
-        $supplierRows = collect([[
-            'name' => $product->manufacturerProfile?->short_name ?: ($product->manufacturerProfile?->full_name ?? 'Производитель'),
-            'price' => $product->base_price,
-            'stock' => $product->available_stock,
-            'conditions' => $product->transport_conditions ?: 'По стандартным условиям производителя',
-            'regions' => $product->manufacturerProfile?->regions?->pluck('name')->implode(', ') ?: 'Все регионы',
-        ]]);
-
-        return view('manufacturer.catalog.show', [
+        return view('manufacturer.catalog.show', array_merge($cardData, [
             'product' => $product,
-            'categoryAttributes' => $categoryAttributes,
-            'supplierRows' => $supplierRows,
-        ]);
+            'backUrl' => $product->category?->slug
+                ? route('manufacturer.catalog.index', $product->category->slug)
+                : route('manufacturer.catalog.index'),
+            'analogShowRoute' => 'manufacturer.catalog.show',
+            'showActions' => true,
+            'liveUrl' => route('manufacturer.catalog.product.live', $product),
+        ]));
     }
 
     /** Разрешает категорию по slug или id из query (для AJAX/форм). */

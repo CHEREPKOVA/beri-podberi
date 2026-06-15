@@ -28,6 +28,32 @@ class CatalogQueryService
         return $this->user->currentCompanyRegionId();
     }
 
+    public function isEndCompanyCatalog(): bool
+    {
+        return in_array($this->catalogRole()?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true);
+    }
+
+    public function distributorOffers(): EndCompanyDistributorOfferService
+    {
+        return new EndCompanyDistributorOfferService($this->regionId());
+    }
+
+    private function endCompanyVisibleProductsQuery(): Builder
+    {
+        $offers = $this->distributorOffers();
+        $query = Product::query()->visibleInCatalog();
+
+        if (EndCompanyCatalogSettings::showUnavailableProducts()) {
+            return $query->where(function (Builder $builder) use ($offers): void {
+                $builder
+                    ->whereIn('products.id', $offers->purchasableProductsQuery()->select('products.id'))
+                    ->orWhereIn('products.id', $offers->unavailableInRegionProductsQuery()->select('products.id'));
+            });
+        }
+
+        return $query->whereIn('products.id', $offers->purchasableProductsQuery()->select('products.id'));
+    }
+
     /** Базовый запрос видимых в каталоге товаров с учётом роли. */
     public function visibleProductsQuery(): Builder
     {
@@ -57,9 +83,7 @@ class CatalogQueryService
         }
 
         if (in_array($role?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)) {
-            return Product::query()
-                ->visibleInCatalog()
-                ->visibleViaDistributorsInRegion($this->regionId());
+            return $this->endCompanyVisibleProductsQuery();
         }
 
         return Product::query()
@@ -156,6 +180,60 @@ class CatalogQueryService
             ->whereIn('id', $profileIds)
             ->orderBy('short_name')
             ->orderBy('full_name')
+            ->get();
+    }
+
+    /** Есть ли у товара аналоги, видимые в каталоге текущего пользователя. */
+    public function hasVisibleAnalogs(Product $product): bool
+    {
+        $linkedAnalogs = $this->linkedAnalogCandidates($product);
+        if ($linkedAnalogs->isEmpty()) {
+            return false;
+        }
+
+        return $this->distributorOffers()->hasVisibleAnalogs($product, $linkedAnalogs);
+    }
+
+    /**
+     * Аналоги, назначенные производителем и доступные в каталоге (регион, дистрибьютор, категория).
+     *
+     * @return Collection<int, Product>
+     */
+    public function resolveVisibleAnalogs(Product $product): Collection
+    {
+        $linkedAnalogs = $this->linkedAnalogCandidates($product);
+        if ($linkedAnalogs->isEmpty()) {
+            return collect();
+        }
+
+        $resolved = $this->distributorOffers()->resolveAnalogs($product, $linkedAnalogs);
+
+        return $this->distributorOffers()->enrichProducts($resolved);
+    }
+
+    /**
+     * @return Collection<int, Product>
+     */
+    private function linkedAnalogCandidates(Product $product): Collection
+    {
+        $analogIds = $product->allAnalogIds();
+        if ($analogIds === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->visibleInCatalog()
+            ->with([
+                'category',
+                'images',
+                'manufacturerProfile.regions',
+                'attributeValues.attribute',
+                'additionalCategories',
+            ])
+            ->whereIn('products.id', $analogIds)
+            ->where('products.id', '!=', $product->id)
+            ->compatibleWithProduct($product)
+            ->orderBy('name')
             ->get();
     }
 }

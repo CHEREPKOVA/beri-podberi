@@ -60,7 +60,10 @@ class Region extends Model
         return $query->where('federal_district', $district);
     }
 
-    public static function federalDistricts(): array
+    /**
+     * @return array<int, string>
+     */
+    public static function fallbackFederalDistricts(): array
     {
         return [
             'Центральный',
@@ -72,5 +75,10 @@ class Region extends Model
             'Сибирский',
             'Дальневосточный',
         ];
+    }
+
+    public static function federalDistricts(): array
+    {
+        return FederalDistrict::activeNames();
     }
 }

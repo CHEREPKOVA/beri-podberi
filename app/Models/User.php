@@ -216,26 +216,36 @@ class User extends Authenticatable
 
     public function currentCompanyRegionName(): ?string
     {
+        $regionId = $this->currentCompanyRegionId();
+        if ($regionId === null) {
+            return null;
+        }
+
+        return Region::query()->where('id', $regionId)->value('name');
+    }
+
+    public function currentCompanyRegionId(): ?int
+    {
         $role = $this->getCurrentRole();
         if (! $role) {
             return null;
         }
 
         $pivot = $this->roles->firstWhere('id', $role->id)?->pivot;
-        $region = trim((string) ($pivot?->company_region ?? ''));
-
-        return $region !== '' ? $region : null;
-    }
-
-    public function currentCompanyRegionId(): ?int
-    {
-        $regionName = $this->currentCompanyRegionName();
-        if (! $regionName) {
-            return null;
+        $regionName = trim((string) ($pivot?->company_region ?? ''));
+        if ($regionName !== '') {
+            $regionId = Region::query()->where('name', $regionName)->value('id');
+            if ($regionId !== null) {
+                return (int) $regionId;
+            }
         }
 
-        return Region::query()
-            ->where('name', $regionName)
-            ->value('id');
+        if (in_array($role->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)) {
+            $regionId = $this->endCompanyProfile?->defaultDeliveryAddress()?->region_id;
+
+            return $regionId !== null ? (int) $regionId : null;
+        }
+
+        return null;
     }
 }

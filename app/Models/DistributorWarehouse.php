@@ -34,13 +34,21 @@ class DistributorWarehouse extends Model
         ];
     }
 
-    public static function typeLabels(): array
+    /**
+     * @return array<string, string>
+     */
+    public static function fallbackTypeLabels(): array
     {
         return [
             self::TYPE_MAIN => 'Основной',
             self::TYPE_REGIONAL => 'Региональный',
             self::TYPE_STORE => 'Склад-магазин',
         ];
+    }
+
+    public static function typeLabels(): array
+    {
+        return WarehouseType::labelsMapFor(WarehouseType::APPLIES_DISTRIBUTOR);
     }
 
     public function typeLabel(): string

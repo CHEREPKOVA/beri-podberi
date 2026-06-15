@@ -141,8 +141,9 @@
         @else
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 @foreach($products as $product)
-                    <a href="{{ route($catalogShowRoute, $product) }}" class="block rounded-lg border border-gray-200 dark:border-gray-600 hover:border-[#c3242a] overflow-hidden transition-colors">
-                        <div class="aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                    @php $isUnavailable = ($catalogShowRoute === 'buyer.catalog.show') && ($product->unavailable_in_region ?? false); @endphp
+                    <a href="{{ route($catalogShowRoute, $product) }}" class="block rounded-lg border overflow-hidden transition-colors {{ $isUnavailable ? 'border-gray-300 opacity-80' : 'border-gray-200 dark:border-gray-600 hover:border-[#c3242a]' }}">
+                        <div class="aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center relative">
                             @if($product->primaryImage())
                                 <img src="{{ $product->primaryImage()->url }}" alt="" class="w-full h-full object-cover" />
                             @else
@@ -151,7 +152,19 @@
                         </div>
                         <div class="p-3">
                             <p class="text-sm font-medium text-gray-900 dark:text-white line-clamp-2">{{ $product->name }}</p>
-                            @if((int) (($product->analogs_count ?? 0) + ($product->analog_of_count ?? 0)) > 0)
+                            @if($product->catalogMarks() !== [])
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                    @foreach($product->catalogMarks() as $mark)
+                                        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded {{ $mark['class'] }}">{{ $mark['label'] }}</span>
+                                    @endforeach
+                                </div>
+                            @endif
+                            @if($isUnavailable)
+                                <p class="mt-1 text-[11px] text-gray-600 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded px-2 py-0.5 inline-flex">
+                                    Недоступно в вашем регионе
+                                </p>
+                            @endif
+                            @if($product->has_visible_analogs ?? false)
                                 <p class="mt-1 text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded px-2 py-0.5 inline-flex gap-1">
                                     <span>↔</span> Есть аналоги
                                 </p>
@@ -160,7 +173,20 @@
                             @if($product->manufacturerProfile && $catalogShowRoute === 'buyer.catalog.show')
                                 <p class="text-xs text-gray-400">{{ $product->manufacturerProfile->short_name ?: $product->manufacturerProfile->full_name }}</p>
                             @endif
-                            <p class="text-sm font-semibold text-[#c3242a] mt-1">{{ $product->base_price ? number_format((float) $product->base_price, 0, ',', ' ') . ' ₽' : '—' }}</p>
+                            @php
+                                $listingPrice = null;
+                                if ($catalogShowRoute === 'buyer.catalog.show' && ! $isUnavailable && $product->distributor_display_price !== null) {
+                                    $listingPrice = (float) $product->distributor_display_price;
+                                } elseif ($catalogShowRoute !== 'buyer.catalog.show' && $product->base_price) {
+                                    $listingPrice = (float) $product->base_price;
+                                }
+                            @endphp
+                            @if(! $isUnavailable)
+                                <p class="text-sm font-semibold text-[#c3242a] mt-1">{{ $listingPrice !== null ? number_format($listingPrice, 0, ',', ' ') . ' ₽' : '—' }}</p>
+                                @if($catalogShowRoute === 'buyer.catalog.show' && $listingPrice !== null)
+                                    <p class="text-[10px] text-gray-400 mt-0.5">цена дистрибьютора</p>
+                                @endif
+                            @endif
                         </div>
                     </a>
                 @endforeach

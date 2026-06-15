@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProductAnalogController extends Controller
 {
@@ -27,11 +29,6 @@ class ProductAnalogController extends Controller
     public function edit(Product $product): View
     {
         $product->load(['manufacturerProfile', 'category', 'analogs', 'analogOf']);
-        $allProducts = Product::query()
-            ->where('id', '!=', $product->id)
-            ->orderBy('name')
-            ->limit(500)
-            ->get();
 
         $selectedIds = $product->analogs->pluck('id')
             ->merge($product->analogOf->pluck('id'))
@@ -39,7 +36,44 @@ class ProductAnalogController extends Controller
             ->values()
             ->all();
 
-        return view('admin.catalog.analogs.edit', compact('product', 'allProducts', 'selectedIds'));
+        $selectedAnalogs = Product::query()
+            ->whereIn('id', $selectedIds)
+            ->where('id', '!=', $product->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'sku']);
+
+        $incompatibleSelected = $selectedAnalogs
+            ->filter(fn (Product $item) => ! $this->isCompatible($product, $item));
+
+        return view('admin.catalog.analogs.edit', compact('product', 'selectedAnalogs', 'incompatibleSelected'));
+    }
+
+    public function search(Request $request, Product $product): JsonResponse
+    {
+        $search = trim((string) $request->query('q', ''));
+        if (mb_strlen($search) < 2) {
+            return response()->json([
+                'data' => [],
+            ]);
+        }
+
+        $compact = preg_replace('/\s+/u', '', $search);
+
+        $items = Product::query()
+            ->where('id', '!=', $product->id)
+            ->compatibleWithProduct($product)
+            ->search($search)
+            ->orderByRaw(
+                'CASE WHEN sku = ? OR REPLACE(COALESCE(sku, ""), " ", "") = ? THEN 0 ELSE 1 END',
+                [$search, $compact]
+            )
+            ->orderBy('name')
+            ->limit(30)
+            ->get(['id', 'name', 'sku']);
+
+        return response()->json([
+            'data' => $items,
+        ]);
     }
 
     public function update(Request $request, Product $product): RedirectResponse
@@ -49,13 +83,24 @@ class ProductAnalogController extends Controller
             'analog_ids.*' => ['exists:products,id'],
         ]);
 
-        $analogIds = array_values(array_filter(
-            $validated['analog_ids'] ?? [],
-            fn ($id) => (int) $id !== (int) $product->id
-        ));
+        $analogIds = array_values(array_unique(array_map(
+            static fn ($id): int => (int) $id,
+            $validated['analog_ids'] ?? []
+        )));
+        $analogIds = array_values(array_filter($analogIds, fn (int $id): bool => $id !== (int) $product->id));
 
-        // Перестраиваем двусторонние связи аналогов, чтобы не оставлять "односторонних" пар.
-        $oldIds = $product->analogs()->pluck('products.id')->merge($product->analogOf()->pluck('products.id'))->unique()->all();
+        $compatibleCount = Product::query()
+            ->whereIn('id', $analogIds)
+            ->compatibleWithProduct($product)
+            ->count();
+
+        if ($compatibleCount !== count($analogIds)) {
+            throw ValidationException::withMessages([
+                'analog_ids' => 'Некоторые выбранные товары несовместимы с категорией текущей карточки.',
+            ]);
+        }
+
+        $oldIds = $product->allAnalogIds();
         $detachIds = array_values(array_diff($oldIds, $analogIds));
 
         foreach ($detachIds as $detachId) {
@@ -118,6 +163,7 @@ class ProductAnalogController extends Controller
         $header = fgetcsv($handle, 0, ';');
         if (! is_array($header)) {
             fclose($handle);
+
             return back()->with('error', 'Файл пустой или имеет неверный формат.');
         }
 
@@ -126,10 +172,12 @@ class ProductAnalogController extends Controller
         $analogIdx = array_search('analog_sku', $normalizedHeader, true);
         if ($productIdx === false || $analogIdx === false) {
             fclose($handle);
+
             return back()->with('error', 'Ожидаются колонки product_sku и analog_sku.');
         }
 
         $processed = 0;
+        $skipped = 0;
         while (($row = fgetcsv($handle, 0, ';')) !== false) {
             $productSku = trim((string) ($row[$productIdx] ?? ''));
             $analogSku = trim((string) ($row[$analogIdx] ?? ''));
@@ -140,6 +188,14 @@ class ProductAnalogController extends Controller
             $product = Product::query()->where('sku', $productSku)->first();
             $analog = Product::query()->where('sku', $analogSku)->first();
             if (! $product || ! $analog) {
+                $skipped++;
+
+                continue;
+            }
+
+            if (! $this->isCompatible($product, $analog)) {
+                $skipped++;
+
                 continue;
             }
 
@@ -149,6 +205,19 @@ class ProductAnalogController extends Controller
         }
         fclose($handle);
 
-        return back()->with('success', "Импорт завершен. Обработано связей: {$processed}.");
+        $message = "Импорт завершен. Обработано связей: {$processed}.";
+        if ($skipped > 0) {
+            $message .= " Пропущено несовместимых или не найденных: {$skipped}.";
+        }
+
+        return back()->with('success', $message);
+    }
+
+    private function isCompatible(Product $product, Product $candidate): bool
+    {
+        return Product::query()
+            ->where('id', $candidate->id)
+            ->compatibleWithProduct($product)
+            ->exists();
     }
 }

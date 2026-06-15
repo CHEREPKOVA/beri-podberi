@@ -1,4 +1,39 @@
-<div x-data="{ showAddForm: false, editingId: null, showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }">
+<div x-data="{
+    showAddForm: false,
+    editingId: null,
+    showDeleteModal: false,
+    deleteFormAction: '',
+    deleteMessage: '',
+    formatPhone(e) {
+        const input = e.target;
+        let digits = input.value.replace(/\D/g, '');
+        if (digits.startsWith('8')) digits = digits.slice(1);
+        if (digits.startsWith('7')) digits = digits.slice(1);
+        digits = digits.slice(0, 10);
+        if (digits.length === 0) {
+            input.value = '';
+            return;
+        }
+        let result = '+7 (' + digits.slice(0, 3);
+        if (digits.length >= 3) result += ')';
+        if (digits.length > 3) result += ' ' + digits.slice(3, 6);
+        if (digits.length > 6) result += '-' + digits.slice(6, 8);
+        if (digits.length > 8) result += '-' + digits.slice(8, 10);
+        input.value = result;
+    },
+    clearPhoneIfEmpty(e) {
+        const v = e.target.value.replace(/\D/g, '');
+        if (v === '' || v === '7') e.target.value = '';
+    },
+    editContact(id, el) {
+        this.editingId = id;
+        this.showAddForm = false;
+        this.$nextTick(() => {
+            const phoneInput = el.closest('[data-contact-card]')?.querySelector('input[name=phone]');
+            if (phoneInput?.value) this.formatPhone({ target: phoneInput });
+        });
+    }
+}">
     <div class="flex items-center justify-between mb-6">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Контактные данные</h2>
         <button
@@ -15,8 +50,8 @@
     {{-- Список контактов --}}
     <div class="space-y-4">
         @forelse($profile->contacts as $contact)
-        <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-gray-800/50" x-data="{ editing: false }">
-            <div x-show="!editing">
+        <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-gray-800/50" data-contact-card>
+            <div x-show="editingId !== {{ $contact->id }}">
                 <div class="flex items-start justify-between">
                     <div>
                         <div class="flex items-center gap-2">
@@ -33,7 +68,7 @@
                     </div>
                     <div class="flex items-center gap-2">
                         <button
-                            @click="editing = true"
+                            @click="editContact({{ $contact->id }}, $el)"
                             class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
                             title="Редактировать"
                         >
@@ -84,9 +119,10 @@
             </div>
 
             {{-- Форма редактирования --}}
-            <form x-show="editing" method="POST" action="{{ route('distributor.profile.contacts.update', $contact) }}" class="space-y-4">
+            <form x-show="editingId === {{ $contact->id }}" x-cloak method="POST" action="{{ route('distributor.profile.contacts.update', $contact) }}" class="space-y-4" autocomplete="off">
                 @csrf
                 @method('PUT')
+                <fieldset class="min-w-0 border-0 p-0 m-0" :disabled="editingId !== {{ $contact->id }}">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">ФИО <span class="text-red-500">*</span></label>
@@ -102,7 +138,17 @@
                     </div>
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Телефон</label>
-                        <input type="text" name="phone" value="{{ $contact->phone }}" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        <input
+                            type="tel"
+                            name="phone"
+                            value="{{ $contact->phone }}"
+                            inputmode="tel"
+                            autocomplete="off"
+                            placeholder="+7 (___) ___-__-__"
+                            @input="formatPhone($event)"
+                            @blur="clearPhoneIfEmpty($event)"
+                            class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                        >
                     </div>
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Отдел</label>
@@ -113,11 +159,12 @@
                         <input type="text" name="notes" value="{{ $contact->notes }}" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                     </div>
                 </div>
+                </fieldset>
                 <div class="flex items-center gap-3 pt-2">
                     <button type="submit" class="px-5 py-2.5 bg-[#c3242a] text-white text-sm font-medium rounded-lg hover:bg-[#a01e24] transition shadow-theme-xs">
                         Сохранить
                     </button>
-                    <button type="button" @click="editing = false" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition shadow-theme-xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
+                    <button type="button" @click="editingId = null" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition shadow-theme-xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
                         Отменить
                     </button>
                 </div>
@@ -171,7 +218,16 @@
                     </div>
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Телефон</label>
-                        <input type="text" name="phone" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        <input
+                            type="tel"
+                            name="phone"
+                            inputmode="tel"
+                            autocomplete="tel"
+                            placeholder="+7 (___) ___-__-__"
+                            @input="formatPhone($event)"
+                            @blur="clearPhoneIfEmpty($event)"
+                            class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                        >
                     </div>
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Отдел</label>

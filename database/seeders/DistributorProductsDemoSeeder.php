@@ -7,6 +7,7 @@ use App\Models\DistributorProductStock;
 use App\Models\DistributorProfile;
 use App\Models\DistributorWarehouse;
 use App\Models\Product;
+use App\Models\Region;
 use App\Models\User;
 use App\Services\DistributorProductLogger;
 use Illuminate\Database\Seeder;
@@ -35,13 +36,26 @@ class DistributorProductsDemoSeeder extends Seeder
             $profile = $user->distributorProfile ?? $user->getOrCreateDistributorProfile();
 
             if (! $profile->warehouses()->exists()) {
+                $primaryRegionId = $profile->primaryRegion()?->id
+                    ?? $profile->regions()->value('regions.id')
+                    ?? Region::query()->where('name', 'Москва')->value('id');
+
                 DistributorWarehouse::create([
                     'distributor_profile_id' => $profile->id,
                     'name' => 'Основной склад',
                     'address' => 'г. Москва, складская зона 1',
+                    'region_id' => $primaryRegionId,
                     'type' => DistributorWarehouse::TYPE_MAIN,
                     'is_active' => true,
                 ]);
+            } else {
+                $primaryRegionId = $profile->primaryRegion()?->id
+                    ?? $profile->regions()->value('regions.id')
+                    ?? Region::query()->where('name', 'Москва')->value('id');
+
+                $profile->warehouses()
+                    ->whereNull('region_id')
+                    ->update(['region_id' => $primaryRegionId]);
             }
 
             $warehouses = $profile->warehouses()->get();

@@ -2,9 +2,15 @@
 
 use App\Http\Controllers\Admin\CatalogController as AdminCatalogController;
 use App\Http\Controllers\Admin\CatalogProductController as AdminCatalogProductController;
+use App\Http\Controllers\Admin\ClaimStatusController as AdminClaimStatusController;
 use App\Http\Controllers\Admin\CompanyController as AdminCompanyController;
+use App\Http\Controllers\Admin\CompanyTypeController as AdminCompanyTypeController;
 use App\Http\Controllers\Admin\DeliveryMethodController as AdminDeliveryMethodController;
 use App\Http\Controllers\Admin\DirectoriesController as AdminDirectoriesController;
+use App\Http\Controllers\Admin\DocumentTypeController as AdminDocumentTypeController;
+use App\Http\Controllers\Admin\FederalDistrictController as AdminFederalDistrictController;
+use App\Http\Controllers\Admin\OrderStatusController as AdminOrderStatusController;
+use App\Http\Controllers\Admin\PlatformRoleController as AdminPlatformRoleController;
 use App\Http\Controllers\Admin\ProductAnalogController as AdminProductAnalogController;
 use App\Http\Controllers\Admin\ProductAttributeController as AdminProductAttributeController;
 use App\Http\Controllers\Admin\ProductCategoryController as AdminProductCategoryController;
@@ -13,8 +19,11 @@ use App\Http\Controllers\Admin\StaffController as AdminStaffController;
 use App\Http\Controllers\Admin\SystemSettingController as AdminSystemSettingController;
 use App\Http\Controllers\Admin\TransportCompanyController as AdminTransportCompanyController;
 use App\Http\Controllers\Admin\UnitTypeController as AdminUnitTypeController;
+use App\Http\Controllers\Admin\WarehouseTypeController as AdminWarehouseTypeController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Buyer\CatalogController as BuyerCatalogController;
+use App\Http\Controllers\Catalog\ProductLiveController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Distributor\ProductController as DistributorProductController;
 use App\Http\Controllers\Distributor\ProfileController as DistributorProfileController;
 use App\Http\Controllers\Distributor\WarehouseController as DistributorWarehouseController;
@@ -34,9 +43,7 @@ Route::get('/', function () {
 });
 
 Route::middleware(['auth', 'user.active'])->group(function () {
-    Route::get('/dashboard', function () {
-        return view('dashboard');
-    })->name('dashboard');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Выбор роли при входе (несколько ролей)
     Route::get('/role-select', [RoleSelectionController::class, 'show'])->name('role.select');
@@ -74,9 +81,16 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::middleware('permission:directories.manage')->group(function () {
             Route::get('/directories', [AdminDirectoriesController::class, 'index'])->name('directories.index');
             Route::resource('regions', AdminRegionController::class)->except(['show']);
+            Route::resource('federal-districts', AdminFederalDistrictController::class)->except(['show']);
+            Route::resource('company-types', AdminCompanyTypeController::class)->except(['show']);
+            Route::resource('platform-roles', AdminPlatformRoleController::class)->except(['show']);
+            Route::resource('order-statuses', AdminOrderStatusController::class)->except(['show']);
+            Route::resource('claim-statuses', AdminClaimStatusController::class)->except(['show']);
             Route::resource('delivery-methods', AdminDeliveryMethodController::class)->except(['show']);
             Route::resource('transport-companies', AdminTransportCompanyController::class)->except(['show']);
+            Route::resource('warehouse-types', AdminWarehouseTypeController::class)->except(['show']);
             Route::resource('unit-types', AdminUnitTypeController::class)->except(['show']);
+            Route::resource('document-types', AdminDocumentTypeController::class)->except(['show']);
             Route::get('/system-settings', [AdminSystemSettingController::class, 'index'])->name('system-settings.index');
             Route::put('/system-settings', [AdminSystemSettingController::class, 'update'])->name('system-settings.update');
         });
@@ -94,8 +108,12 @@ Route::middleware(['auth', 'user.active'])->group(function () {
 
             Route::get('/catalog/products', [AdminCatalogProductController::class, 'index'])->name('catalog.products.index');
             Route::get('/catalog/products/{product}', [AdminCatalogProductController::class, 'show'])->name('catalog.products.show');
+            Route::get('/catalog/products/{product}/live', ProductLiveController::class)->name('catalog.products.live');
             Route::get('/catalog/products/{product}/edit', [AdminCatalogProductController::class, 'edit'])->name('catalog.products.edit');
             Route::put('/catalog/products/{product}', [AdminCatalogProductController::class, 'update'])->name('catalog.products.update');
+            Route::delete('/catalog/products/images/{image}', [AdminCatalogProductController::class, 'deleteImage'])->name('catalog.products.image.delete');
+            Route::post('/catalog/products/images/{image}/primary', [AdminCatalogProductController::class, 'setPrimaryImage'])->name('catalog.products.image.primary');
+            Route::delete('/catalog/products/documents/{document}', [AdminCatalogProductController::class, 'deleteDocument'])->name('catalog.products.document.delete');
 
             Route::get('/catalog/attributes', [AdminProductAttributeController::class, 'index'])->name('catalog.attributes.index');
             Route::get('/catalog/attributes/create', [AdminProductAttributeController::class, 'create'])->name('catalog.attributes.create');
@@ -107,6 +125,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
             Route::get('/catalog/analogs', [AdminProductAnalogController::class, 'index'])->name('catalog.analogs.index');
             Route::get('/catalog/analogs/export', [AdminProductAnalogController::class, 'export'])->name('catalog.analogs.export');
             Route::post('/catalog/analogs/import', [AdminProductAnalogController::class, 'import'])->name('catalog.analogs.import');
+            Route::get('/catalog/analogs/{product}/search', [AdminProductAnalogController::class, 'search'])->name('catalog.analogs.search');
             Route::get('/catalog/analogs/{product}/edit', [AdminProductAnalogController::class, 'edit'])->name('catalog.analogs.edit');
             Route::put('/catalog/analogs/{product}', [AdminProductAnalogController::class, 'update'])->name('catalog.analogs.update');
         });
@@ -143,6 +162,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         // Каталог (дерево категорий + товары), ЧПУ: /catalog и /catalog/{slug}
         Route::get('/catalog/products', [ManufacturerProductController::class, 'catalogProducts'])->name('catalog.products');
         Route::get('/catalog/product/{product}', [ManufacturerProductController::class, 'catalogShow'])->name('catalog.show');
+        Route::get('/catalog/product/{product}/live', ProductLiveController::class)->name('catalog.product.live');
         Route::get('/catalog/{category?}', [ManufacturerProductController::class, 'catalog'])->name('catalog.index')->where('category', '[a-z0-9\-]+');
 
         // Номенклатура (товары)
@@ -235,6 +255,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
     Route::middleware(['role.selected', 'role:distributor,end_company,company_employee'])->prefix('buyer')->name('buyer.')->group(function () {
         Route::get('/catalog/products', [BuyerCatalogController::class, 'products'])->name('catalog.products');
         Route::get('/catalog/product/{product}', [BuyerCatalogController::class, 'show'])->name('catalog.show');
+        Route::get('/catalog/product/{product}/live', ProductLiveController::class)->name('catalog.product.live');
         Route::get('/catalog/{category?}', [BuyerCatalogController::class, 'index'])->name('catalog.index')->where('category', '[a-z0-9\-]+');
     });
 });

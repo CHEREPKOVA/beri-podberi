@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\EndCompanyDeliveryAddress;
+use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -58,6 +60,10 @@ class TestUsersSeeder extends Seeder
             if ($role) {
                 $user->roles()->sync([$role->id]);
             }
+
+            if ($roleSlug === Role::SLUG_END_COMPANY) {
+                $this->ensureEndCompanyCatalogRegion($user);
+            }
         }
 
         // Пользователь с несколькими ролями (дистрибьютор + конечный покупатель), с названиями компаний для модального окна
@@ -75,5 +81,28 @@ class TestUsersSeeder extends Seeder
             $distributorRole->id => ['company_name' => 'АккумТрейд Опт'],
             $endCompanyRole->id => ['company_name' => 'СТО-АвтоПлюс'],
         ]);
+        $this->ensureEndCompanyCatalogRegion($multiRoleUser);
+    }
+
+    private function ensureEndCompanyCatalogRegion(User $user): void
+    {
+        $moscow = Region::query()->where('name', 'Москва')->first();
+        if ($moscow === null) {
+            return;
+        }
+
+        $profile = $user->getOrCreateEndCompanyProfile();
+
+        EndCompanyDeliveryAddress::updateOrCreate(
+            [
+                'end_company_profile_id' => $profile->id,
+                'name' => 'Основной адрес',
+            ],
+            [
+                'address' => 'г. Москва, ул. Тестовая, 1',
+                'region_id' => $moscow->id,
+                'is_default' => true,
+            ],
+        );
     }
 }

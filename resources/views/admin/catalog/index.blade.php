@@ -45,7 +45,9 @@
         <a href="{{ route('admin.catalog.quality') }}" class="rounded-xl border border-yellow-200 dark:border-yellow-700 bg-yellow-50/60 dark:bg-yellow-900/20 p-5 hover:shadow-sm transition">
             <p class="text-xs uppercase text-yellow-800 dark:text-yellow-300">Контроль качества</p>
             <p class="mt-2 text-sm text-yellow-900 dark:text-yellow-200">
-                Без категории: {{ $stats['products_without_category'] }}, без свойств: {{ $stats['products_without_attributes'] }}, без изображений: {{ $stats['products_without_images'] }}
+                Без категории: {{ $stats['products_without_category'] }},
+                без обяз. характеристик: {{ $stats['products_missing_required_attributes'] }},
+                без изображений: {{ $stats['products_without_images'] }}
             </p>
             <p class="mt-2 text-sm font-medium text-[#c3242a]">Открыть отчёт →</p>
         </a>

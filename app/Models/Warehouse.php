@@ -39,13 +39,21 @@ class Warehouse extends Model
         ];
     }
 
-    public static function typeLabels(): array
+    /**
+     * @return array<string, string>
+     */
+    public static function fallbackTypeLabels(): array
     {
         return [
             self::TYPE_MAIN => 'Основной',
             self::TYPE_TEMPORARY => 'Временный',
             self::TYPE_TRANSIT => 'Транзитный',
         ];
+    }
+
+    public static function typeLabels(): array
+    {
+        return WarehouseType::labelsMapFor(WarehouseType::APPLIES_MANUFACTURER);
     }
 
     public function typeLabel(): string

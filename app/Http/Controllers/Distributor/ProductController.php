@@ -86,12 +86,15 @@ class ProductController extends Controller
 
         $products = $query->paginate(25)->withQueryString();
 
-        $categories = ProductCategory::query()
+        $baseCategories = ProductCategory::query()
             ->whereIn('id', $profile->productCategories()->pluck('product_categories.id'))
             ->orWhereIn('id', DistributorProduct::forDistributor($profile->id)->whereNotNull('product_category_id')->distinct()->pluck('product_category_id'))
             ->orderBy('name')
             ->get()
             ->unique('id');
+
+        $categories = ProductCategory::withAncestors($baseCategories);
+        $categoryTree = ProductCategory::buildTree($categories);
 
         $brands = DistributorProduct::forDistributor($profile->id)
             ->whereNotNull('brand')
@@ -101,7 +104,7 @@ class ProductController extends Controller
 
         $managedBy1c = $profile->integration_import_1c_stocks;
 
-        return view('distributor.products.index', compact('products', 'categories', 'brands', 'managedBy1c'));
+        return view('distributor.products.index', compact('products', 'categories', 'categoryTree', 'brands', 'managedBy1c'));
     }
 
     public function show(Request $request, DistributorProduct $product): View

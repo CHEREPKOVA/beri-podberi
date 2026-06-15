@@ -37,12 +37,18 @@
                         </svg>
                     </div>
 
-                    <input type="text" name="region" value="{{ request('region') }}"
-                           placeholder="Регион..."
-                           class="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
+                    <div class="min-w-[11rem] max-w-[14rem]">
+                        <x-multi-select-filter
+                            name="region_ids[]"
+                            :options="$regions"
+                            :selected="$selectedRegionIds"
+                            placeholder="Все регионы"
+                            :searchable="true"
+                        />
+                    </div>
 
-                    <button type="submit" class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-sm rounded-lg">Применить</button>
-                    @if(request()->hasAny(['search', 'type', 'status', 'region']))
+                    <button type="submit" class="px-4 py-2 bg-white dark:bg-gray-800 border border-[#c3242a] text-[#c3242a] dark:text-red-400 dark:border-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm font-medium transition-colors">Применить</button>
+                    @if(request()->hasAny(['search', 'type', 'status']) || !empty($selectedRegionIds))
                         <a href="{{ route('admin.companies.index') }}" class="text-sm text-gray-500">Сбросить</a>
                     @endif
                 </form>
@@ -63,7 +69,7 @@
                     <tr>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Компания</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Тип</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Регион</th>
+                        <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Регионы</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Статус</th>
                         <th class="px-4 py-3 text-left text-xs uppercase text-gray-500">Сотрудники</th>
                         <th class="px-4 py-3 w-32"></th>
@@ -99,7 +105,21 @@
                                 @endif
                             </div>
                         </td>
-                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{{ $company->region ?: '—' }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                            @if(($company->regions_count ?? 0) > 0)
+                                @php
+                                    $regionsCount = (int) $company->regions_count;
+                                    $regionsLabel = match (true) {
+                                        $regionsCount % 10 === 1 && $regionsCount % 100 !== 11 => 'регион',
+                                        $regionsCount % 10 >= 2 && $regionsCount % 10 <= 4 && ($regionsCount % 100 < 12 || $regionsCount % 100 > 14) => 'региона',
+                                        default => 'регионов',
+                                    };
+                                @endphp
+                                {{ $regionsCount }} {{ $regionsLabel }}
+                            @else
+                                —
+                            @endif
+                        </td>
                         <td class="px-4 py-3">
                             @if($company->status === 'active')
                                 <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">Активна</span>

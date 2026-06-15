@@ -20,7 +20,16 @@ class Role extends Model
         'name',
         'description',
         'sort_order',
+        'is_active',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'sort_order' => 'integer',
+        ];
+    }
 
     public function users(): BelongsToMany
     {
@@ -41,7 +50,38 @@ class Role extends Model
 
     public function label(): string
     {
-        return config("roles.labels.{$this->slug}", $this->name);
+        return $this->name ?: config("roles.labels.{$this->slug}", $this->slug);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('sort_order')->orderBy('name');
+    }
+
+    public function isInUse(): bool
+    {
+        return $this->users()->exists();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function protectedSlugs(): array
+    {
+        return [
+            self::SLUG_ADMIN,
+            self::SLUG_MANAGER,
+            self::SLUG_ANALYST,
+            self::SLUG_MANUFACTURER,
+            self::SLUG_DISTRIBUTOR,
+            self::SLUG_END_COMPANY,
+            self::SLUG_COMPANY_EMPLOYEE,
+        ];
     }
 
     /**
@@ -83,7 +123,7 @@ class Role extends Model
      */
     public static function corporateSlugsWithEmployees(): array
     {
-        return config('roles.corporate_roles_with_employees', []);
+        return CompanyType::activeSlugs();
     }
 
     /**

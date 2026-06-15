@@ -39,13 +39,13 @@ class DistributorDocument extends Model
 
     public static function typeLabels(): array
     {
-        return [
+        return DocumentType::labelsMapFor(DocumentType::CONTEXT_DISTRIBUTOR_PROFILE, [
             self::TYPE_REGISTRATION_CERTIFICATE => 'Свидетельство о регистрации',
             self::TYPE_COMPANY_CARD => 'Карточка предприятия',
             self::TYPE_LICENSE => 'Лицензия',
             self::TYPE_DISTRIBUTION_AGREEMENT => 'Договор дистрибуции',
             self::TYPE_OTHER => 'Другое',
-        ];
+        ]);
     }
 
     public function typeLabel(): string

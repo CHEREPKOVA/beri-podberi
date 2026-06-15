@@ -146,6 +146,11 @@ class ManufacturerProfile extends Model
         return $query->whereHas('regions', fn ($q) => $q->where('regions.id', $regionId));
     }
 
+    public function displayName(): string
+    {
+        return $this->short_name ?: $this->full_name;
+    }
+
     public function isFieldLocked(string $field): bool
     {
         return in_array($field, $this->locked_fields ?? [], true);

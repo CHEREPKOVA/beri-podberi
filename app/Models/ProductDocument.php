@@ -37,12 +37,12 @@ class ProductDocument extends Model
 
     public static function typeLabels(): array
     {
-        return [
+        return DocumentType::labelsMapFor(DocumentType::CONTEXT_PRODUCT, [
             self::TYPE_CERTIFICATE => 'Сертификат',
             self::TYPE_INSTRUCTION => 'Инструкция',
             self::TYPE_DATASHEET => 'Техническая документация',
             self::TYPE_OTHER => 'Другое',
-        ];
+        ]);
     }
 
     public function typeLabel(): string

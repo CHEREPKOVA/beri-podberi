@@ -20,7 +20,6 @@ class TransportCompanyFactory extends Factory
         'Байкал Сервис',
         'Энергия',
         'КИТ',
-        'Boxberry',
         'Почта России',
     ];
 

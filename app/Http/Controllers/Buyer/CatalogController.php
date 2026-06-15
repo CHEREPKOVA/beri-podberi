@@ -8,9 +8,9 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Role;
 use App\Services\Catalog\CatalogQueryService;
+use App\Services\Catalog\ProductCatalogCardService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class CatalogController extends Controller
@@ -56,7 +56,6 @@ class CatalogController extends Controller
     public function show(Request $request, Product $product): View
     {
         $user = $request->user();
-        $regionId = $user->currentCompanyRegionId();
         $catalogRole = $user->getCurrentRole();
         $catalog = new CatalogQueryService($user);
 
@@ -68,9 +67,7 @@ class CatalogController extends Controller
             'images',
             'unitType',
             'attributeValues.attribute',
-            'stocks.warehouse.region',
-            'analogs',
-            'analogOf',
+            'documents',
         ]);
 
         if (! $product->isVisibleInCatalog()) {
@@ -79,55 +76,26 @@ class CatalogController extends Controller
         if (! $product->category->isShownInCatalogForRole($catalogRole)) {
             abort(404);
         }
-        if (! $catalog->visibleProductsQuery()->where('products.id', $product->id)->exists()) {
+
+        $inCatalog = $catalog->visibleProductsQuery()->where('products.id', $product->id)->exists();
+        if (! $inCatalog) {
             abort(404);
         }
 
-        $visibleStocks = $product->visibleStocksForRegion($regionId);
-        $analogs = $this->resolveVisibleAnalogs($product, $catalog);
-        $productUnavailable = $visibleStocks->sum('available_quantity') <= 0;
-        $categoryAttributes = $product->attributeValuesVisibleInCategory();
-        $distributors = $catalog->distributorsForProductInRegion($product);
+        $card = new ProductCatalogCardService($user, $catalog);
+        $cardData = $card->build($product);
 
-        return view('buyer.catalog.show', [
+        $offerSummary = $cardData['offerSummary'];
+        $product->setAttribute('unavailable_in_region', $offerSummary['unavailable_in_region'] ?? false);
+        $product->setAttribute('is_purchasable', $offerSummary['is_purchasable'] ?? false);
+
+        return view('buyer.catalog.show', array_merge($cardData, [
             'product' => $product,
-            'categoryAttributes' => $categoryAttributes,
-            'visibleStocks' => $visibleStocks,
-            'companyRegionName' => $user->currentCompanyRegionName(),
-            'companyRegionId' => $regionId,
-            'analogs' => $analogs,
-            'productUnavailable' => $productUnavailable,
-            'currentRoleSlug' => $catalogRole?->slug,
-            'distributors' => $distributors,
-        ]);
-    }
-
-    /**
-     * @return Collection<int, Product>
-     */
-    private function resolveVisibleAnalogs(Product $product, CatalogQueryService $catalog): Collection
-    {
-        $analogIds = $product->allAnalogIds();
-        if ($analogIds === []) {
-            return collect();
-        }
-
-        return $catalog->visibleProductsQuery()
-            ->with([
-                'category',
-                'images',
-                'manufacturerProfile.regions',
-                'attributeValues.attribute',
-                'stocks.warehouse.region',
-                'additionalCategories',
-            ])
-            ->whereIn('products.id', $analogIds)
-            ->where('products.id', '!=', $product->id)
-            ->compatibleWithProduct($product)
-            ->orderBy('name')
-            ->get()
-            ->filter(fn (Product $candidate): bool => $candidate->hasEnoughCharacteristicsForAnalog())
-            ->values();
+            'backUrl' => route('buyer.catalog.index', ['category' => $product->category?->slug]),
+            'analogShowRoute' => 'buyer.catalog.show',
+            'showActions' => $cardData['cardRole'] === 'distributor',
+            'liveUrl' => route('buyer.catalog.product.live', $product),
+        ]));
     }
 
     private function resolveCategoryFromRequest(?Role $catalogRole, ?string $value): ?ProductCategory

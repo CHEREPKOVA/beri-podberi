@@ -1,3 +1,10 @@
+@php
+    $mediaRoutes = $mediaRoutes ?? [
+        'image_delete' => 'manufacturer.products.image.delete',
+        'image_primary' => 'manufacturer.products.image.primary',
+    ];
+    $skuReadonly = $skuReadonly ?? false;
+@endphp
 <div class="space-y-6">
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
@@ -12,8 +19,13 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Артикул / SKU <span class="text-red-500">*</span>
             </label>
+            @if($skuReadonly)
+            <input type="text" value="{{ $product?->sku }}" disabled
+                class="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-100 dark:bg-gray-900 text-gray-500 dark:text-gray-400 cursor-not-allowed" />
+            @else
             <input type="text" name="sku" value="{{ old('sku', $product?->sku) }}" required
                 class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent" />
+            @endif
         </div>
     </div>
 
@@ -117,7 +129,7 @@
                 <img src="{{ $image->url }}" alt="" class="w-full h-32 object-cover rounded-lg border-2 {{ $image->is_primary ? 'border-[#c3242a]' : 'border-gray-200' }}" />
                 <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
                     @if(!$image->is_primary)
-                    <button type="submit" form="set-primary-image-{{ $image->id }}"
+                    <button type="submit" form="set-primary-image-{{ $image->id }}" formnovalidate
                         class="p-1.5 bg-white rounded-full text-gray-700 hover:text-[#c3242a]" title="Сделать основным">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
@@ -125,7 +137,7 @@
                     </button>
                     @endif
                     <button type="button"
-                        @click="$dispatch('open-aux-delete', { action: '{{ route('manufacturer.products.image.delete', $image) }}', message: 'Удалить это изображение?' })"
+                        @click="$dispatch('open-aux-delete', { action: '{{ route($mediaRoutes['image_delete'], $image) }}', message: 'Удалить это изображение?' })"
                         class="p-1.5 bg-white rounded-full text-gray-700 hover:text-red-600"
                         title="Удалить">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,7 +176,7 @@
 @push('product-external-forms')
     @foreach($product->images as $image)
         @if(!$image->is_primary)
-        <form id="set-primary-image-{{ $image->id }}" action="{{ route('manufacturer.products.image.primary', $image) }}" method="POST" class="hidden">
+        <form id="set-primary-image-{{ $image->id }}" action="{{ route($mediaRoutes['image_primary'], $image) }}" method="POST" class="hidden">
             @csrf
         </form>
         @endif

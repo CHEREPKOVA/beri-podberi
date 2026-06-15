@@ -1,3 +1,8 @@
+@php
+    $mediaRoutes = $mediaRoutes ?? [
+        'document_delete' => 'manufacturer.products.document.delete',
+    ];
+@endphp
 <div class="space-y-8">
     <div>
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Артикулы и коды</h3>
@@ -101,7 +106,7 @@
                         </svg>
                     </a>
                     <button type="button"
-                        @click="$dispatch('open-aux-delete', { action: '{{ route('manufacturer.products.document.delete', $document) }}', message: {{ json_encode('Удалить документ «' . $document->name . '»?') }} })"
+                        @click="$dispatch('open-aux-delete', { action: '{{ route($mediaRoutes['document_delete'], $document) }}', message: {{ json_encode('Удалить документ «' . $document->name . '»?') }} })"
                         class="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"
                         title="Удалить">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -2,7 +2,13 @@
     <div class="flex items-center justify-between mb-6">
         <div>
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Адреса доставки</h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Склады, магазины, филиалы — точки получения заказов</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Склады, магазины, филиалы — точки получения заказов. Регион адреса по умолчанию определяет, какие товары и поставщики видны в каталоге.</p>
+            @php $catalogRegion = auth()->user()->currentCompanyRegionName(); @endphp
+            @if($catalogRegion)
+                <p class="text-sm text-gray-600 dark:text-gray-300 mt-2">Текущий регион каталога: <span class="font-medium">{{ $catalogRegion }}</span></p>
+            @else
+                <p class="text-sm text-amber-700 dark:text-amber-400 mt-2">Добавьте адрес с регионом и отметьте его по умолчанию — без этого каталог будет пустым.</p>
+            @endif
         </div>
         <button type="button" @click="showAdd = true" class="px-4 py-2 bg-[#c3242a] text-white text-sm font-medium rounded-lg hover:bg-[#a01e24]">Добавить адрес</button>
     </div>

@@ -8,6 +8,13 @@ use Illuminate\Support\Facades\DB;
 
 class AdminAuditLogger
 {
+    public static function actionLabel(string $action): string
+    {
+        $labels = config('admin_audit.action_labels', []);
+
+        return $labels[$action] ?? $labels['_default'] ?? 'Действие в панели управления';
+    }
+
     public function logRequest(Request $request, int $responseStatus): void
     {
         $user = $request->user();

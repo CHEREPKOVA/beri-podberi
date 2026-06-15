@@ -4,7 +4,7 @@
 @section('heading', 'Администраторы и менеджеры')
 
 @section('content')
-<div class="space-y-6" x-data="{ showDeleteModal: false, deleteFormAction: '', deleteMessage: '', showSuspendModal: false, suspendFormAction: '', suspendMessage: '' }">
+<div class="space-y-6" x-data="{ showDeleteModal: false, deleteFormAction: '', deleteMessage: '', showSuspendModal: false, suspendFormAction: '', suspendMessage: '', showActivateModal: false, activateFormAction: '', activateMessage: '' }">
     @if(session('success'))
     <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 px-4 py-3 rounded-lg">
         {{ session('success') }}
@@ -137,14 +137,14 @@
                                         </svg>
                                     </button>
                                     @else
-                                    <form method="POST" action="{{ route('admin.staff.activate', $user) }}" class="inline">
-                                        @csrf
-                                        <button type="submit" class="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600" title="Разблокировать доступ">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                                            </svg>
-                                        </button>
-                                    </form>
+                                    <button type="button"
+                                        @click="activateFormAction = '{{ route('admin.staff.activate', $user) }}'; activateMessage = {{ json_encode('Восстановить доступ для «' . $user->name . '»? Сотрудник снова сможет входить в систему.') }}; showActivateModal = true"
+                                        class="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600"
+                                        title="Разблокировать доступ">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                                        </svg>
+                                    </button>
                                     @endif
                                     <button type="button"
                                         @click="deleteFormAction = '{{ route('admin.staff.destroy', $user) }}'; deleteMessage = {{ json_encode('Отозвать доступ сотрудника «' . $user->name . '» (удалить из панели управления)? Учётная запись будет отключена от ролей администратора/менеджера.') }}; showDeleteModal = true"
@@ -189,6 +189,25 @@
                 </button>
                 <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
                     Заблокировать
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {{-- Модальное окно подтверждения разблокировки --}}
+    <div x-show="showActivateModal" x-cloak
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showActivateModal = false">
+        <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Разблокировка доступа</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6" x-text="activateMessage"></p>
+            <form :action="activateFormAction" method="POST" class="flex justify-end gap-3">
+                @csrf
+                <button type="button" @click="showActivateModal = false"
+                    class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                    Отмена
+                </button>
+                <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
+                    Разблокировать
                 </button>
             </form>
         </div>

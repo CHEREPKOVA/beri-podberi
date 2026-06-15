@@ -41,14 +41,14 @@ class EndCompanyDocument extends Model
 
     public static function typeLabels(): array
     {
-        return [
+        return DocumentType::labelsMapFor(DocumentType::CONTEXT_END_COMPANY_PROFILE, [
             self::TYPE_CHARTER => 'Устав / учредительные документы',
             self::TYPE_COMPANY_CARD => 'Карточка предприятия',
             self::TYPE_POWER_OF_ATTORNEY => 'Доверенность',
             self::TYPE_REQUISITES_PDF => 'Реквизиты (PDF)',
             self::TYPE_CONTRACT => 'Договор',
             self::TYPE_OTHER => 'Прочее',
-        ];
+        ]);
     }
 
     public function typeLabel(): string

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryMethod;
 use App\Models\ManufacturerProfile;
+use App\Models\Region;
 use App\Models\Role;
 use App\Models\TransportCompany;
 use App\Models\User;
@@ -57,8 +58,27 @@ class CompanyController extends Controller
             $rows->having('status', '=', $request->string('status')->toString());
         }
 
-        if ($request->filled('region')) {
-            $rows->having('region', 'LIKE', '%'.$request->string('region')->toString().'%');
+        $selectedRegionIds = $this->normalizeRegionIds($request->input('region_ids', []));
+        if ($selectedRegionIds !== []) {
+            $regionNames = Region::query()
+                ->whereIn('id', $selectedRegionIds)
+                ->pluck('name')
+                ->all();
+            $matchingCompanyNames = $this->companyNamesMatchingRegionIds($selectedRegionIds);
+            $rows->where(function ($query) use ($regionNames, $matchingCompanyNames): void {
+                $applied = false;
+                if ($regionNames !== []) {
+                    $query->whereIn('role_user.company_region', $regionNames);
+                    $applied = true;
+                }
+                if ($matchingCompanyNames !== []) {
+                    if ($applied) {
+                        $query->orWhereIn('role_user.company_name', $matchingCompanyNames);
+                    } else {
+                        $query->whereIn('role_user.company_name', $matchingCompanyNames);
+                    }
+                }
+            });
         }
 
         $companies = DB::query()
@@ -67,9 +87,19 @@ class CompanyController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $companyTypes = Role::whereIn('slug', $this->corporateTypes())->orderBy('sort_order')->get();
+        $regionCounts = $this->resolveCompanyRegionCountsForList(
+            $companies->getCollection()->pluck('name')->all()
+        );
+        $companies->getCollection()->transform(function (object $company) use ($regionCounts): object {
+            $company->regions_count = $regionCounts[$company->name] ?? 0;
 
-        return view('admin.companies.index', compact('companies', 'companyTypes'));
+            return $company;
+        });
+
+        $companyTypes = Role::whereIn('slug', $this->corporateTypes())->orderBy('sort_order')->get();
+        $regions = Region::active()->orderBy('name')->get();
+
+        return view('admin.companies.index', compact('companies', 'companyTypes', 'regions', 'selectedRegionIds'));
     }
 
     public function create(): View
@@ -237,11 +267,12 @@ class CompanyController extends Controller
             ->where('admin_action_logs.company_name', $companyName)
             ->where('admin_action_logs.company_type', $companyType)
             ->orderByDesc('admin_action_logs.id')
-            ->limit(30)
-            ->get([
+            ->select([
                 'admin_action_logs.*',
                 'users.name as admin_name',
-            ]);
+            ])
+            ->paginate(20)
+            ->withQueryString();
 
         $roleOptions = Role::whereIn('slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE])->orderBy('sort_order')->get();
         $companyRoleKeys = [];
@@ -432,6 +463,114 @@ class CompanyController extends Controller
         }
 
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Пользователь удалён из компании.');
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function resolveCompanyRegionCountsForList(array $companyNames): array
+    {
+        $companyNames = array_values(array_unique(array_filter($companyNames)));
+        if ($companyNames === []) {
+            return [];
+        }
+
+        $regionIdsByCompany = collect();
+
+        $regionIdsByCompany = $regionIdsByCompany->merge(
+            DB::table('role_user as ru')
+                ->join('manufacturer_profiles as mp', 'mp.user_id', '=', 'ru.user_id')
+                ->join('manufacturer_region as mr', 'mr.manufacturer_profile_id', '=', 'mp.id')
+                ->whereIn('ru.company_name', $companyNames)
+                ->select('ru.company_name', 'mr.region_id')
+                ->distinct()
+                ->get()
+        );
+
+        $regionIdsByCompany = $regionIdsByCompany->merge(
+            DB::table('role_user as ru')
+                ->join('distributor_profiles as dp', 'dp.user_id', '=', 'ru.user_id')
+                ->join('distributor_region as dr', 'dr.distributor_profile_id', '=', 'dp.id')
+                ->whereIn('ru.company_name', $companyNames)
+                ->select('ru.company_name', 'dr.region_id')
+                ->distinct()
+                ->get()
+        );
+
+        $regionIdsByCompany = $regionIdsByCompany->merge(
+            DB::table('role_user as ru')
+                ->join('end_company_profiles as ep', 'ep.user_id', '=', 'ru.user_id')
+                ->join('end_company_delivery_addresses as ea', 'ea.end_company_profile_id', '=', 'ep.id')
+                ->whereIn('ru.company_name', $companyNames)
+                ->whereNotNull('ea.region_id')
+                ->select('ru.company_name', 'ea.region_id')
+                ->distinct()
+                ->get()
+        );
+
+        return $regionIdsByCompany
+            ->groupBy('company_name')
+            ->map(fn ($group) => $group->pluck('region_id')->unique()->filter()->count())
+            ->all();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function normalizeRegionIds(mixed $regionIds): array
+    {
+        return collect($regionIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, int>  $regionIds
+     * @return array<int, string>
+     */
+    private function companyNamesMatchingRegionIds(array $regionIds): array
+    {
+        if ($regionIds === []) {
+            return [];
+        }
+
+        $names = collect();
+
+        $names = $names->merge(
+            DB::table('role_user as ru')
+                ->join('manufacturer_profiles as mp', 'mp.user_id', '=', 'ru.user_id')
+                ->join('manufacturer_region as mr', 'mr.manufacturer_profile_id', '=', 'mp.id')
+                ->whereIn('mr.region_id', $regionIds)
+                ->distinct()
+                ->pluck('ru.company_name')
+        );
+
+        $names = $names->merge(
+            DB::table('role_user as ru')
+                ->join('distributor_profiles as dp', 'dp.user_id', '=', 'ru.user_id')
+                ->join('distributor_region as dr', 'dr.distributor_profile_id', '=', 'dp.id')
+                ->whereIn('dr.region_id', $regionIds)
+                ->distinct()
+                ->pluck('ru.company_name')
+        );
+
+        $names = $names->merge(
+            DB::table('role_user as ru')
+                ->join('end_company_profiles as ep', 'ep.user_id', '=', 'ru.user_id')
+                ->join('end_company_delivery_addresses as ea', 'ea.end_company_profile_id', '=', 'ep.id')
+                ->whereIn('ea.region_id', $regionIds)
+                ->distinct()
+                ->pluck('ru.company_name')
+        );
+
+        return $names
+            ->filter(fn ($name) => is_string($name) && $name !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function companyMembersPivotQuery(string $companyName, string $companyType)

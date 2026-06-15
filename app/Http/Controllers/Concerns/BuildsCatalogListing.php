@@ -33,8 +33,7 @@ trait BuildsCatalogListing
             : collect();
 
         $query = $catalog->visibleProductsQuery()
-            ->with(['category', 'images', 'manufacturerProfile'])
-            ->withCount(['analogs', 'analogOf']);
+            ->with(['category', 'images', 'manufacturerProfile']);
 
         if ($category) {
             $category->loadAncestors();
@@ -48,6 +47,15 @@ trait BuildsCatalogListing
         }
 
         $products = $query->orderBy('name')->paginate(24)->withQueryString();
+        $collection = $products->getCollection()->map(function ($product) use ($catalog) {
+            $product->setAttribute('has_visible_analogs', $catalog->hasVisibleAnalogs($product));
+
+            return $product;
+        });
+        if ($catalog->isEndCompanyCatalog()) {
+            $collection = $catalog->distributorOffers()->enrichProducts($collection);
+        }
+        $products->setCollection($collection);
 
         return [
             'products' => $products,

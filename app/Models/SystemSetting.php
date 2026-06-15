@@ -47,7 +47,6 @@ class SystemSetting extends Model
     {
         $row = static::query()
             ->where('key', $key)
-            ->where('is_active', true)
             ->first();
 
         if ($row === null) {
@@ -55,5 +54,25 @@ class SystemSetting extends Model
         }
 
         return $row->parsedValue();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function groupLabels(): array
+    {
+        return [
+            'notifications' => 'Уведомления',
+            'timings' => 'Сроки и тайминги',
+            'limits' => 'Лимиты',
+            'display' => 'Отображение',
+            'security' => 'Безопасность',
+            'catalog' => 'Каталог',
+        ];
+    }
+
+    public static function groupLabel(string $groupKey): string
+    {
+        return self::groupLabels()[$groupKey] ?? $groupKey;
     }
 }

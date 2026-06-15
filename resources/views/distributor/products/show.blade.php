@@ -3,6 +3,11 @@
 @section('title', $product->name)
 @section('heading', 'Карточка товара')
 
+@php
+    $inputClass = 'shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90';
+    $textareaClass = 'shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90';
+@endphp
+
 @section('content')
 <div x-data="{ activeTab: '{{ $tab }}', showPriceModal: false, priceType: 'retail' }" class="space-y-6">
     @if(session('success'))
@@ -85,47 +90,47 @@
                         @unless($product->managed_by_1c && $product->isSyncedFrom1c())
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Наименование</label>
-                            <input type="text" name="name" value="{{ old('name', $product->name) }}" required class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="text" name="name" value="{{ old('name', $product->name) }}" required class="{{ $inputClass }}" />
                         </div>
                         @endunless
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Внутренний артикул</label>
-                            <input type="text" name="internal_sku" value="{{ old('internal_sku', $product->internal_sku) }}" required class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="text" name="internal_sku" value="{{ old('internal_sku', $product->internal_sku) }}" required class="{{ $inputClass }}" />
                         </div>
                         @unless($product->managed_by_1c && $product->isSyncedFrom1c())
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Артикул производителя</label>
-                            <input type="text" name="manufacturer_sku" value="{{ old('manufacturer_sku', $product->manufacturer_sku) }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="text" name="manufacturer_sku" value="{{ old('manufacturer_sku', $product->manufacturer_sku) }}" class="{{ $inputClass }}" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Бренд</label>
-                            <input type="text" name="brand" value="{{ old('brand', $product->brand) }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="text" name="brand" value="{{ old('brand', $product->brand) }}" class="{{ $inputClass }}" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Штрихкод</label>
-                            <input type="text" name="barcode" value="{{ old('barcode', $product->barcode) }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="text" name="barcode" value="{{ old('barcode', $product->barcode) }}" class="{{ $inputClass }}" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Страна производства</label>
-                            <input type="text" name="country_of_origin" value="{{ old('country_of_origin', $product->country_of_origin) }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="text" name="country_of_origin" value="{{ old('country_of_origin', $product->country_of_origin) }}" class="{{ $inputClass }}" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Кол-во в упаковке</label>
-                            <input type="number" name="pack_quantity" value="{{ old('pack_quantity', $product->pack_quantity) }}" min="1" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="number" name="pack_quantity" value="{{ old('pack_quantity', $product->pack_quantity) }}" min="1" class="{{ $inputClass }}" />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Кратность заказа</label>
-                            <input type="number" name="min_order_quantity" value="{{ old('min_order_quantity', $product->min_order_quantity) }}" min="1" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700" />
+                            <input type="number" name="min_order_quantity" value="{{ old('min_order_quantity', $product->min_order_quantity) }}" min="1" class="{{ $inputClass }}" />
                         </div>
                         @endunless
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Краткое описание</label>
-                        <textarea name="short_description" rows="2" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700">{{ old('short_description', $product->short_description) }}</textarea>
+                        <textarea name="short_description" rows="2" class="{{ $textareaClass }}">{{ old('short_description', $product->short_description) }}</textarea>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
-                        <textarea name="description" rows="4" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700">{{ old('description', $product->description) }}</textarea>
+                        <textarea name="description" rows="4" class="{{ $textareaClass }}">{{ old('description', $product->description) }}</textarea>
                     </div>
 
                     @if($product->sourceProduct && $product->sourceProduct->attributeValues->isNotEmpty())
@@ -219,7 +224,7 @@
                                         <input type="hidden" name="stocks[{{ $loop->index }}][warehouse_id]" value="{{ $wh->id }}" />
                                         <input type="number" name="stocks[{{ $loop->index }}][quantity]" value="{{ $stock?->quantity ?? 0 }}" min="0"
                                             {{ $stockEditingDisabled ? 'readonly' : '' }}
-                                            class="w-24 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 {{ $stockEditingDisabled ? 'bg-gray-100' : '' }}" />
+                                            class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 {{ $stockEditingDisabled ? 'bg-gray-100' : '' }}" />
                                     </td>
                                     <td class="px-4 py-2 text-gray-500 text-xs">{{ $stock?->stock_updated_at?->format('d.m.Y H:i') ?? '—' }}</td>
                                 </tr>
@@ -258,8 +263,8 @@
                         @if($product->status !== \App\Models\DistributorProduct::STATUS_ARCHIVE)
                         <form method="POST" action="{{ route('distributor.products.documents.store', $product) }}" enctype="multipart/form-data" class="space-y-3 p-4 bg-gray-50 rounded-lg">
                             @csrf
-                            <input type="text" name="name" placeholder="Название" required class="w-full rounded-lg border-gray-300 text-sm" />
-                            <select name="type" class="w-full rounded-lg border-gray-300 text-sm">
+                            <input type="text" name="name" placeholder="Название" required class="{{ $inputClass }}" />
+                            <select name="type" class="{{ $inputClass }}">
                                 @foreach(\App\Models\DistributorProductDocument::typeLabels() as $k => $l)
                                 <option value="{{ $k }}">{{ $l }}</option>
                                 @endforeach
@@ -315,15 +320,15 @@
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium mb-1">Новая цена, ₽</label>
-                        <input type="number" name="new_price" step="0.01" min="0" required class="w-full rounded-lg border-gray-300" />
+                        <input type="number" name="new_price" step="0.01" min="0" required class="{{ $inputClass }}" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Комментарий</label>
-                        <textarea name="comment" rows="2" class="w-full rounded-lg border-gray-300"></textarea>
+                        <textarea name="comment" rows="2" class="{{ $textareaClass }}"></textarea>
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Дата вступления в силу</label>
-                        <input type="datetime-local" name="effective_at" class="w-full rounded-lg border-gray-300" />
+                        <input type="datetime-local" name="effective_at" class="{{ $inputClass }}" />
                     </div>
                 </div>
                 <div class="flex gap-2 mt-6">

@@ -45,6 +45,9 @@ class Product extends Model
         'status',
         'published_at',
         'show_in_catalog',
+        'mark_is_new',
+        'mark_on_sale',
+        'mark_discontinued',
         'sync_source',
         'synced_at',
         'is_modified',
@@ -60,6 +63,9 @@ class Product extends Model
             'synced_at' => 'datetime',
             'price_updated_at' => 'datetime',
             'show_in_catalog' => 'boolean',
+            'mark_is_new' => 'boolean',
+            'mark_on_sale' => 'boolean',
+            'mark_discontinued' => 'boolean',
             'is_modified' => 'boolean',
         ];
     }
@@ -86,6 +92,26 @@ class Product extends Model
             self::STATUS_DRAFT => 'bg-yellow-100 text-yellow-800',
             default => 'bg-gray-100 text-gray-800',
         };
+    }
+
+    /**
+     * @return list<array{label: string, class: string}>
+     */
+    public function catalogMarks(): array
+    {
+        $marks = [];
+
+        if ($this->mark_is_new) {
+            $marks[] = ['label' => 'Новинка', 'class' => 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'];
+        }
+        if ($this->mark_on_sale) {
+            $marks[] = ['label' => 'Распродажа', 'class' => 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200'];
+        }
+        if ($this->mark_discontinued) {
+            $marks[] = ['label' => 'Снят с производства', 'class' => 'bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200'];
+        }
+
+        return $marks;
     }
 
     public function manufacturerProfile(): BelongsTo

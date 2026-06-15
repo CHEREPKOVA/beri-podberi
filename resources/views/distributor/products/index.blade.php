@@ -68,32 +68,54 @@
                         </svg>
                     </div>
 
-                    <select name="category" class="pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
-                        <option value="">Все категории</option>
-                        @foreach($categories as $category)
-                        <option value="{{ $category->id }}" @selected(request('category') == $category->id)>{{ $category->name }}</option>
-                        @endforeach
-                    </select>
+                    <div class="min-w-[11rem] max-w-[14rem]">
+                        @include('manufacturer.products._category_tree_select', [
+                            'name' => 'category',
+                            'tree' => $categoryTree,
+                            'categories' => $categories,
+                            'selectedId' => request()->filled('category') ? (int) request('category') : null,
+                            'placeholder' => 'Все категории',
+                            'inputId' => 'distributor-products-index-category-filter',
+                            'allowClear' => true,
+                            'clearLabel' => 'Все категории',
+                            'buttonClass' => 'w-full flex items-center justify-between gap-2 pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-left text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer',
+                        ])
+                    </div>
 
-                    <select name="brand" class="pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm max-w-[160px]">
-                        <option value="">Все бренды</option>
-                        @foreach($brands as $brandName)
-                        <option value="{{ $brandName }}" @selected(request('brand') === $brandName)>{{ $brandName }}</option>
-                        @endforeach
-                    </select>
+                    <div class="relative max-w-[160px]">
+                        <select name="brand" class="w-full appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
+                            <option value="">Все бренды</option>
+                            @foreach($brands as $brandName)
+                            <option value="{{ $brandName }}" @selected(request('brand') === $brandName)>{{ $brandName }}</option>
+                            @endforeach
+                        </select>
+                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
 
-                    <select name="status" class="pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
-                        <option value="">Любой статус</option>
-                        @foreach(\App\Models\DistributorProduct::statusLabels() as $key => $label)
-                        <option value="{{ $key }}" @selected(request('status') === $key)>{{ $label }}</option>
-                        @endforeach
-                    </select>
+                    <div class="relative">
+                        <select name="status" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
+                            <option value="">Любой статус</option>
+                            @foreach(\App\Models\DistributorProduct::statusLabels() as $key => $label)
+                            <option value="{{ $key }}" @selected(request('status') === $key)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
 
-                    <select name="has_stock" class="pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
-                        <option value="">Наличие</option>
-                        <option value="yes" @selected(request('has_stock') === 'yes')>В наличии</option>
-                        <option value="no" @selected(request('has_stock') === 'no')>Нет на складе</option>
-                    </select>
+                    <div class="relative">
+                        <select name="has_stock" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
+                            <option value="">Наличие</option>
+                            <option value="yes" @selected(request('has_stock') === 'yes')>В наличии</option>
+                            <option value="no" @selected(request('has_stock') === 'no')>Нет на складе</option>
+                        </select>
+                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
 
                     <input type="number" name="price_min" value="{{ request('price_min') }}" placeholder="Цена от" step="0.01"
                         class="w-24 py-2 px-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" />

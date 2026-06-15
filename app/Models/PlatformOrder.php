@@ -33,7 +33,10 @@ class PlatformOrder extends Model
         ];
     }
 
-    public static function statusLabels(): array
+    /**
+     * @return array<string, string>
+     */
+    public static function fallbackStatusLabels(): array
     {
         return [
             self::STATUS_NEW => 'Новый',
@@ -41,6 +44,11 @@ class PlatformOrder extends Model
             self::STATUS_COMPLETED => 'Выполнен',
             self::STATUS_CANCELLED => 'Отменён',
         ];
+    }
+
+    public static function statusLabels(): array
+    {
+        return OrderStatus::labelsMap();
     }
 
     public function statusLabel(): string

@@ -5,7 +5,6 @@
     $visibleStructuralFilters = $visibleStructuralFilters ?? [];
     $filterDistributors = $filterDistributors ?? collect();
     $filterManufacturers = $filterManufacturers ?? collect();
-    $priceBounds = $priceBounds ?? null;
     $selectedDistributorIds = $listingParams->distributorIds;
     $selectedManufacturerIds = $listingParams->manufacturerIds;
     $selectedStock = $listingParams->stock;
@@ -111,7 +110,6 @@
         @include('catalog._price_range_filter', [
             'priceMin' => $priceMin,
             'priceMax' => $priceMax,
-            'priceBounds' => $priceBounds ?? null,
         ])
     @endif
 </div>

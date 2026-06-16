@@ -10,12 +10,14 @@ use App\Models\ProductCategory;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
 
 class CatalogQueryService
 {
     public function __construct(
         private readonly User $user,
+        private readonly ?int $catalogRegionId = null,
     ) {}
 
     public function catalogRole(): ?Role
@@ -25,12 +27,21 @@ class CatalogQueryService
 
     public function regionId(): ?int
     {
-        return $this->user->currentCompanyRegionId();
+        return $this->catalogRegionId ?? $this->user->currentCompanyRegionId();
     }
 
     public function isEndCompanyCatalog(): bool
     {
         return in_array($this->catalogRole()?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true);
+    }
+
+    public function isBuyerSideCatalog(): bool
+    {
+        return in_array($this->catalogRole()?->slug, [
+            Role::SLUG_END_COMPANY,
+            Role::SLUG_COMPANY_EMPLOYEE,
+            Role::SLUG_DISTRIBUTOR,
+        ], true);
     }
 
     public function distributorOffers(): EndCompanyDistributorOfferService
@@ -129,12 +140,26 @@ class CatalogQueryService
     public function categoryTree(): Collection
     {
         $role = $this->catalogRole();
-        $roots = ProductCategory::getTree(false, null, $role);
+        $roleSlug = $role?->slug ?? 'any';
+        $regionId = $this->regionId() ?? 0;
+        $manufacturerProfileId = $this->manufacturerProfileIdForFilters() ?? 0;
 
-        return ProductCategory::filterTreeByProductVisibility(
-            $roots,
-            fn (array $categoryIds): bool => $this->hasProductsInCategories($categoryIds)
+        $cacheKey = sprintf(
+            'catalog.category_tree:%s:region:%d:mfr:%d',
+            $roleSlug,
+            $regionId,
+            $manufacturerProfileId,
         );
+        $cacheKey = app(CatalogCacheService::class)->versionedKey($cacheKey);
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($role): Collection {
+            $roots = ProductCategory::getTree(false, null, $role);
+
+            return ProductCategory::filterTreeByProductVisibility(
+                $roots,
+                fn (array $categoryIds): bool => $this->hasProductsInCategories($categoryIds)
+            );
+        });
     }
 
     public function hasProductsInCategories(array $categoryIds): bool

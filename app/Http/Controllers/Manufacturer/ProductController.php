@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Manufacturer;
 
 use App\Http\Controllers\Concerns\BuildsCatalogListing;
+use App\Http\Controllers\Concerns\ResolvesCatalogContext;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductAttribute;
@@ -15,6 +16,8 @@ use App\Models\ProductStock;
 use App\Models\Role;
 use App\Models\UnitType;
 use App\Services\Catalog\CatalogQueryService;
+use App\Services\Catalog\CatalogSearchSettings;
+use App\Services\CsvImportReader;
 use App\Services\CurrentRoleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -29,6 +32,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ProductController extends Controller
 {
     use BuildsCatalogListing;
+    use ResolvesCatalogContext;
 
     public function index(Request $request): View
     {
@@ -952,27 +956,37 @@ class ProductController extends Controller
 
     private function importCsv($file, $profile, array $stats): array
     {
-        $handle = $this->openCsvImportStream($file);
+        $handle = CsvImportReader::open($file->getPathname());
+        ['header' => $header, 'delimiter' => $delimiter] = CsvImportReader::readHeader($handle);
 
-        $header = fgetcsv($handle, 0, ';', escape: '\\');
-        if ($header === false) {
-            throw new \Exception('Файл пуст или неверный формат CSV');
-        }
-
-        $headerMap = $this->buildCsvHeaderMap($header);
+        $headerMap = CsvImportReader::mapHeader($header, [
+            'sku' => ['артикул', 'sku', 'код', 'code', 'vendorcode', 'internal_sku'],
+            'name' => ['наименование', 'название', 'name', 'title', 'товар'],
+            'category' => ['категория', 'category'],
+            'base_price' => ['цена', 'price', 'base_price', 'базовая цена', 'retail_price'],
+            'stock' => ['остаток', 'stock', 'quantity', 'количество'],
+            'description' => ['описание', 'description'],
+        ]);
 
         if (! isset($headerMap['sku']) || ! isset($headerMap['name'])) {
+            fclose($handle);
+
             throw new \Exception('Файл должен содержать колонки «Артикул» и «Наименование» (или SKU / Name)');
         }
 
+        $warehouse = $profile->warehouses()->active()->first();
+        if ($warehouse === null) {
+            $stats['errors'][] = 'Нет активного склада — остатки из файла не будут загружены.';
+        }
+
         $row = 1;
-        while (($data = fgetcsv($handle, 0, ';', escape: '\\')) !== false) {
+        while (($data = fgetcsv($handle, 0, $delimiter, escape: '\\')) !== false) {
             $row++;
 
             $sku = trim($data[$headerMap['sku']] ?? '');
             $name = trim($data[$headerMap['name']] ?? '');
 
-            if (empty($sku) || empty($name)) {
+            if ($sku === '' || $name === '') {
                 $stats['skipped']++;
                 $stats['errors'][] = "Строка {$row}: пустой артикул или название";
 
@@ -985,20 +999,25 @@ class ProductController extends Controller
                 'manufacturer_profile_id' => $profile->id,
             ];
 
-            if (isset($headerMap['base_price']) && ! empty($data[$headerMap['base_price']])) {
-                $productData['base_price'] = (float) str_replace([' ', ','], ['', '.'], $data[$headerMap['base_price']]);
-                $productData['price_updated_at'] = now();
+            if (isset($headerMap['base_price'])) {
+                $raw = trim((string) ($data[$headerMap['base_price']] ?? ''));
+                if ($raw !== '') {
+                    $productData['base_price'] = (float) str_replace([' ', ','], ['', '.'], $raw);
+                    $productData['price_updated_at'] = now();
+                }
             }
 
             if (isset($headerMap['description'])) {
                 $productData['description'] = $data[$headerMap['description']] ?? null;
             }
 
-            if (isset($headerMap['category']) && ! empty($data[$headerMap['category']])) {
-                $categoryName = trim($data[$headerMap['category']]);
-                $category = ProductCategory::where('name', $categoryName)->first();
-                if ($category) {
-                    $productData['category_id'] = $category->id;
+            if (isset($headerMap['category'])) {
+                $categoryName = trim((string) ($data[$headerMap['category']] ?? ''));
+                if ($categoryName !== '') {
+                    $category = ProductCategory::where('name', $categoryName)->first();
+                    if ($category) {
+                        $productData['category_id'] = $category->id;
+                    }
                 }
             }
 
@@ -1016,20 +1035,22 @@ class ProductController extends Controller
                 $stats['created']++;
             }
 
-            if (isset($headerMap['stock']) && ! empty($data[$headerMap['stock']])) {
-                $warehouse = $profile->warehouses()->active()->first();
-                if ($warehouse) {
+            if (isset($headerMap['stock'])) {
+                $raw = trim((string) ($data[$headerMap['stock']] ?? ''));
+                if ($raw !== '' && $warehouse) {
                     ProductStock::updateOrCreate(
                         [
                             'product_id' => $existing->id,
                             'warehouse_id' => $warehouse->id,
                         ],
                         [
-                            'quantity' => (int) $data[$headerMap['stock']],
+                            'quantity' => (int) $raw,
                             'stock_updated_at' => now(),
                             'stock_updated_by_user_id' => $profile->user_id,
                         ]
                     );
+                } elseif ($raw !== '') {
+                    $stats['errors'][] = "Строка {$row} ({$sku}): остаток не загружен — нет активного склада.";
                 }
             }
         }
@@ -1147,81 +1168,6 @@ class ProductController extends Controller
         return $stats;
     }
 
-    /**
-     * @return resource
-     */
-    private function openCsvImportStream($file)
-    {
-        $content = file_get_contents($file->getPathname());
-
-        if ($content === false) {
-            throw new \Exception('Не удалось прочитать CSV файл');
-        }
-
-        if (str_starts_with($content, "\xEF\xBB\xBF")) {
-            $content = substr($content, 3);
-        } elseif (! mb_check_encoding($content, 'UTF-8')) {
-            $encoding = mb_detect_encoding($content, ['UTF-8', 'Windows-1251', 'CP1251', 'ISO-8859-5'], true);
-            $content = mb_convert_encoding($content, 'UTF-8', $encoding ?: 'Windows-1251');
-        }
-
-        $handle = fopen('php://memory', 'r+');
-        fwrite($handle, $content);
-        rewind($handle);
-
-        return $handle;
-    }
-
-    /**
-     * @param  array<int, string|null>  $header
-     * @return array<string, int>
-     */
-    private function buildCsvHeaderMap(array $header): array
-    {
-        $aliases = [
-            'sku' => ['артикул', 'sku', 'код', 'code', 'vendorcode'],
-            'name' => ['наименование', 'название', 'name', 'title', 'товар'],
-            'category' => ['категория', 'category'],
-            'base_price' => ['цена', 'price', 'base_price', 'базовая цена'],
-            'stock' => ['остаток', 'stock', 'quantity', 'количество'],
-            'description' => ['описание', 'description'],
-        ];
-
-        $headerMap = [];
-
-        foreach ($header as $index => $col) {
-            $normalized = $this->normalizeCsvHeaderColumn((string) $col);
-
-            foreach ($aliases as $field => $keys) {
-                if (isset($headerMap[$field])) {
-                    continue;
-                }
-
-                foreach ($keys as $key) {
-                    if ($normalized === $key || str_starts_with($normalized, $key.' ') || str_contains($normalized, $key)) {
-                        $headerMap[$field] = $index;
-
-                        break 2;
-                    }
-                }
-            }
-        }
-
-        return $headerMap;
-    }
-
-    private function normalizeCsvHeaderColumn(string $col): string
-    {
-        $col = mb_strtolower(trim($col));
-        $col = preg_replace('/^\x{FEFF}/u', '', $col) ?? $col;
-
-        if (str_contains($col, '/')) {
-            $col = trim(explode('/', $col, 2)[0]);
-        }
-
-        return trim($col);
-    }
-
     private function extractYmlOfferName(\SimpleXMLElement $offer): string
     {
         foreach (['name', 'model', 'vendorCode'] as $field) {
@@ -1261,12 +1207,14 @@ class ProductController extends Controller
             abort(404);
         }
 
-        $catalog = new CatalogQueryService($request->user());
-        $listing = $this->buildCatalogListing($request, $category, $catalog);
+        $catalog = $this->makeCatalogQueryService($request);
+        $listing = $this->buildCatalogListing($request, $category, $catalog, 'manufacturer.catalog.index');
 
         return view('manufacturer.catalog.index', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
+            'catalogSearchSuggestUrl' => route('manufacturer.catalog.search.suggest'),
+            'searchMinQueryLength' => CatalogSearchSettings::minQueryLength(),
         ]));
     }
 
@@ -1274,8 +1222,8 @@ class ProductController extends Controller
     {
         $catalogRole = app(CurrentRoleService::class)->get($request->user());
         $category = $this->resolveCategoryFromRequest($catalogRole, $request->get('category'));
-        $catalog = new CatalogQueryService($request->user());
-        $listing = $this->buildCatalogListing($request, $category, $catalog);
+        $catalog = $this->makeCatalogQueryService($request);
+        $listing = $this->buildCatalogListing($request, $category, $catalog, 'manufacturer.catalog.index');
 
         return response()->view('catalog._products', array_merge($listing, [
             'selectedCategory' => $category,

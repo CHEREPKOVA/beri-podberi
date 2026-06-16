@@ -27,8 +27,7 @@
                         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ $addr->address }}</p>
                         <div class="mt-2 text-sm text-gray-500 space-y-1">
                             @if($addr->region) <span>{{ $addr->region->name }}</span> @endif
-                            @if($addr->contact_person) <span> · {{ $addr->contact_person }}</span> @endif
-                            @if($addr->phone) <span> · {{ $addr->phone }}</span> @endif
+                            @if($addr->contact) <span> · {{ $addr->contact->full_name }}</span> @endif
                             @if($addr->working_hours) <span class="block text-xs mt-1">График: {{ $addr->working_hours }}</span> @endif
                         </div>
                     </div>
@@ -54,24 +53,39 @@
                         </div>
                         <div>
                             <label class="text-xs text-gray-500">Регион</label>
-                            <select name="region_id" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                                <option value="">—</option>
-                                @foreach($regions as $r)
-                                    <option value="{{ $r->id }}" {{ $addr->region_id == $r->id ? 'selected' : '' }}>{{ $r->name }}</option>
-                                @endforeach
-                            </select>
+                            <div class="relative mt-1">
+                                <select name="region_id" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 cursor-pointer">
+                                    <option value="" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">—</option>
+                                    @foreach($regions as $r)
+                                        <option value="{{ $r->id }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400" {{ $addr->region_id == $r->id ? 'selected' : '' }}>{{ $r->name }}</option>
+                                    @endforeach
+                                </select>
+                                <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                                    <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500">Контакт</label>
+                            <div class="relative mt-1">
+                                <select name="contact_id" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 cursor-pointer">
+                                    <option value="" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">—</option>
+                                    @foreach($profile->contacts as $c)
+                                        <option value="{{ $c->id }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400" {{ (string) $addr->contact_id === (string) $c->id ? 'selected' : '' }}>{{ $c->full_name }}</option>
+                                    @endforeach
+                                </select>
+                                <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                                    <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                </span>
+                            </div>
                         </div>
                         <div class="sm:col-span-2">
                             <label class="text-xs text-gray-500">Адрес</label>
                             <input type="text" name="address" value="{{ $addr->address }}" required class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-500">Контактное лицо</label>
-                            <input type="text" name="contact_person" value="{{ $addr->contact_person }}" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-500">Телефон</label>
-                            <input type="text" name="phone" value="{{ $addr->phone }}" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
                         </div>
                         <div class="sm:col-span-2">
                             <label class="text-xs text-gray-500">График работы</label>
@@ -109,21 +123,37 @@
                 </div>
                 <div>
                     <label class="text-xs text-gray-500">Регион</label>
-                    <select name="region_id" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                        <option value="">—</option>
-                        @foreach($regions as $r)
-                            <option value="{{ $r->id }}">{{ $r->name }}</option>
-                        @endforeach
-                    </select>
+                    <div class="relative mt-1">
+                        <select name="region_id" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 cursor-pointer">
+                            <option value="" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">—</option>
+                            @foreach($regions as $r)
+                                <option value="{{ $r->id }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">{{ $r->name }}</option>
+                            @endforeach
+                        </select>
+                        <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                            <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </span>
+                    </div>
                 </div>
                 <div class="grid sm:grid-cols-2 gap-3">
-                    <div>
+                    <div class="sm:col-span-2">
                         <label class="text-xs text-gray-500">Контакт</label>
-                        <input type="text" name="contact_person" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">Телефон</label>
-                        <input type="text" name="phone" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
+                        <div class="relative mt-1">
+                            <select name="contact_id" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 cursor-pointer">
+                                <option value="" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">—</option>
+                                @foreach($profile->contacts as $c)
+                                    <option value="{{ $c->id }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">{{ $c->full_name }}</option>
+                                @endforeach
+                            </select>
+                            <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                                <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                </svg>
+                            </span>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-400">Контакты редактируются на вкладке «Контакты».</p>
                     </div>
                 </div>
                 <div>

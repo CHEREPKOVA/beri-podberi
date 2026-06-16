@@ -22,6 +22,13 @@ return [
             'sort_order' => 20,
         ],
         [
+            'slug' => 'audit.view',
+            'name' => 'Просмотр журнала действий',
+            'description' => 'Доступ к журналу действий админ-панели для контроля и внутренних проверок',
+            'group_key' => 'audit',
+            'sort_order' => 25,
+        ],
+        [
             'slug' => 'companies.manage',
             'name' => 'Управление компаниями',
             'description' => 'Управление карточками компаний и их сотрудниками',
@@ -70,6 +77,7 @@ return [
             'companies.manage',
             'support.manage',
             'stats.view',
+            'audit.view',
         ],
         'analyst' => [
             'dashboard.view',

@@ -136,7 +136,7 @@
                 <a href="{{ route('distributor.products.import') }}"
                     class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                    Импорт CSV
+                    Импорт CSV / YML
                 </a>
             </div>
         </div>
@@ -220,7 +220,7 @@
                                 @if($product->sync_source === '1c' && $product->synced_at)
                                 <span class="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Обновлено 1С</span>
                                 @endif
-                                @if($product->manufacturer_archived)
+                                @if($product->manufacturer_archived && $product->hasStock())
                                 <span class="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Архив производителя</span>
                                 @endif
                             </div>
@@ -229,11 +229,15 @@
                             <div>Произв.: {{ $product->manufacturer_sku ?: '—' }}</div>
                             <div class="font-mono mt-0.5">Внутр.: {{ $product->internal_sku }}</div>
                         </td>
-                        <td class="px-4 py-3 text-sm text-gray-600">{{ $product->manufacturerName() ?: '—' }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">{{ $product->brand ?: '—' }}</td>
                         <td class="px-4 py-3 text-sm text-gray-600">{{ $product->category?->name ?? '—' }}</td>
                         <td class="px-4 py-3 text-sm">{{ $product->purchase_price ? number_format($product->purchase_price, 2, ',', ' ') . ' ₽' : '—' }}</td>
                         <td class="px-4 py-3 text-sm font-medium">{{ $product->retail_price ? number_format($product->retail_price, 2, ',', ' ') . ' ₽' : '—' }}</td>
-                        <td class="px-4 py-3 text-sm {{ $product->hasStock() ? 'text-green-600' : 'text-red-600' }}">{{ $product->total_stock }}</td>
+                        <td class="px-4 py-3 text-sm {{ $product->hasStock() ? 'text-green-600' : 'text-red-600' }}">
+                            {{ $product->total_stock }}
+                            <span class="text-gray-400">·</span>
+                            {{ $product->hasStock() ? 'В наличии' : 'Нет на складе' }}
+                        </td>
                         <td class="px-4 py-3">
                             <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium {{ $product->statusBadgeClass() }}">{{ $product->statusLabel() }}</span>
                         </td>
@@ -243,7 +247,7 @@
                     @empty
                     <tr>
                         <td colspan="11" class="px-4 py-12 text-center text-gray-500">
-                            Товары не найдены. Добавьте позиции через импорт или синхронизацию с каталогом производителя.
+                            Товары не найдены. Добавьте позиции из каталога производителя или синхронизируйте номенклатуру.
                         </td>
                     </tr>
                     @endforelse

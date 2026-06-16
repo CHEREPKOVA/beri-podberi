@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Admin\CatalogController as AdminCatalogController;
 use App\Http\Controllers\Admin\CatalogProductController as AdminCatalogProductController;
 use App\Http\Controllers\Admin\ClaimStatusController as AdminClaimStatusController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Admin\WarehouseTypeController as AdminWarehouseTypeCont
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Buyer\CatalogController as BuyerCatalogController;
 use App\Http\Controllers\Catalog\ProductLiveController;
+use App\Http\Controllers\Catalog\SearchSuggestController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Distributor\ProductController as DistributorProductController;
 use App\Http\Controllers\Distributor\ProfileController as DistributorProfileController;
@@ -129,6 +131,14 @@ Route::middleware(['auth', 'user.active'])->group(function () {
             Route::get('/catalog/analogs/{product}/edit', [AdminProductAnalogController::class, 'edit'])->name('catalog.analogs.edit');
             Route::put('/catalog/analogs/{product}', [AdminProductAnalogController::class, 'update'])->name('catalog.analogs.update');
         });
+
+        Route::middleware('permission:audit.view')->group(function () {
+            Route::get('/audit', [AdminAuditLogController::class, 'index'])->name('audit.index');
+            Route::get('/audit/{source}/{id}', [AdminAuditLogController::class, 'show'])
+                ->where('source', 'admin_action|partnership|distributor_product')
+                ->whereNumber('id')
+                ->name('audit.show');
+        });
     });
 
     // Профиль производителя
@@ -161,6 +171,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
 
         // Каталог (дерево категорий + товары), ЧПУ: /catalog и /catalog/{slug}
         Route::get('/catalog/products', [ManufacturerProductController::class, 'catalogProducts'])->name('catalog.products');
+        Route::get('/catalog/search/suggest', SearchSuggestController::class)->name('catalog.search.suggest');
         Route::get('/catalog/product/{product}', [ManufacturerProductController::class, 'catalogShow'])->name('catalog.show');
         Route::get('/catalog/product/{product}/live', ProductLiveController::class)->name('catalog.product.live');
         Route::get('/catalog/{category?}', [ManufacturerProductController::class, 'catalog'])->name('catalog.index')->where('category', '[a-z0-9\-]+');
@@ -226,6 +237,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::get('/products/{product}', [DistributorProductController::class, 'show'])->name('products.show');
         Route::put('/products/{product}', [DistributorProductController::class, 'update'])->name('products.update');
         Route::post('/products/{product}/price', [DistributorProductController::class, 'updatePrice'])->name('products.price.update');
+        Route::post('/products/{product}/regional-prices', [DistributorProductController::class, 'updateRegionalPrices'])->name('products.regional-prices.update');
         Route::post('/products/{product}/stocks', [DistributorProductController::class, 'updateStocks'])->name('products.stocks.update');
         Route::post('/products/{product}/publish', [DistributorProductController::class, 'publish'])->name('products.publish');
         Route::post('/products/{product}/hide', [DistributorProductController::class, 'hide'])->name('products.hide');
@@ -254,6 +266,8 @@ Route::middleware(['auth', 'user.active'])->group(function () {
     // Каталог для дистрибьюторов и конечных компаний
     Route::middleware(['role.selected', 'role:distributor,end_company,company_employee'])->prefix('buyer')->name('buyer.')->group(function () {
         Route::get('/catalog/products', [BuyerCatalogController::class, 'products'])->name('catalog.products');
+        Route::get('/catalog/search/suggest', SearchSuggestController::class)->name('catalog.search.suggest');
+        Route::post('/catalog/region', [BuyerCatalogController::class, 'setRegion'])->name('catalog.region');
         Route::get('/catalog/product/{product}', [BuyerCatalogController::class, 'show'])->name('catalog.show');
         Route::get('/catalog/product/{product}/live', ProductLiveController::class)->name('catalog.product.live');
         Route::get('/catalog/{category?}', [BuyerCatalogController::class, 'index'])->name('catalog.index')->where('category', '[a-z0-9\-]+');

@@ -1,5 +1,5 @@
 <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
-    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Остатки и складская информация</h2>
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Наличие у поставщиков</h2>
     @if($companyRegionName ?? null)
         <p class="text-sm text-gray-500 mb-3">Регион компании: {{ $companyRegionName }}</p>
     @endif

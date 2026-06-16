@@ -11,6 +11,7 @@ use App\Models\Region;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ProfileController extends Controller
@@ -20,7 +21,7 @@ class ProfileController extends Controller
         $profile = $request->user()->getOrCreateEndCompanyProfile();
         $tab = $request->get('tab', 'general');
 
-        $profile->load(['contacts', 'documents', 'deliveryAddresses.region']);
+        $profile->load(['contacts', 'documents', 'deliveryAddresses.region', 'deliveryAddresses.contact']);
         $regions = Region::active()->orderBy('name')->get();
         $changes = $profile->profileChanges()->with('user')->limit(50)->get();
 
@@ -162,14 +163,19 @@ class ProfileController extends Controller
             'name' => 'required|string|max:255',
             'address' => 'required|string|max:500',
             'region_id' => 'nullable|exists:regions,id',
-            'contact_person' => 'nullable|string|max:255',
-            'phone' => 'nullable|string|max:50',
+            'contact_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('end_company_contacts', 'id')->where('end_company_profile_id', $profile->id),
+            ],
             'working_hours' => 'nullable|string|max:255',
             'is_default' => 'sometimes|boolean',
         ]);
 
         $validated['end_company_profile_id'] = $profile->id;
         $validated['is_default'] = $request->boolean('is_default');
+        $validated['contact_person'] = null;
+        $validated['phone'] = null;
 
         if ($validated['is_default']) {
             $profile->deliveryAddresses()->update(['is_default' => false]);
@@ -191,13 +197,18 @@ class ProfileController extends Controller
             'name' => 'required|string|max:255',
             'address' => 'required|string|max:500',
             'region_id' => 'nullable|exists:regions,id',
-            'contact_person' => 'nullable|string|max:255',
-            'phone' => 'nullable|string|max:50',
+            'contact_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('end_company_contacts', 'id')->where('end_company_profile_id', $address->profile->id),
+            ],
             'working_hours' => 'nullable|string|max:255',
             'is_default' => 'sometimes|boolean',
         ]);
 
         $validated['is_default'] = $request->boolean('is_default');
+        $validated['contact_person'] = null;
+        $validated['phone'] = null;
 
         if ($validated['is_default']) {
             $address->profile->deliveryAddresses()->where('id', '!=', $address->id)->update(['is_default' => false]);

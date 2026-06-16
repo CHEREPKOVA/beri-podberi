@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryMethod;
 use App\Models\ManufacturerProfile;
+use App\Models\Permission;
 use App\Models\Region;
 use App\Models\Role;
 use App\Models\TransportCompany;
 use App\Models\User;
+use App\Services\AdminJournalService;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +26,8 @@ class CompanyController extends Controller
 
     public function index(Request $request): View
     {
+        $typesCsvSql = $this->companyTypesConcatSql();
+
         $rows = DB::table('role_user')
             ->join('roles', 'roles.id', '=', 'role_user.role_id')
             ->leftJoin('users', 'users.id', '=', 'role_user.user_id')
@@ -33,7 +37,7 @@ class CompanyController extends Controller
             ->selectRaw('
                 role_user.company_name as name,
                 COALESCE(MAX(role_user.company_type), MAX(roles.slug)) as type,
-                GROUP_CONCAT(DISTINCT roles.slug ORDER BY roles.sort_order SEPARATOR ",") as types_csv,
+                '.$typesCsvSql.' as types_csv,
                 COUNT(DISTINCT roles.slug) as types_count,
                 COALESCE(MAX(role_user.company_status), "active") as status,
                 MAX(role_user.company_region) as region,
@@ -262,17 +266,8 @@ class CompanyController extends Controller
             ->orderBy('name')
             ->get();
 
-        $activity = DB::table('admin_action_logs')
-            ->join('users', 'users.id', '=', 'admin_action_logs.admin_id')
-            ->where('admin_action_logs.company_name', $companyName)
-            ->where('admin_action_logs.company_type', $companyType)
-            ->orderByDesc('admin_action_logs.id')
-            ->select([
-                'admin_action_logs.*',
-                'users.name as admin_name',
-            ])
-            ->paginate(20)
-            ->withQueryString();
+        $activity = app(AdminJournalService::class)
+            ->paginateForCompany($companyName, $companyType);
 
         $roleOptions = Role::whereIn('slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE])->orderBy('sort_order')->get();
         $companyRoleKeys = [];
@@ -293,8 +288,9 @@ class CompanyController extends Controller
 
         $deliveryMethods = DeliveryMethod::active()->orderBy('sort_order')->get();
         $transportCompanies = TransportCompany::active()->orderBy('name')->get();
+        $permissionLabels = Permission::query()->orderBy('name')->pluck('name', 'slug');
 
-        return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies', 'companyRoleSlugs', 'companyRoleKeys'));
+        return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies', 'companyRoleSlugs', 'companyRoleKeys', 'permissionLabels'));
     }
 
     public function updateCompany(Request $request, string $companyKey): RedirectResponse
@@ -633,6 +629,14 @@ class CompanyController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function companyTypesConcatSql(): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'mysql' => 'GROUP_CONCAT(DISTINCT roles.slug ORDER BY roles.sort_order SEPARATOR ",")',
+            default => 'GROUP_CONCAT(DISTINCT roles.slug ORDER BY roles.sort_order, ",")',
+        };
     }
 
 }

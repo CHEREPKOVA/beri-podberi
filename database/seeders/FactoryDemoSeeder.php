@@ -52,6 +52,10 @@ class FactoryDemoSeeder extends Seeder
 
     public function run(): void
     {
+        if (User::query()->where('email', 'akkum-treid@test.com')->exists()) {
+            return;
+        }
+
         $regions = Region::take(5)->pluck('id');
         if ($regions->isEmpty()) {
             $this->command->warn('Нет регионов. Сначала выполните RegionSeeder.');

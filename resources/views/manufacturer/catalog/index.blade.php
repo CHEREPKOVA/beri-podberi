@@ -9,12 +9,15 @@
         'productsContainerId' => 'catalog-products-container',
         'productsFetchUrl' => route('manufacturer.catalog.products'),
         'baseCatalogUrl' => url('/manufacturer/catalog'),
+        'catalogSearchSuggestUrl' => $catalogSearchSuggestUrl ?? route('manufacturer.catalog.search.suggest'),
+        'searchMinQueryLength' => $searchMinQueryLength ?? 2,
     ];
 @endphp
 <div class="flex flex-col lg:flex-row gap-6"
     x-data="catalogApp(@js($selectedCategory?->slug), @js($catalogTreeOpenSlugs ?? []), @js($listingConfig))"
     @load-category.window="loadCategory($event.detail.slug)"
     @catalog-apply-filters.window="applyCatalogFilters()"
+    @catalog-apply-filters-debounced.window="applyCatalogFiltersDebounced()"
     @catalog-reset-filters.window="resetCatalogFilters()">
     <aside class="lg:w-72 shrink-0">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -39,7 +42,11 @@
     </aside>
 
     <main class="flex-1 min-w-0">
-        @include('catalog._search_bar', ['searchQuery' => $searchQuery ?? ''])
+        @include('catalog._search_bar', [
+            'searchQuery' => $searchQuery ?? '',
+            'selectedCategory' => $selectedCategory ?? null,
+            'listingParams' => $listingParams ?? null,
+        ])
         <div id="catalog-products-container">
             @include('catalog._products', [
                 'products' => $products,
@@ -47,6 +54,11 @@
                 'selectedCategoryId' => $selectedCategoryId,
                 'filterableAttributes' => $filterableAttributes ?? collect(),
                 'appliedFilters' => $appliedFilters ?? [],
+                'listingParams' => $listingParams ?? null,
+                'visibleStructuralFilters' => $visibleStructuralFilters ?? [],
+                'filterDistributors' => $filterDistributors ?? collect(),
+                'filterManufacturers' => $filterManufacturers ?? collect(),
+                'priceBounds' => $priceBounds ?? null,
                 'manufacturerProfileId' => $manufacturerProfileId ?? null,
                 'searchQuery' => $searchQuery ?? '',
                 'catalogIndexRoute' => 'manufacturer.catalog.index',
@@ -65,6 +77,8 @@ function catalogApp(initialCategorySlug, initialOpenSlugs, listingConfig) {
     return {
         ...catalogTreeMixin(initialCategorySlug, initialOpenSlugs),
         ...catalogListingMixin(listingConfig),
+        ...catalogSearchSuggestMixin(listingConfig),
+        ...catalogFiltersMixin(),
     };
 }
 </script>

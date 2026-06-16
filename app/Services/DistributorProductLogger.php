@@ -8,6 +8,29 @@ use App\Models\User;
 
 class DistributorProductLogger
 {
+    public static function logStatusChange(
+        DistributorProduct $product,
+        string $oldStatus,
+        string $newStatus,
+        string $action,
+        ?User $user = null,
+    ): DistributorProductChangeLog {
+        $oldLabel = DistributorProduct::statusLabels()[$oldStatus] ?? $oldStatus;
+        $newLabel = DistributorProduct::statusLabels()[$newStatus] ?? $newStatus;
+
+        return self::log(
+            $product,
+            $action,
+            sprintf('Статус: %s → %s', $oldLabel, $newLabel),
+            [
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'total_stock' => $product->total_stock,
+            ],
+            $user,
+        );
+    }
+
     public static function log(
         DistributorProduct $product,
         string $action,

@@ -107,7 +107,7 @@ class DistributorProduct extends Model
 
     public function isHidden(): bool
     {
-        return in_array($this->status, [self::STATUS_HIDDEN, self::STATUS_ARCHIVE], true);
+        return $this->status === self::STATUS_HIDDEN;
     }
 
     public function isSyncedFrom1c(): bool
@@ -158,6 +158,26 @@ class DistributorProduct extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(DistributorProductDocument::class);
+    }
+
+    public function regionalPrices(): HasMany
+    {
+        return $this->hasMany(DistributorProductRegionalPrice::class);
+    }
+
+    public function retailPriceForRegion(?int $regionId): ?float
+    {
+        if ($regionId !== null) {
+            $regional = $this->relationLoaded('regionalPrices')
+                ? $this->regionalPrices->firstWhere('region_id', $regionId)
+                : $this->regionalPrices()->where('region_id', $regionId)->first();
+
+            if ($regional !== null && $regional->price !== null) {
+                return (float) $regional->price;
+            }
+        }
+
+        return $this->retail_price !== null ? (float) $this->retail_price : null;
     }
 
     public function getTotalStockAttribute(): int

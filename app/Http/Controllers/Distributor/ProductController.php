@@ -7,7 +7,11 @@ use App\Models\DistributorProduct;
 use App\Models\DistributorProductDocument;
 use App\Models\DistributorProductPriceHistory;
 use App\Models\DistributorProductStock;
+use App\Models\DistributorProductRegionalPrice;
+use App\Models\DistributorProfile;
 use App\Models\ProductCategory;
+use App\Models\UnitType;
+use App\Services\CsvImportReader;
 use App\Services\DistributorProductLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -122,10 +126,14 @@ class ProductController extends Controller
             'priceHistories.changedByUser',
             'changeLogs.performedByUser',
             'documents',
+            'regionalPrices.region',
         ]);
 
         $profile = $request->user()->getOrCreateDistributorProfile();
+        $categories = $profile->productCategories()->orderBy('name')->get();
+        $unitTypes = UnitType::query()->active()->orderBy('name')->get();
         $warehouses = $profile->warehouses()->with('region')->orderBy('name')->get();
+        $regions = $profile->regions()->orderBy('name')->get();
         $tab = $request->get('tab', 'info');
         $managedBy1c = $profile->integration_import_1c_stocks || $product->managed_by_1c;
         $stockEditingDisabled = $managedBy1c && $product->isSyncedFrom1c();
@@ -133,6 +141,9 @@ class ProductController extends Controller
         return view('distributor.products.show', compact(
             'product',
             'warehouses',
+            'categories',
+            'unitTypes',
+            'regions',
             'tab',
             'managedBy1c',
             'stockEditingDisabled',
@@ -162,6 +173,7 @@ class ProductController extends Controller
                 'pack_quantity' => ['nullable', 'integer', 'min:1'],
                 'min_order_quantity' => ['nullable', 'integer', 'min:1'],
                 'product_category_id' => ['nullable', 'exists:product_categories,id'],
+                'unit_type_id' => ['nullable', 'exists:unit_types,id'],
             ]);
         }
 
@@ -227,6 +239,51 @@ class ProductController extends Controller
             ->with('success', 'Цена обновлена.');
     }
 
+    public function updateRegionalPrices(Request $request, DistributorProduct $product): RedirectResponse
+    {
+        $this->authorizeProduct($request, $product);
+        $profile = $request->user()->getOrCreateDistributorProfile();
+        $regionIds = $profile->regions()->pluck('regions.id');
+
+        $validated = $request->validate([
+            'regional_prices' => ['nullable', 'array'],
+            'regional_prices.*' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $prices = $validated['regional_prices'] ?? [];
+
+        foreach ($regionIds as $regionId) {
+            $value = $prices[$regionId] ?? null;
+            $value = is_string($value) ? trim($value) : $value;
+
+            if ($value === null || $value === '') {
+                $product->regionalPrices()->where('region_id', $regionId)->delete();
+
+                continue;
+            }
+
+            DistributorProductRegionalPrice::query()->updateOrCreate(
+                [
+                    'distributor_product_id' => $product->id,
+                    'region_id' => $regionId,
+                ],
+                ['price' => (float) str_replace(',', '.', (string) $value)],
+            );
+        }
+
+        DistributorProductLogger::log(
+            $product,
+            'regional_prices_updated',
+            'Обновлены региональные отпускные цены',
+            null,
+            $request->user(),
+        );
+
+        return redirect()
+            ->route('distributor.products.show', ['product' => $product, 'tab' => 'prices'])
+            ->with('success', 'Региональные цены сохранены.');
+    }
+
     public function updateStocks(Request $request, DistributorProduct $product): RedirectResponse
     {
         $this->authorizeProduct($request, $product);
@@ -282,28 +339,55 @@ class ProductController extends Controller
     public function publish(Request $request, DistributorProduct $product): RedirectResponse
     {
         $this->authorizeProduct($request, $product);
+        $oldStatus = $product->status;
         $product->update(['status' => DistributorProduct::STATUS_ACTIVE]);
-        DistributorProductLogger::log($product, 'published', 'Товар опубликован', null, $request->user());
+        DistributorProductLogger::logStatusChange(
+            $product,
+            $oldStatus,
+            DistributorProduct::STATUS_ACTIVE,
+            'published',
+            $request->user(),
+        );
 
-        return back()->with('success', 'Товар опубликован в каталоге для клиентов.');
+        return redirect()
+            ->route('distributor.products.show', ['product' => $product, 'tab' => 'publication'])
+            ->with('success', 'Товар опубликован в каталоге для клиентов.');
     }
 
     public function hide(Request $request, DistributorProduct $product): RedirectResponse
     {
         $this->authorizeProduct($request, $product);
+        $oldStatus = $product->status;
         $product->update(['status' => DistributorProduct::STATUS_HIDDEN]);
-        DistributorProductLogger::log($product, 'hidden', 'Товар скрыт', null, $request->user());
+        DistributorProductLogger::logStatusChange(
+            $product,
+            $oldStatus,
+            DistributorProduct::STATUS_HIDDEN,
+            'hidden',
+            $request->user(),
+        );
 
-        return back()->with('success', 'Товар скрыт от клиентов.');
+        return redirect()
+            ->route('distributor.products.show', ['product' => $product, 'tab' => 'publication'])
+            ->with('success', 'Товар скрыт от клиентов.');
     }
 
     public function archive(Request $request, DistributorProduct $product): RedirectResponse
     {
         $this->authorizeProduct($request, $product);
+        $oldStatus = $product->status;
         $product->update(['status' => DistributorProduct::STATUS_ARCHIVE]);
-        DistributorProductLogger::log($product, 'archived', 'Товар переведён в архив', null, $request->user());
+        DistributorProductLogger::logStatusChange(
+            $product,
+            $oldStatus,
+            DistributorProduct::STATUS_ARCHIVE,
+            'archived',
+            $request->user(),
+        );
 
-        return back()->with('success', 'Товар переведён в архив.');
+        return redirect()
+            ->route('distributor.products.show', ['product' => $product, 'tab' => 'publication'])
+            ->with('success', 'Товар переведён в архив.');
     }
 
     public function importForm(Request $request): View
@@ -318,117 +402,411 @@ class ProductController extends Controller
         $profile = $request->user()->getOrCreateDistributorProfile();
 
         $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'file' => ['required', 'file', 'mimes:csv,txt,xml,yml', 'max:10240'],
             'import_type' => ['required', 'in:prices,stocks,full'],
         ]);
 
         $path = $request->file('file')->store('imports/distributor/'.$profile->id, 'local');
-        $handle = fopen(Storage::disk('local')->path($path), 'r');
-        if ($handle === false) {
-            return back()->with('error', 'Не удалось прочитать файл.');
-        }
+        $localPath = Storage::disk('local')->path($path);
+        $importType = $request->input('import_type');
+        $warehouse = $profile->warehouses()->active()->first();
 
-        $header = fgetcsv($handle, 0, ';') ?: fgetcsv($handle);
-        if (! $header) {
-            fclose($handle);
+        $ext = strtolower($request->file('file')->getClientOriginalExtension());
+        $ext = $ext !== '' ? $ext : strtolower(pathinfo($localPath, PATHINFO_EXTENSION));
 
-            return back()->with('error', 'Файл пуст или неверный формат.');
-        }
+        $stats = [
+            'created' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'errors' => [],
+        ];
 
-        $header = array_map(static fn ($h) => mb_strtolower(trim((string) $h)), $header);
-        $skuIdx = array_search('internal_sku', $header, true);
-        if ($skuIdx === false) {
-            $skuIdx = array_search('артикул', $header, true);
-        }
-        if ($skuIdx === false) {
-            fclose($handle);
-
-            return back()->with('error', 'В файле должна быть колонка internal_sku или «артикул».');
-        }
-
-        $retailIdx = array_search('retail_price', $header, true);
-        if ($retailIdx === false) {
-            $retailIdx = array_search('цена', $header, true);
-        }
-        $stockIdx = array_search('quantity', $header, true);
-        if ($stockIdx === false) {
-            $stockIdx = array_search('остаток', $header, true);
-        }
-
-        $updated = 0;
-        $errors = [];
-
-        while (($row = fgetcsv($handle, 0, ';')) !== false) {
-            if (count($row) < 2) {
-                continue;
+        try {
+            if (in_array($ext, ['xml', 'yml', 'yaml'], true)) {
+                $stats = $this->importXml($localPath, $profile, $importType, $warehouse, $request->user());
+            } else {
+                $stats = $this->importCsv($localPath, $profile, $importType, $warehouse, $request->user());
             }
-            $sku = trim((string) ($row[$skuIdx] ?? ''));
-            if ($sku === '') {
-                continue;
-            }
+        } catch (\Throwable $e) {
+            Storage::disk('local')->delete($path);
 
-            $product = DistributorProduct::forDistributor($profile->id)
-                ->where('internal_sku', $sku)
-                ->first();
-
-            if (! $product) {
-                $errors[] = "Товар с артикулом «{$sku}» не найден.";
-
-                continue;
-            }
-
-            if ($request->import_type !== 'stocks' && $retailIdx !== false && isset($row[$retailIdx]) && $row[$retailIdx] !== '') {
-                $newPrice = (float) str_replace(',', '.', $row[$retailIdx]);
-                $old = $product->retail_price;
-                $product->update([
-                    'retail_price' => $newPrice,
-                    'price_updated_at' => now(),
-                    'sync_source' => DistributorProduct::SYNC_CSV,
-                    'synced_at' => now(),
-                ]);
-                DistributorProductPriceHistory::create([
-                    'distributor_product_id' => $product->id,
-                    'price_type' => DistributorProductPriceHistory::TYPE_RETAIL,
-                    'old_price' => $old,
-                    'new_price' => $newPrice,
-                    'comment' => 'Импорт CSV',
-                    'changed_by_user_id' => $request->user()->id,
-                ]);
-            }
-
-            if ($request->import_type !== 'prices' && $stockIdx !== false && isset($row[$stockIdx]) && $row[$stockIdx] !== '') {
-                $warehouse = $profile->warehouses()->active()->first();
-                if ($warehouse) {
-                    DistributorProductStock::query()->updateOrCreate(
-                        [
-                            'distributor_product_id' => $product->id,
-                            'distributor_warehouse_id' => $warehouse->id,
-                        ],
-                        [
-                            'quantity' => (int) $row[$stockIdx],
-                            'stock_updated_at' => now(),
-                            'stock_updated_by_user_id' => $request->user()->id,
-                        ],
-                    );
-                }
-            }
-
-            $product->update(['sync_source' => DistributorProduct::SYNC_CSV, 'synced_at' => now()]);
-            DistributorProductLogger::log($product, 'csv_import', 'Обновление из CSV', null, $request->user());
-            $updated++;
+            return back()->with('error', 'Ошибка импорта: '.$e->getMessage());
         }
 
-        fclose($handle);
         Storage::disk('local')->delete($path);
 
-        $message = "Импорт завершён. Обновлено позиций: {$updated}.";
-        if ($errors !== []) {
+        $message = "Импорт завершён. Создано: {$stats['created']}, обновлено: {$stats['updated']}, пропущено: {$stats['skipped']}";
+        if ($stats['errors'] !== []) {
             return back()
                 ->with('warning', $message)
-                ->with('import_errors', array_slice($errors, 0, 20));
+                ->with('import_errors', array_slice($stats['errors'], 0, 20));
         }
 
         return back()->with('success', $message);
+    }
+
+    /**
+     * @param  array<string, int|string|array<mixed>>  $stats
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function importCsv(string $path, DistributorProfile $profile, string $importType, ?\App\Models\DistributorWarehouse $warehouse, $user): array
+    {
+        $handle = CsvImportReader::open($path);
+        ['header' => $header, 'delimiter' => $delimiter] = CsvImportReader::readHeader($handle);
+
+        $headerMap = CsvImportReader::mapHeader($header, [
+            'sku' => ['internal_sku', 'артикул', 'sku', 'код', 'vendorcode'],
+            'name' => ['name', 'наименование', 'название', 'title', 'товар'],
+            'brand' => ['brand', 'бренд'],
+            'barcode' => ['barcode', 'штрихкод', 'ean'],
+            'manufacturer_sku' => ['manufacturer_sku', 'артикул_производителя', 'артикул производителя'],
+            'category_id' => ['product_category_id', 'category_id', 'id категории'],
+            'category' => ['category', 'категория'],
+            'unit_type_id' => ['unit_type_id', 'единица'],
+            'retail_price' => ['retail_price', 'цена', 'price', 'отпускная'],
+            'purchase_price' => ['purchase_price', 'закупочная', 'purchase'],
+            'stock' => ['quantity', 'остаток', 'stock', 'количество'],
+        ]);
+
+        if (! isset($headerMap['sku'])) {
+            fclose($handle);
+
+            throw new \Exception('В файле должна быть колонка internal_sku или «артикул».');
+        }
+
+        $stats = [
+            'created' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'errors' => [],
+        ];
+
+        if ($importType !== 'prices' && $warehouse === null) {
+            $stats['errors'][] = 'Нет активного склада — остатки из файла не будут загружены.';
+        }
+
+        $rowNum = 1;
+        while (($row = fgetcsv($handle, 0, $delimiter, escape: '\\')) !== false) {
+            $rowNum++;
+
+            if ($row === [null] || count(array_filter($row, static fn ($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+
+            $sku = trim((string) ($row[$headerMap['sku']] ?? ''));
+            if ($sku === '') {
+                $stats['skipped']++;
+
+                continue;
+            }
+
+            $name = isset($headerMap['name']) ? trim((string) ($row[$headerMap['name']] ?? '')) : '';
+            if ($name === '') {
+                $name = $sku;
+            }
+
+            $brand = isset($headerMap['brand']) ? trim((string) ($row[$headerMap['brand']] ?? '')) : '';
+            $brand = $brand !== '' ? $brand : null;
+
+            $barcode = isset($headerMap['barcode']) ? trim((string) ($row[$headerMap['barcode']] ?? '')) : '';
+            $barcode = $barcode !== '' ? $barcode : null;
+
+            $manufacturerSku = isset($headerMap['manufacturer_sku']) ? trim((string) ($row[$headerMap['manufacturer_sku']] ?? '')) : '';
+            $manufacturerSku = $manufacturerSku !== '' ? $manufacturerSku : null;
+
+            $categoryId = null;
+            if (isset($headerMap['category_id'])) {
+                $value = trim((string) ($row[$headerMap['category_id']] ?? ''));
+                $categoryId = $value !== '' ? (int) $value : null;
+            }
+
+            if ($categoryId === null && isset($headerMap['category'])) {
+                $catName = trim((string) ($row[$headerMap['category']] ?? ''));
+                if ($catName !== '') {
+                    $categoryId = ProductCategory::query()->where('name', $catName)->value('id');
+                }
+            }
+
+            $unitTypeId = null;
+            if (isset($headerMap['unit_type_id'])) {
+                $value = trim((string) ($row[$headerMap['unit_type_id']] ?? ''));
+                $unitTypeId = $value !== '' ? (int) $value : null;
+            }
+
+            $existing = DistributorProduct::forDistributor($profile->id)
+                ->where('internal_sku', $sku)
+                ->first();
+
+            $priceToUpdate = null;
+            if ($importType !== 'stocks' && isset($headerMap['retail_price'])) {
+                $raw = trim((string) ($row[$headerMap['retail_price']] ?? ''));
+                if ($raw !== '') {
+                    $priceToUpdate = (float) str_replace([' ', ','], ['', '.'], $raw);
+                }
+            }
+
+            $purchaseToUpdate = null;
+            if ($importType !== 'stocks' && isset($headerMap['purchase_price'])) {
+                $raw = trim((string) ($row[$headerMap['purchase_price']] ?? ''));
+                if ($raw !== '') {
+                    $purchaseToUpdate = (float) str_replace([' ', ','], ['', '.'], $raw);
+                }
+            }
+
+            $stockToUpdate = null;
+            if ($importType !== 'prices' && isset($headerMap['stock'])) {
+                $raw = trim((string) ($row[$headerMap['stock']] ?? ''));
+                if ($raw !== '') {
+                    $stockToUpdate = (int) $raw;
+                }
+            }
+
+            $syncPayload = [
+                'sync_source' => DistributorProduct::SYNC_CSV,
+                'synced_at' => now(),
+            ];
+
+            if (! $existing) {
+                $stats['skipped']++;
+                $stats['errors'][] = "Строка {$rowNum} ({$sku}): позиция не найдена в номенклатуре";
+
+                continue;
+            }
+
+            $updateData = $syncPayload + ['name' => $name];
+
+            if ($brand !== null) {
+                $updateData['brand'] = $brand;
+            }
+            if ($barcode !== null) {
+                $updateData['barcode'] = $barcode;
+            }
+            if ($manufacturerSku !== null) {
+                $updateData['manufacturer_sku'] = $manufacturerSku;
+            }
+            if ($categoryId !== null) {
+                $updateData['product_category_id'] = $categoryId;
+            }
+            if ($unitTypeId !== null) {
+                $updateData['unit_type_id'] = $unitTypeId;
+            }
+
+            $existingRetailOld = $existing->retail_price;
+            $existingPurchaseOld = $existing->purchase_price;
+
+            if ($priceToUpdate !== null) {
+                $updateData['retail_price'] = $priceToUpdate;
+                $updateData['price_updated_at'] = now();
+            }
+            if ($purchaseToUpdate !== null) {
+                $updateData['purchase_price'] = $purchaseToUpdate;
+                $updateData['price_updated_at'] = now();
+            }
+
+            $product = $existing;
+            $product->update($updateData);
+
+            if ($priceToUpdate !== null) {
+                DistributorProductPriceHistory::create([
+                    'distributor_product_id' => $product->id,
+                    'price_type' => DistributorProductPriceHistory::TYPE_RETAIL,
+                    'old_price' => $existingRetailOld,
+                    'new_price' => $priceToUpdate,
+                    'comment' => 'Импорт CSV',
+                    'changed_by_user_id' => $user->id,
+                ]);
+            }
+
+            if ($purchaseToUpdate !== null && $purchaseToUpdate !== (float) ($existingPurchaseOld ?? 0)) {
+                DistributorProductPriceHistory::create([
+                    'distributor_product_id' => $product->id,
+                    'price_type' => DistributorProductPriceHistory::TYPE_PURCHASE,
+                    'old_price' => $existingPurchaseOld,
+                    'new_price' => $purchaseToUpdate,
+                    'comment' => 'Импорт CSV',
+                    'changed_by_user_id' => $user->id,
+                ]);
+            }
+
+            if ($stockToUpdate !== null && $warehouse) {
+                DistributorProductStock::query()->updateOrCreate(
+                    [
+                        'distributor_product_id' => $product->id,
+                        'distributor_warehouse_id' => $warehouse->id,
+                    ],
+                    [
+                        'quantity' => $stockToUpdate,
+                        'stock_updated_at' => now(),
+                        'stock_updated_by_user_id' => $user->id,
+                    ],
+                );
+            } elseif ($stockToUpdate !== null) {
+                $stats['errors'][] = "Строка {$rowNum} ({$sku}): остаток не загружен — нет активного склада.";
+            }
+
+            DistributorProductLogger::log($product, 'csv_import', 'Обновление из CSV', null, $user);
+            $stats['updated']++;
+        }
+
+        fclose($handle);
+
+        return $stats;
+    }
+
+    private function importXml(string $path, DistributorProfile $profile, string $importType, ?\App\Models\DistributorWarehouse $warehouse, $user): array
+    {
+        $xml = simplexml_load_file($path);
+        $shop = $xml?->shop ?? null;
+        if (! $xml || ! $shop || ! isset($shop->offers->offer)) {
+            throw new \Exception('Неверный формат XML/YML файла');
+        }
+
+        $categories = [];
+        if (isset($shop->categories->category)) {
+            foreach ($shop->categories->category as $cat) {
+                $catId = (string) $cat['id'];
+                $catName = trim((string) $cat);
+                if ($catName === '') {
+                    continue;
+                }
+
+                $matched = ProductCategory::query()->where('name', $catName)->first();
+                if ($matched) {
+                    $categories[$catId] = $matched->id;
+                }
+            }
+        }
+
+        $stats = [
+            'created' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'errors' => [],
+        ];
+
+        if ($importType !== 'prices' && $warehouse === null) {
+            $stats['errors'][] = 'Нет активного склада — остатки из YML не будут загружены.';
+        }
+
+        foreach ($shop->offers->offer as $offer) {
+            $sku = trim((string) ($offer['id'] ?? $offer->vendorCode ?? ''));
+            if ($sku === '') {
+                $stats['skipped']++;
+
+                continue;
+            }
+
+            $name = trim((string) ($offer->name ?? $offer->model ?? $offer->vendorCode ?? ''));
+            if ($name === '') {
+                $name = $sku;
+            }
+
+            $brand = trim((string) ($offer->vendor ?? $offer->manufacturer ?? $offer->brand ?? ''));
+            $brand = $brand !== '' ? $brand : null;
+
+            $barcode = trim((string) ($offer->barcode ?? $offer->ean ?? ''));
+            $barcode = $barcode !== '' ? $barcode : null;
+
+            $description = trim((string) ($offer->description ?? ''));
+            $description = $description !== '' ? $description : null;
+
+            $categoryId = null;
+            $categoryKey = (string) ($offer->categoryId ?? '');
+            if ($categoryKey !== '' && isset($categories[$categoryKey])) {
+                $categoryId = $categories[$categoryKey];
+            }
+
+            $priceToUpdate = null;
+            if ($importType !== 'stocks' && isset($offer->price) && (string) $offer->price !== '') {
+                $priceToUpdate = (float) $offer->price;
+            }
+
+            $stockToUpdate = null;
+            if ($importType !== 'prices') {
+                if (isset($offer->count)) {
+                    $stockToUpdate = (int) $offer->count;
+                } elseif (isset($offer->outlets->outlet)) {
+                    $maxStock = 0;
+                    foreach ($offer->outlets->outlet as $outlet) {
+                        $maxStock = max($maxStock, (int) ($outlet['instock'] ?? 0));
+                    }
+                    $stockToUpdate = $maxStock;
+                }
+            }
+
+            $existing = DistributorProduct::forDistributor($profile->id)
+                ->where('internal_sku', $sku)
+                ->first();
+
+            $syncPayload = [
+                'sync_source' => DistributorProduct::SYNC_YML,
+                'synced_at' => now(),
+            ];
+
+            if (! $existing) {
+                $stats['skipped']++;
+                $stats['errors'][] = "Товар «{$sku}»: не найден в номенклатуре дистрибьютора";
+
+                continue;
+            }
+
+            $product = $existing;
+            $updateData = $syncPayload + ['name' => $name];
+
+            if ($brand !== null) {
+                $updateData['brand'] = $brand;
+            }
+            if ($barcode !== null) {
+                $updateData['barcode'] = $barcode;
+            }
+            if ($categoryId !== null) {
+                $updateData['product_category_id'] = $categoryId;
+            }
+            if ($description !== null) {
+                $updateData['description'] = $description;
+                $updateData['short_description'] = $description;
+            }
+
+            $oldRetail = $product->retail_price;
+            if ($priceToUpdate !== null) {
+                $updateData['retail_price'] = $priceToUpdate;
+                $updateData['price_updated_at'] = now();
+            }
+
+            $product->update($updateData);
+
+            if ($priceToUpdate !== null) {
+                DistributorProductPriceHistory::create([
+                    'distributor_product_id' => $product->id,
+                    'price_type' => DistributorProductPriceHistory::TYPE_RETAIL,
+                    'old_price' => $oldRetail,
+                    'new_price' => $priceToUpdate,
+                    'comment' => 'Импорт YML',
+                    'changed_by_user_id' => $user->id,
+                ]);
+            }
+
+            if ($stockToUpdate !== null && $warehouse) {
+                DistributorProductStock::query()->updateOrCreate(
+                    [
+                        'distributor_product_id' => $product->id,
+                        'distributor_warehouse_id' => $warehouse->id,
+                    ],
+                    [
+                        'quantity' => $stockToUpdate,
+                        'stock_updated_at' => now(),
+                        'stock_updated_by_user_id' => $user->id,
+                    ],
+                );
+            } elseif ($stockToUpdate !== null) {
+                $stats['errors'][] = "Товар «{$sku}»: остаток не загружен — нет активного склада.";
+            }
+
+            DistributorProductLogger::log($product, 'yml_import', 'Обновление из YML', null, $user);
+            $stats['updated']++;
+        }
+
+        return $stats;
     }
 
     public function storeDocument(Request $request, DistributorProduct $product): RedirectResponse

@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\TransportCompany;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class TransportCompanySeeder extends Seeder
 {
@@ -66,15 +66,14 @@ class TransportCompanySeeder extends Seeder
             ],
         ];
 
-        $now = now();
-
         foreach ($companies as $company) {
-            DB::table('transport_companies')->insert([
-                ...$company,
-                'is_active' => true,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
+            TransportCompany::updateOrCreate(
+                ['slug' => $company['slug']],
+                [
+                    ...$company,
+                    'is_active' => true,
+                ]
+            );
         }
     }
 }

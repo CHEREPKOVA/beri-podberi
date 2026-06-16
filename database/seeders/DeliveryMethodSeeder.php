@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\DeliveryMethod;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class DeliveryMethodSeeder extends Seeder
 {
@@ -33,15 +33,14 @@ class DeliveryMethodSeeder extends Seeder
             ],
         ];
 
-        $now = now();
-
         foreach ($methods as $method) {
-            DB::table('delivery_methods')->insert([
-                ...$method,
-                'is_active' => true,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
+            DeliveryMethod::updateOrCreate(
+                ['slug' => $method['slug']],
+                [
+                    ...$method,
+                    'is_active' => true,
+                ]
+            );
         }
     }
 }

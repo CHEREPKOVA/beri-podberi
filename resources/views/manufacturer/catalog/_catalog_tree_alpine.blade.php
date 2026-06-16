@@ -48,8 +48,13 @@ function catalogListingMixin(config) {
         productsContainerId: config.productsContainerId,
         productsFetchUrl: config.productsFetchUrl,
         baseCatalogUrl: config.baseCatalogUrl,
+        catalogSearchSuggestUrl: config.catalogSearchSuggestUrl || '',
+        catalogRegionSetUrl: config.catalogRegionSetUrl || '',
+        searchMinQueryLength: Number(config.searchMinQueryLength || 2),
+        filterApplyTimer: null,
         loading: false,
-        buildCatalogParams(includeFilters) {
+        buildCatalogParams(includeFilters, options = {}) {
+            const structuralOnly = options.structuralOnly === true;
             const params = new URLSearchParams();
             if (this.selectedCategorySlug) {
                 params.set('category', this.selectedCategorySlug);
@@ -58,10 +63,21 @@ function catalogListingMixin(config) {
             if (searchEl && searchEl.value.trim() !== '') {
                 params.set('search', searchEl.value.trim());
             }
+            const scopeEl = document.getElementById('catalog-search-scope-global');
+            if (scopeEl) {
+                if (scopeEl.type === 'checkbox') {
+                    params.set('search_scope', scopeEl.checked ? 'global' : 'category');
+                } else if (scopeEl.value) {
+                    params.set('search_scope', scopeEl.value);
+                }
+            }
             if (includeFilters) {
                 const form = document.getElementById('catalog-filters-form');
                 if (form) {
                     new FormData(form).forEach((value, key) => {
+                        if (structuralOnly && key.startsWith('attr[')) {
+                            return;
+                        }
                         if (value !== '' && value !== null) {
                             params.append(key, value);
                         }
@@ -130,20 +146,27 @@ function catalogListingMixin(config) {
         },
         loadCategory(slug) {
             this.selectedCategorySlug = slug || null;
-            const params = new URLSearchParams();
+            const params = this.buildCatalogParams(true, { structuralOnly: true });
+            params.delete('page');
             if (slug) {
                 params.set('category', slug);
-            }
-            const searchEl = document.getElementById('catalog-search-input');
-            if (searchEl && searchEl.value.trim() !== '') {
-                params.set('search', searchEl.value.trim());
+            } else {
+                params.delete('category');
             }
             this.fetchCatalogProducts(params);
         },
         applyCatalogFilters() {
-            this.fetchCatalogProducts(this.buildCatalogParams(true));
+            const params = this.buildCatalogParams(true);
+            params.delete('page');
+            this.fetchCatalogProducts(params);
+        },
+        applyCatalogFiltersDebounced() {
+            clearTimeout(this.filterApplyTimer);
+            this.filterApplyTimer = setTimeout(() => this.applyCatalogFilters(), 500);
         },
         resetCatalogFilters() {
+            clearTimeout(this.filterApplyTimer);
+            this.catalogFiltersOpen = false;
             const form = document.getElementById('catalog-filters-form');
             if (form) {
                 form.reset();
@@ -152,7 +175,274 @@ function catalogListingMixin(config) {
             if (searchEl) {
                 searchEl.value = '';
             }
+            const scopeEl = document.getElementById('catalog-search-scope-global');
+            if (scopeEl && scopeEl.type === 'checkbox') {
+                scopeEl.checked = false;
+            }
+            this.closeSuggestions();
             this.loadCategory(this.selectedCategorySlug);
+        },
+        setCatalogRegion(regionId) {
+            if (!this.catalogRegionSetUrl || !regionId) {
+                return;
+            }
+            fetch(this.catalogRegionSetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ region_id: parseInt(regionId, 10) }),
+            }).then((r) => {
+                if (r.ok) {
+                    this.fetchCatalogProducts(this.buildCatalogParams(true));
+                }
+            });
+        },
+    };
+}
+
+function catalogSearchSuggestMixin(config) {
+    return {
+        catalogSearchSuggestUrl: config.catalogSearchSuggestUrl || '',
+        suggestOpen: false,
+        suggestLoading: false,
+        suggestions: { products: [], categories: [], manufacturers: [], articles: [], popular: [] },
+        showPopularSearches() {
+            const q = document.getElementById('catalog-search-input')?.value?.trim() || '';
+            return q.length < 2 && (this.suggestions.popular?.length || 0) > 0;
+        },
+        hasSuggestions() {
+            const s = this.suggestions;
+            return (s.products?.length || 0)
+                || (s.categories?.length || 0)
+                || (s.manufacturers?.length || 0)
+                || (s.articles?.length || 0);
+        },
+        onSearchInput() {
+            this.fetchSuggestions();
+        },
+        onSearchFocus() {
+            const el = document.getElementById('catalog-search-input');
+            if (el && el.value.trim().length >= this.searchMinQueryLength) {
+                this.fetchSuggestions();
+            } else {
+                this.fetchPopularSearches();
+            }
+        },
+        closeSuggestions() {
+            this.suggestOpen = false;
+        },
+        buildSuggestParams() {
+            const params = new URLSearchParams();
+            const q = document.getElementById('catalog-search-input')?.value?.trim() || '';
+            params.set('q', q);
+            if (this.selectedCategorySlug) {
+                params.set('category', this.selectedCategorySlug);
+            }
+            const scopeEl = document.getElementById('catalog-search-scope-global');
+            if (scopeEl) {
+                if (scopeEl.type === 'checkbox') {
+                    params.set('search_scope', scopeEl.checked ? 'global' : 'category');
+                } else if (scopeEl.value) {
+                    params.set('search_scope', scopeEl.value);
+                }
+            }
+            return params;
+        },
+        fetchSuggestions() {
+            const suggestUrl = this.catalogSearchSuggestUrl;
+            const q = document.getElementById('catalog-search-input')?.value?.trim() || '';
+            if (!suggestUrl) {
+                return;
+            }
+            if (q.length < this.searchMinQueryLength) {
+                this.fetchPopularSearches();
+                return;
+            }
+            this.suggestLoading = true;
+            this.suggestOpen = true;
+            this.suggestions = { products: [], categories: [], manufacturers: [], articles: [], popular: [] };
+            const url = suggestUrl + '?' + this.buildSuggestParams().toString();
+            fetch(url, {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            })
+                .then((r) => {
+                    if (!r.ok) {
+                        throw new Error('Suggest request failed');
+                    }
+                    return r.json();
+                })
+                .then((data) => {
+                    this.suggestions = {
+                        products: data.products || [],
+                        categories: data.categories || [],
+                        manufacturers: data.manufacturers || [],
+                        articles: data.articles || [],
+                        popular: data.popular || [],
+                    };
+                    this.suggestOpen = true;
+                })
+                .catch(() => {
+                    this.suggestions = { products: [], categories: [], manufacturers: [], articles: [], popular: [] };
+                    this.suggestOpen = true;
+                })
+                .finally(() => { this.suggestLoading = false; });
+        },
+        fetchPopularSearches() {
+            const suggestUrl = this.catalogSearchSuggestUrl;
+            if (!suggestUrl) {
+                return;
+            }
+            this.suggestLoading = true;
+            this.suggestOpen = true;
+            const url = suggestUrl + '?' + this.buildSuggestParams().toString();
+            fetch(url, {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            })
+                .then((r) => r.ok ? r.json() : Promise.reject())
+                .then((data) => {
+                    this.suggestions = {
+                        products: [],
+                        categories: [],
+                        manufacturers: [],
+                        articles: [],
+                        popular: data.popular || [],
+                    };
+                    this.suggestOpen = (data.popular || []).length > 0;
+                })
+                .catch(() => {
+                    this.suggestions = { products: [], categories: [], manufacturers: [], articles: [], popular: [] };
+                    this.suggestOpen = false;
+                })
+                .finally(() => { this.suggestLoading = false; });
+        },
+        pickPopularSearch(query) {
+            const el = document.getElementById('catalog-search-input');
+            if (el) {
+                el.value = query;
+            }
+            this.fetchSuggestions();
+        },
+        submitSearch() {
+            this.closeSuggestions();
+            this.applyCatalogFilters();
+        },
+        pickSuggestCategory(slug) {
+            this.closeSuggestions();
+            this.loadCategory(slug);
+        },
+        pickSuggestManufacturer(id) {
+            this.closeSuggestions();
+            const form = document.getElementById('catalog-filters-form');
+            if (!form) {
+                return;
+            }
+            form.querySelectorAll('input[name="manufacturer_ids[]"]').forEach((el) => { el.checked = false; });
+            const checkbox = form.querySelector('input[name="manufacturer_ids[]"][value="' + id + '"]');
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+            this.applyCatalogFilters();
+        },
+    };
+}
+
+function catalogFiltersMixin() {
+    return {
+        catalogFiltersOpen: false,
+    };
+}
+
+function catalogPriceRangeFilter(config) {
+    const boundsMin = config.boundsMin;
+    const boundsMax = config.boundsMax;
+    const span = boundsMax - boundsMin;
+
+    return {
+        boundsMin,
+        boundsMax,
+        minValue: config.initialMin ?? boundsMin,
+        maxValue: config.initialMax ?? boundsMax,
+        minPercent() {
+            if (span <= 0) {
+                return 0;
+            }
+
+            return ((this.minValue - boundsMin) / span) * 100;
+        },
+        maxPercent() {
+            if (span <= 0) {
+                return 100;
+            }
+
+            return ((this.maxValue - boundsMin) / span) * 100;
+        },
+        formatPrice(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) {
+                return '—';
+            }
+
+            return new Intl.NumberFormat('ru-RU').format(n) + ' ₽';
+        },
+        clampValues() {
+            if (this.minValue < boundsMin) {
+                this.minValue = boundsMin;
+            }
+            if (this.maxValue > boundsMax) {
+                this.maxValue = boundsMax;
+            }
+            if (this.minValue > this.maxValue) {
+                this.minValue = this.maxValue;
+            }
+        },
+        syncSliderToInputs() {
+            const minEl = this.$refs.priceMinInput;
+            const maxEl = this.$refs.priceMaxInput;
+            if (!minEl || !maxEl) {
+                return;
+            }
+            minEl.value = this.minValue > boundsMin ? String(this.minValue) : '';
+            maxEl.value = this.maxValue < boundsMax ? String(this.maxValue) : '';
+        },
+        onMinSlider() {
+            if (this.minValue > this.maxValue) {
+                this.maxValue = this.minValue;
+            }
+            this.syncSliderToInputs();
+            this.$dispatch('catalog-apply-filters-debounced');
+        },
+        onMaxSlider() {
+            if (this.maxValue < this.minValue) {
+                this.minValue = this.maxValue;
+            }
+            this.syncSliderToInputs();
+            this.$dispatch('catalog-apply-filters-debounced');
+        },
+        onMinInput(event) {
+            const raw = event.target.value;
+            this.minValue = raw === '' ? boundsMin : parseInt(raw, 10);
+            if (!Number.isFinite(this.minValue)) {
+                this.minValue = boundsMin;
+            }
+            this.clampValues();
+            this.syncSliderToInputs();
+            this.$dispatch('catalog-apply-filters-debounced');
+        },
+        onMaxInput(event) {
+            const raw = event.target.value;
+            this.maxValue = raw === '' ? boundsMax : parseInt(raw, 10);
+            if (!Number.isFinite(this.maxValue)) {
+                this.maxValue = boundsMax;
+            }
+            this.clampValues();
+            this.syncSliderToInputs();
+            this.$dispatch('catalog-apply-filters-debounced');
         },
     };
 }

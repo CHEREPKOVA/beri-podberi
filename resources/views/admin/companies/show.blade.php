@@ -333,16 +333,22 @@
             </div>
 
             <div x-show="activeTab === 'activity'" x-cloak>
-                <h2 class="text-lg font-semibold mb-4">Журнал действий</h2>
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h2 class="text-lg font-semibold">Журнал действий</h2>
+                    @if(auth()->user()?->hasPermission('audit.view'))
+                        <a href="{{ route('admin.audit.index', ['company_name' => $company->name]) }}"
+                           class="text-sm text-[#c3242a] hover:underline">
+                            Весь журнал по компании
+                        </a>
+                    @endif
+                </div>
                 <div class="space-y-2">
-                    @forelse($activity as $log)
-                        <div class="text-sm text-gray-700 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700 pb-2">
-                            <div class="font-medium">{{ \App\Services\AdminAuditLogger::actionLabel($log->action) }}</div>
-                            <div class="text-xs text-gray-500">{{ \Illuminate\Support\Carbon::parse($log->created_at)->format('d.m.Y H:i') }} — {{ $log->admin_name }}</div>
-                        </div>
-                    @empty
-                        <div class="text-sm text-gray-500">Действий пока нет.</div>
-                    @endforelse
+                    @include('admin.audit._entries', [
+                        'events' => $activity,
+                        'permissionLabels' => $permissionLabels,
+                        'compact' => true,
+                        'linkToShow' => true,
+                    ])
                 </div>
                 @if($activity->hasPages())
                     <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">

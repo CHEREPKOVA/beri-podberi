@@ -43,7 +43,7 @@ class ProductCatalogCardTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Фотогалерея');
-        $response->assertSee('Информация о поставщиках');
+        $response->assertSee('Наличие у поставщиков');
         $response->assertSee('Техническая документация');
         $response->assertSee('Логистические параметры');
         $response->assertSee('productCatalogLive', false);
@@ -73,10 +73,10 @@ class ProductCatalogCardTest extends TestCase
             ->getJson(route('buyer.catalog.product.live', $product))
             ->assertOk()
             ->assertJsonPath('visible', true)
-            ->assertJsonStructure(['live' => ['supplier_rows', 'warehouse_stock_rows', 'display_price_formatted']]);
+            ->assertJsonStructure(['live' => ['warehouse_stock_rows', 'display_price_formatted']]);
     }
 
-    public function test_distributor_card_shows_only_own_supplier_row(): void
+    public function test_distributor_card_shows_only_own_warehouse_rows(): void
     {
         $region = Region::factory()->create(['name' => 'Казань']);
         $manufacturer = ManufacturerProfile::factory()->create();
@@ -127,8 +127,8 @@ class ProductCatalogCardTest extends TestCase
         $data = $card->build($product->fresh(['category.parent', 'additionalCategories', 'images', 'unitType', 'attributeValues.attribute', 'documents', 'manufacturerProfile.regions', 'stocks.warehouse.region']));
 
         $this->assertSame('distributor', $data['cardRole']);
-        $this->assertCount(1, $data['supplierRows']);
-        $this->assertStringContainsString('Свой', $data['supplierRows']->first()['name']);
+        $this->assertCount(1, $data['warehouseStockRows']);
+        $this->assertStringContainsString('Свой', $data['warehouseStockRows']->first()['distributor_name']);
     }
 
     /**

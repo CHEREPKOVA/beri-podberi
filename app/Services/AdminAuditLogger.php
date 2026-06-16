@@ -15,6 +15,19 @@ class AdminAuditLogger
         return $labels[$action] ?? $labels['_default'] ?? 'Действие в панели управления';
     }
 
+    public static function moduleLabelForAction(string $action): ?string
+    {
+        foreach (config('admin_audit.modules', []) as $module) {
+            foreach ($module['prefixes'] ?? [] as $prefix) {
+                if (str_starts_with($action, $prefix)) {
+                    return $module['label'] ?? null;
+                }
+            }
+        }
+
+        return null;
+    }
+
     public function logRequest(Request $request, int $responseStatus): void
     {
         $user = $request->user();
@@ -48,7 +61,9 @@ class AdminAuditLogger
 
         DB::table('admin_action_logs')->insert([
             'admin_id' => $user->id,
+            'admin_name' => $user->name,
             'action' => $routeName,
+            'required_permission' => $this->resolveRequiredPermission($request),
             'target_type' => $this->resolveTargetType($routeParams),
             'target_id' => $targetId,
             'company_name' => $companyName,
@@ -116,5 +131,23 @@ class AdminAuditLogger
         }
 
         return [$companyType, $companyName];
+    }
+
+    private function resolveRequiredPermission(Request $request): ?string
+    {
+        $middleware = $request->route()?->gatherMiddleware() ?? [];
+
+        foreach ($middleware as $entry) {
+            if (! is_string($entry) || ! str_starts_with($entry, 'permission:')) {
+                continue;
+            }
+
+            $permissions = explode(',', substr($entry, strlen('permission:')));
+            $permission = trim($permissions[0] ?? '');
+
+            return $permission !== '' ? $permission : null;
+        }
+
+        return null;
     }
 }

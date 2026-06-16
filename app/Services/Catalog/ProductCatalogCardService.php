@@ -4,7 +4,6 @@ namespace App\Services\Catalog;
 
 use App\Models\DistributorProduct;
 use App\Models\DistributorProductStock;
-use App\Models\ManufacturerDistributorPartnership;
 use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\Role;
@@ -54,7 +53,6 @@ class ProductCatalogCardService
             : null;
 
         $offerSummary = $this->summaryForRole($product, $offerService, $distributorProfileId);
-        $supplierRows = $this->supplierRowsForRole($product, $role, $offerService, $distributorProfileId);
         $warehouseStockRows = $this->warehouseStockRowsForRole($product, $role, $offerSummary, $distributorProfileId);
 
         $isPurchasable = (bool) ($offerSummary['is_purchasable'] ?? false);
@@ -81,7 +79,6 @@ class ProductCatalogCardService
 
         $livePayload = $this->formatLivePayload(
             $offerSummary,
-            $supplierRows,
             $warehouseStockRows,
             $canAddToOrder,
             $productUnavailable,
@@ -92,7 +89,6 @@ class ProductCatalogCardService
             'cardRole' => $role,
             'categoryAttributes' => $categoryAttributes,
             'offerSummary' => $offerSummary,
-            'supplierRows' => $supplierRows,
             'warehouseStockRows' => $warehouseStockRows,
             'logistics' => $this->logisticsParams($product),
             'analogs' => $analogs,
@@ -118,13 +114,11 @@ class ProductCatalogCardService
 
     /**
      * @param  array<string, mixed>  $offerSummary
-     * @param  Collection<int, array<string, mixed>>  $supplierRows
      * @param  Collection<int, array<string, mixed>>  $warehouseStockRows
      * @return array<string, mixed>
      */
     private function formatLivePayload(
         array $offerSummary,
-        Collection $supplierRows,
         Collection $warehouseStockRows,
         bool $canAddToOrder,
         bool $productUnavailable,
@@ -145,17 +139,6 @@ class ProductCatalogCardService
             'can_add_to_order' => $canAddToOrder,
             'product_unavailable' => $productUnavailable,
             'show_end_company_price' => $role === 'end_company',
-            'supplier_rows' => $supplierRows->map(fn (array $row): array => [
-                'name' => $row['name'],
-                'price' => $row['price'] !== null ? (float) $row['price'] : null,
-                'price_formatted' => ($row['price'] ?? null) !== null && $row['price'] !== ''
-                    ? number_format((float) $row['price'], 2, ',', ' ').' ₽'
-                    : '—',
-                'stock' => (int) ($row['stock'] ?? 0),
-                'conditions' => $row['conditions'] ?? '—',
-                'regions' => $row['regions'] ?? '—',
-                'distributor_product_id' => $row['distributor_product_id'] ?? null,
-            ])->values()->all(),
             'warehouse_stock_rows' => $warehouseStockRows->map(fn (array $row): array => [
                 'distributor_name' => $row['distributor_name'] ?? '—',
                 'warehouse_name' => $row['warehouse_name'] ?? '—',
@@ -262,87 +245,6 @@ class ProductCatalogCardService
         }
 
         return true;
-    }
-
-    /**
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function supplierRowsForRole(
-        Product $product,
-        string $role,
-        EndCompanyDistributorOfferService $offerService,
-        ?int $distributorProfileId,
-    ): Collection {
-        if (in_array($role, ['end_company', 'distributor'], true)) {
-            $offers = $offerService->offersForProduct($product->id);
-            if ($distributorProfileId !== null) {
-                $offers = $offers->filter(
-                    fn (DistributorProduct $offer): bool => (int) $offer->distributor_profile_id === $distributorProfileId
-                );
-            }
-
-            $visible = $offers->filter(fn (DistributorProduct $offer): bool => $this->offerIsVisible($offer));
-
-            return $this->supplierRowsFromOffers($visible->isNotEmpty() ? $visible : $offers);
-        }
-
-        return $this->supplierRowsForManufacturer($product);
-    }
-
-    /**
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function supplierRowsForManufacturer(Product $product): Collection
-    {
-        $offers = DistributorProduct::query()
-            ->where('source_product_id', $product->id)
-            ->where('status', DistributorProduct::STATUS_ACTIVE)
-            ->whereHas('profile.manufacturerPartnerships', function ($q) use ($product): void {
-                $q->where('manufacturer_profile_id', $product->manufacturer_profile_id)
-                    ->where('status', ManufacturerDistributorPartnership::STATUS_ACTIVE);
-            })
-            ->with(['profile.regions', 'stocks.warehouse.region'])
-            ->orderBy('retail_price')
-            ->get();
-
-        if ($offers->isEmpty()) {
-            return collect([[
-                'name' => $product->manufacturerProfile?->displayName() ?? 'Производитель',
-                'price' => $product->base_price,
-                'stock' => $product->available_stock,
-                'conditions' => $product->transport_conditions ?: 'По стандартным условиям производителя',
-                'regions' => $product->manufacturerProfile?->regions?->pluck('name')->implode(', ') ?: 'Все регионы',
-                'distributor_profile_id' => null,
-                'distributor_product_id' => null,
-            ]]);
-        }
-
-        return $this->supplierRowsFromOffers($offers);
-    }
-
-    /**
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function supplierRowsFromOffers(Collection $offers): Collection
-    {
-        return $offers->map(function (DistributorProduct $offer): array {
-            $profile = $offer->profile;
-            $stock = (int) $offer->stocks->sum(fn (DistributorProductStock $s) => $s->available_quantity);
-            $conditions = $offer->stocks
-                ->map(fn (DistributorProductStock $s) => $s->warehouse?->shipping_conditions)
-                ->filter()
-                ->first();
-
-            return [
-                'name' => $profile?->displayName() ?? 'Дистрибьютор',
-                'price' => $offer->retail_price,
-                'stock' => $stock,
-                'conditions' => $conditions ?: 'Стандартные условия',
-                'regions' => $profile?->regions?->pluck('name')->implode(', ') ?: '—',
-                'distributor_profile_id' => $offer->distributor_profile_id,
-                'distributor_product_id' => $offer->id,
-            ];
-        })->values();
     }
 
     /**

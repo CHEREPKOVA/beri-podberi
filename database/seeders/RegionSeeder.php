@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\Region;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class RegionSeeder extends Seeder
 {
@@ -112,17 +112,15 @@ class RegionSeeder extends Seeder
             ['name' => 'Чукотский автономный округ', 'code' => '87', 'federal_district' => 'Дальневосточный'],
         ];
 
-        $now = now();
-
         foreach ($regions as $region) {
-            DB::table('regions')->insert([
-                'name' => $region['name'],
-                'code' => $region['code'],
-                'federal_district' => $region['federal_district'],
-                'is_active' => true,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
+            Region::updateOrCreate(
+                ['name' => $region['name']],
+                [
+                    'code' => $region['code'],
+                    'federal_district' => $region['federal_district'],
+                    'is_active' => true,
+                ]
+            );
         }
     }
 }

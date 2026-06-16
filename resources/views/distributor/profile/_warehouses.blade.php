@@ -1,4 +1,8 @@
-<div x-data="{ showAddForm: false, showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }">
+@php
+    $openAddWarehouseModal = $errors->any() && old('_warehouse_form') === 'add';
+    $initialEditingWarehouseId = old('_warehouse_form') === 'edit' ? (int) old('_warehouse_id') : null;
+@endphp
+<div x-data="warehousePageData({{ $openAddWarehouseModal ? 'true' : 'false' }}, {{ $initialEditingWarehouseId ?? 'null' }})">
     <div class="flex items-center justify-between mb-6">
         <div>
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Склады</h2>
@@ -15,7 +19,7 @@
                 Экспорт в CSV
             </a>
             <button
-                @click="showAddForm = true"
+                @click="openAddForm()"
                 class="inline-flex items-center gap-2 px-4 py-2.5 bg-[#c3242a] text-white text-sm font-medium rounded-lg hover:bg-[#a01e24] transition shadow-theme-xs"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -29,8 +33,8 @@
     {{-- Список складов --}}
     <div class="space-y-4">
         @forelse($profile->warehouses as $warehouse)
-        <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-gray-800/50" x-data="{ editing: false }">
-            <div x-show="!editing">
+        <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-gray-800/50">
+            <div x-show="editingId !== {{ $warehouse->id }}">
                 <div class="flex items-start justify-between">
                     <div>
                         <div class="flex items-center gap-2 flex-wrap">
@@ -52,7 +56,7 @@
                     </div>
                     <div class="flex items-center gap-2">
                         <button
-                            @click="editing = true"
+                            @click="editingId = {{ $warehouse->id }}"
                             class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
                             title="Редактировать"
                         >
@@ -120,57 +124,14 @@
             </div>
 
             {{-- Форма редактирования --}}
-            <form x-show="editing" method="POST" action="{{ route('distributor.warehouses.update', $warehouse) }}" class="space-y-4">
+            <form x-show="editingId === {{ $warehouse->id }}" x-cloak method="POST" action="{{ route('distributor.warehouses.update', $warehouse) }}" class="space-y-4" autocomplete="off">
                 @csrf
                 @method('PUT')
+                <input type="hidden" name="_warehouse_form" value="edit">
+                <input type="hidden" name="_warehouse_id" value="{{ $warehouse->id }}">
+                <fieldset class="min-w-0 border-0 p-0 m-0" :disabled="editingId !== {{ $warehouse->id }}">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Название <span class="text-red-500">*</span></label>
-                        <input type="text" name="name" value="{{ $warehouse->name }}" required class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Тип склада <span class="text-red-500">*</span></label>
-                        <div class="relative">
-                            <select name="type" required class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                                @foreach(\App\Models\DistributorWarehouse::typeLabels() as $value => $label)
-                                <option value="{{ $value }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400" {{ $warehouse->type === $value ? 'selected' : '' }}>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                                <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                                </svg>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Адрес <span class="text-red-500">*</span></label>
-                        <input type="text" name="address" value="{{ $warehouse->address }}" required class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Регион</label>
-                        <div class="relative">
-                            <select name="region_id" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                                <option value="" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">Не указан</option>
-                                @foreach($regions as $region)
-                                <option value="{{ $region->id }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400" {{ $warehouse->region_id == $region->id ? 'selected' : '' }}>{{ $region->name }}</option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                                <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                                </svg>
-                            </span>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Ответственный</label>
-                        <input type="text" name="responsible_person" value="{{ $warehouse->responsible_person }}" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Телефон</label>
-                        <input type="text" name="phone" value="{{ $warehouse->phone }}" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
+                    @include('distributor.profile._warehouse_form_fields', ['warehouse' => $warehouse, 'formMode' => 'edit'])
                     <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">График работы (для самовывоза)</label>
                         <input type="text" name="working_hours" value="{{ $warehouse->working_hours }}" placeholder="Например: Пн–Пт 9:00–18:00" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
@@ -194,10 +155,11 @@
                     <button type="submit" class="px-5 py-2.5 bg-[#c3242a] text-white text-sm font-medium rounded-lg hover:bg-[#a01e24] transition shadow-theme-xs">
                         Сохранить
                     </button>
-                    <button type="button" @click="editing = false" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition shadow-theme-xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
+                    <button type="button" @click="editingId = null" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition shadow-theme-xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
                         Отменить
                     </button>
                 </div>
+                </fieldset>
             </form>
         </div>
         @empty
@@ -225,84 +187,91 @@
         </div>
     </div>
 
-    {{-- Модальное окно добавления склада --}}
-    <div x-show="showAddForm" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showAddForm = false">
-        <div class="w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-xl" @click.stop>
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Добавить склад</h3>
+    {{-- Модальное окно добавления: x-if пересоздаёт форму, чтобы браузер не подставлял данные из скрытых форм редактирования --}}
+    <template x-if="showAddForm">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showAddForm = false">
+            <div class="w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-xl" @click.stop>
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Добавить склад</h3>
+                </div>
+                <form method="POST" action="{{ route('distributor.warehouses.store') }}" class="p-6 space-y-4" autocomplete="off">
+                    @csrf
+                    <input type="hidden" name="_warehouse_form" value="add">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        @include('distributor.profile._warehouse_form_fields', ['formMode' => 'add'])
+                        <div class="sm:col-span-2">
+                            <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">График работы (для самовывоза)</label>
+                            <input type="text" name="working_hours" value="{{ old('working_hours', '') }}" placeholder="Например: Пн–Пт 9:00–18:00" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Условия отгрузки</label>
+                            <input type="text" name="shipping_conditions" value="{{ old('shipping_conditions', '') }}" placeholder="Например: требует подтверждение" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Примечание</label>
+                            <textarea name="notes" rows="2" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 resize-none">{{ old('notes', '') }}</textarea>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700 mt-6">
+                        <button type="submit" class="px-5 py-2.5 bg-[#c3242a] text-white text-sm font-medium rounded-lg hover:bg-[#a01e24] transition shadow-theme-xs">
+                            Добавить
+                        </button>
+                        <button type="button" @click="showAddForm = false" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition shadow-theme-xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
+                            Отменить
+                        </button>
+                    </div>
+                </form>
             </div>
-            <form method="POST" action="{{ route('distributor.warehouses.store') }}" class="p-6 space-y-4">
-                @csrf
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Название <span class="text-red-500">*</span></label>
-                        <input type="text" name="name" required class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Тип склада <span class="text-red-500">*</span></label>
-                        <div class="relative">
-                            <select name="type" required class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                                @foreach(\App\Models\DistributorWarehouse::typeLabels() as $value => $label)
-                                <option value="{{ $value }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                                <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                                </svg>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Адрес <span class="text-red-500">*</span></label>
-                        <input type="text" name="address" required class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Регион</label>
-                        <div class="relative">
-                            <select name="region_id" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent bg-none px-4 py-2.5 pr-11 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                                <option value="" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">Не указан</option>
-                                @foreach($regions as $region)
-                                <option value="{{ $region->id }}" class="text-gray-700 dark:bg-gray-900 dark:text-gray-400">{{ $region->name }}</option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                                <svg class="stroke-current" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M4.79175 7.396L10.0001 12.6043L15.2084 7.396" stroke="" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                                </svg>
-                            </span>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Ответственный</label>
-                        <input type="text" name="responsible_person" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div>
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Телефон</label>
-                        <input type="text" name="phone" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">График работы (для самовывоза)</label>
-                        <input type="text" name="working_hours" placeholder="Например: Пн–Пт 9:00–18:00" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Условия отгрузки</label>
-                        <input type="text" name="shipping_conditions" placeholder="Например: требует подтверждение" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Примечание</label>
-                        <textarea name="notes" rows="2" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 resize-none"></textarea>
-                    </div>
-                </div>
-                <div class="flex items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700 mt-6">
-                    <button type="submit" class="px-5 py-2.5 bg-[#c3242a] text-white text-sm font-medium rounded-lg hover:bg-[#a01e24] transition shadow-theme-xs">
-                        Добавить
-                    </button>
-                    <button type="button" @click="showAddForm = false" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition shadow-theme-xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
-                        Отменить
-                    </button>
-                </div>
-            </form>
         </div>
-    </div>
+    </template>
 </div>
+
+@push('scripts')
+<script>
+function warehousePageData(openAddOnLoad = false, initialEditingId = null) {
+    return {
+        showAddForm: openAddOnLoad,
+        editingId: initialEditingId,
+        showDeleteModal: false,
+        deleteFormAction: '',
+        deleteMessage: '',
+        openAddForm() {
+            this.editingId = null;
+            this.showAddForm = true;
+        },
+        formatPhone(e) {
+            const input = e.target;
+            let digits = input.value.replace(/\D/g, '');
+            if (digits.startsWith('8')) digits = digits.slice(1);
+            if (digits.startsWith('7')) digits = digits.slice(1);
+            digits = digits.slice(0, 10);
+            if (digits.length === 0) {
+                input.value = '';
+                return;
+            }
+            let result = '+7 (' + digits.slice(0, 3);
+            if (digits.length >= 3) result += ')';
+            if (digits.length > 3) result += ' ' + digits.slice(3, 6);
+            if (digits.length > 6) result += '-' + digits.slice(6, 8);
+            if (digits.length > 8) result += '-' + digits.slice(8, 10);
+            input.value = result;
+        },
+        clearPhoneIfEmpty(e) {
+            const v = e.target.value.replace(/\D/g, '');
+            if (v === '' || v === '7') e.target.value = '';
+        },
+        onResponsibleChange(e) {
+            const phone = e.target.selectedOptions[0]?.dataset?.phone;
+            const phoneInput = e.target.closest('form')?.querySelector('input[name=phone]');
+            if (!phoneInput) return;
+            if (phone) {
+                phoneInput.value = phone;
+                this.formatPhone({ target: phoneInput });
+            } else if (!e.target.value) {
+                phoneInput.value = '';
+            }
+        },
+    };
+}
+</script>
+@endpush

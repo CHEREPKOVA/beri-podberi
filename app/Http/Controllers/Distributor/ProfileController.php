@@ -105,6 +105,7 @@ class ProfileController extends Controller
             'integration_csv_feed_url' => 'nullable|string|max:2048',
             'integration_yml_feed_url' => 'nullable|string|max:2048',
             'integration_comment' => 'nullable|string|max:2000',
+            'zero_stock_behavior' => 'required|in:hide,on_order',
         ]);
 
         $validated['integration_csv_enabled'] = $request->boolean('integration_csv_enabled');

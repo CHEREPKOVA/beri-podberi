@@ -70,6 +70,34 @@ class Product extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (Product $product): void {
+            $product->sku_normalized = self::normalizeSku($product->sku);
+            $product->manufacturer_sku_normalized = self::normalizeSku($product->manufacturer_sku);
+            $product->distributor_sku_normalized = self::normalizeSku($product->distributor_sku);
+        });
+    }
+
+    public static function normalizeSku(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/[\s\-]+/u', '', $trimmed);
+        if ($normalized === null || $normalized === '') {
+            return null;
+        }
+
+        return mb_strtoupper($normalized, 'UTF-8');
+    }
+
     public static function statusLabels(): array
     {
         return [
@@ -539,7 +567,7 @@ class Product extends Model
         return null;
     }
 
-    public function scopeSearch($query, ?string $search)
+    public function scopeSearch($query, ?string $search, array $options = [])
     {
         $search = trim((string) $search);
         if ($search === '') {
@@ -547,9 +575,18 @@ class Product extends Model
         }
 
         $compact = preg_replace('/\s+/u', '', $search);
+        $normalizedCompact = self::normalizeSku($compact);
+        $allowIdSearch = (bool) ($options['allow_id_search'] ?? false);
 
-        return $query->where(function ($q) use ($search, $compact) {
+        return $query->where(function ($q) use ($search, $compact, $normalizedCompact, $allowIdSearch) {
             $q->where('name', 'like', "%{$search}%");
+
+            if ($normalizedCompact !== null && mb_strlen($normalizedCompact) >= 2) {
+                foreach (['sku_normalized', 'manufacturer_sku_normalized', 'distributor_sku_normalized'] as $field) {
+                    $q->orWhere($field, $normalizedCompact)
+                        ->orWhere($field, 'like', "{$normalizedCompact}%");
+                }
+            }
 
             foreach (['sku', 'manufacturer_sku', 'distributor_sku', 'ean', 'barcode'] as $field) {
                 $q->orWhere($field, 'like', "%{$search}%")
@@ -559,9 +596,42 @@ class Product extends Model
                     );
             }
 
+            $q->orWhereHas('manufacturerProfile', function ($mq) use ($search) {
+                $mq->where('full_name', 'like', "%{$search}%")
+                    ->orWhere('short_name', 'like', "%{$search}%");
+            });
+
             $q->orWhereHas('attributeValues', function ($av) use ($search) {
                 $av->where('value', 'like', "%{$search}%");
             });
+
+            $q->orWhereHas('analogs', function ($analogQuery) use ($search, $compact) {
+                self::applySkuLikeConstraints($analogQuery, $search, $compact);
+            });
+
+            $q->orWhereHas('analogOf', function ($analogQuery) use ($search, $compact) {
+                self::applySkuLikeConstraints($analogQuery, $search, $compact);
+            });
+
+            if ($allowIdSearch && ctype_digit($search)) {
+                $q->orWhere('products.id', (int) $search);
+            }
+        });
+    }
+
+  /**
+     * @param  \Illuminate\Database\Eloquent\Builder<Product>  $query
+     */
+    protected static function applySkuLikeConstraints($query, string $search, string $compact): void
+    {
+        $query->where(function ($skuQuery) use ($search, $compact) {
+            foreach (['sku', 'manufacturer_sku', 'distributor_sku'] as $field) {
+                $skuQuery->orWhere($field, 'like', "%{$search}%")
+                    ->orWhereRaw(
+                        "REPLACE(REPLACE(COALESCE({$field}, ''), ' ', ''), CHAR(9), '') LIKE ?",
+                        ["%{$compact}%"]
+                    );
+            }
         });
     }
 

@@ -2,9 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -27,14 +29,21 @@ class DatabaseSeeder extends Seeder
         $this->call(FactoryDemoSeeder::class);
         $this->call(PartnerCatalogDemoSeeder::class);
         $this->call(DistributorProductsDemoSeeder::class);
+        $this->call(MultiDistributorCatalogDemoSeeder::class);
 
         // User::factory(10)->create();
 
-        User::factory()
-            ->withRoles(\App\Models\Role::SLUG_END_COMPANY)
-            ->create([
+        $testUser = User::updateOrCreate(
+            ['email' => 'test@example.com'],
+            [
                 'name' => 'Test User',
-                'email' => 'test@example.com',
-            ]);
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ],
+        );
+        $endCompanyRole = Role::findBySlug(Role::SLUG_END_COMPANY);
+        if ($endCompanyRole) {
+            $testUser->roles()->sync([$endCompanyRole->id]);
+        }
     }
 }

@@ -9,7 +9,7 @@
 @endphp
 
 @section('content')
-<div x-data="{ activeTab: '{{ $tab }}', showPriceModal: false, priceType: 'retail' }" class="space-y-6">
+<div x-data="{ activeTab: '{{ $tab }}', showPriceModal: false, priceType: 'retail', editingStocks: false, stockEditingDisabled: {{ $stockEditingDisabled ? 'true' : 'false' }} }" class="space-y-6">
     @if(session('success'))
     <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{{ session('success') }}</div>
     @endif
@@ -22,22 +22,6 @@
             <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
             Назад к номенклатуре
         </a>
-        <div class="flex flex-wrap gap-2">
-            @if($product->status !== \App\Models\DistributorProduct::STATUS_ACTIVE)
-            <form method="POST" action="{{ route('distributor.products.publish', $product) }}">@csrf
-                <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">Опубликовать товар</button>
-            </form>
-            @else
-            <form method="POST" action="{{ route('distributor.products.hide', $product) }}">@csrf
-                <button type="submit" class="px-4 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700">Скрыть товар</button>
-            </form>
-            @endif
-            @if($product->status !== \App\Models\DistributorProduct::STATUS_ARCHIVE)
-            <form method="POST" action="{{ route('distributor.products.archive', $product) }}" onsubmit="return confirm('Перевести товар в архив?')">@csrf
-                <button type="submit" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">В архив</button>
-            </form>
-            @endif
-        </div>
     </div>
 
     @if($managedBy1c)
@@ -61,7 +45,7 @@
                 <div class="flex flex-wrap gap-2 mt-3">
                     <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium {{ $product->statusBadgeClass() }}">{{ $product->statusLabel() }}</span>
                     <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{{ $product->syncSourceLabel() }}</span>
-                    @if($product->manufacturer_archived)
+                    @if($product->manufacturer_archived && $product->hasStock())
                     <span class="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">Архив производителя</span>
                     @endif
                 </div>
@@ -69,12 +53,15 @@
                     <div><dt class="text-gray-500">Артикул производителя</dt><dd class="font-mono">{{ $product->manufacturer_sku ?: '—' }}</dd></div>
                     <div><dt class="text-gray-500">Внутренний артикул</dt><dd class="font-mono">{{ $product->internal_sku }}</dd></div>
                     <div><dt class="text-gray-500">Штрихкод</dt><dd>{{ $product->barcode ?: '—' }}</dd></div>
+                    <div><dt class="text-gray-500">Категория</dt><dd>{{ $product->category?->name ?? '—' }}</dd></div>
+                    <div><dt class="text-gray-500">Упаковка</dt><dd>{{ $product->pack_quantity ?? '—' }} {{ $product->unitType?->short_name ?? $product->unitType?->name ?? '' }}</dd></div>
+                    <div><dt class="text-gray-500">Кратность заказа</dt><dd>{{ $product->min_order_quantity ?? '—' }}</dd></div>
                 </dl>
             </div>
         </div>
 
         <nav class="flex border-b border-gray-200 dark:border-gray-700 px-6 overflow-x-auto">
-            @foreach(['info' => 'Основное', 'prices' => 'Цены', 'stocks' => 'Остатки', 'documents' => 'Документы', 'log' => 'История'] as $key => $label)
+            @foreach(['info' => 'Основное', 'publication' => 'Публикация', 'prices' => 'Цены', 'stocks' => 'Остатки', 'documents' => 'Документы', 'log' => 'История'] as $key => $label)
             <button type="button" @click="activeTab = '{{ $key }}'"
                 :class="activeTab === '{{ $key }}' ? 'border-[#c3242a] text-[#c3242a]' : 'border-transparent text-gray-500 hover:text-gray-700'"
                 class="px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap">{{ $label }}</button>
@@ -122,6 +109,24 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Кратность заказа</label>
                             <input type="number" name="min_order_quantity" value="{{ old('min_order_quantity', $product->min_order_quantity) }}" min="1" class="{{ $inputClass }}" />
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Категория</label>
+                            <select name="product_category_id" class="{{ $inputClass }}">
+                                <option value="">—</option>
+                                @foreach($categories as $cat)
+                                <option value="{{ $cat->id }}" @selected((int) ($product->product_category_id ?? 0) === $cat->id)>{{ $cat->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Единица измерения</label>
+                            <select name="unit_type_id" class="{{ $inputClass }}">
+                                <option value="">—</option>
+                                @foreach($unitTypes as $ut)
+                                <option value="{{ $ut->id }}" @selected((int) ($product->unit_type_id ?? 0) === $ut->id)>{{ $ut->short_name ?: $ut->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                         @endunless
                     </div>
                     <div>
@@ -148,6 +153,55 @@
                 </form>
             </div>
 
+            {{-- Публикация --}}
+            <div x-show="activeTab === 'publication'" x-cloak>
+                <div class="space-y-4 max-w-3xl">
+                    <div class="p-4 rounded-lg border border-gray-200 bg-gray-50 dark:bg-gray-900/30">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">Статус публикации</h3>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    @if($product->status === \App\Models\DistributorProduct::STATUS_ACTIVE)
+                                    Товар виден клиентам в каталоге при наличии цены и остатка в регионе.
+                                    @elseif($product->status === \App\Models\DistributorProduct::STATUS_HIDDEN)
+                                    Товар не отображается в каталоге, но остаётся в вашей номенклатуре.
+                                    @else
+                                    Товар снят с продажи и не показывается клиентам.
+                                    @endif
+                                </p>
+                            </div>
+                            <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium {{ $product->statusBadgeClass() }}">
+                                {{ $product->statusLabel() }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        @if($product->status !== \App\Models\DistributorProduct::STATUS_ACTIVE)
+                        <form method="POST" action="{{ route('distributor.products.publish', $product) }}" onsubmit="return confirm('Опубликовать товар в каталоге?')">@csrf
+                            <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+                                Опубликовать товар
+                            </button>
+                        </form>
+                        @else
+                        <form method="POST" action="{{ route('distributor.products.hide', $product) }}" onsubmit="return confirm('Скрыть товар от клиентов?')">@csrf
+                            <button type="submit" class="px-4 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700">
+                                Скрыть товар
+                            </button>
+                        </form>
+                        @endif
+
+                        @if($product->status !== \App\Models\DistributorProduct::STATUS_ARCHIVE)
+                        <form method="POST" action="{{ route('distributor.products.archive', $product) }}" onsubmit="return confirm('Перевести товар в архив?')">@csrf
+                            <button type="submit" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+                                В архив
+                            </button>
+                        </form>
+                        @endif
+                    </div>
+                </div>
+            </div>
+
             {{-- Цены --}}
             <div x-show="activeTab === 'prices'" x-cloak>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mb-8">
@@ -164,7 +218,42 @@
                     </div>
                 </div>
 
-                <h3 class="text-sm font-semibold text-gray-700 mb-3">История изменений цен</h3>
+                @if($regions->isNotEmpty())
+                <div class="mt-8 max-w-3xl">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-2">Региональные отпускные цены</h3>
+                    <p class="text-xs text-gray-500 mb-4">Если цена для региона не указана, используется базовая отпускная цена выше.</p>
+                    <form method="POST" action="{{ route('distributor.products.regional-prices.update', $product) }}" class="space-y-4">
+                        @csrf
+                        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                            <table class="min-w-full text-sm">
+                                <thead class="bg-gray-50"><tr>
+                                    <th class="px-4 py-2 text-left">Регион</th>
+                                    <th class="px-4 py-2 text-left">Цена, ₽</th>
+                                </tr></thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    @foreach($regions as $region)
+                                    @php
+                                        $regionalPrice = $product->regionalPrices->firstWhere('region_id', $region->id);
+                                        $fieldValue = old('regional_prices.'.$region->id, $regionalPrice?->price);
+                                    @endphp
+                                    <tr>
+                                        <td class="px-4 py-2">{{ $region->name }}</td>
+                                        <td class="px-4 py-2">
+                                            <input type="number" name="regional_prices[{{ $region->id }}]" value="{{ $fieldValue }}" step="0.01" min="0"
+                                                placeholder="{{ $product->retail_price ? number_format($product->retail_price, 2, '.', '') : '—' }}"
+                                                class="w-full max-w-xs rounded-lg border-gray-300 text-sm" />
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="submit" class="px-4 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium hover:bg-[#a01e24]">Сохранить региональные цены</button>
+                    </form>
+                </div>
+                @endif
+
+                <h3 class="text-sm font-semibold text-gray-700 mb-3 mt-8">История изменений цен</h3>
                 <div class="overflow-x-auto border border-gray-200 rounded-lg">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50"><tr>
@@ -197,9 +286,27 @@
             <div x-show="activeTab === 'stocks'" x-cloak>
                 @if($stockEditingDisabled)
                 <p class="text-sm text-gray-600 mb-4">Остатки обновляются автоматически из 1С.</p>
+                @else
+                <div class="flex items-center justify-between gap-4 mb-4">
+                    <div class="text-sm text-gray-500">Редактирование остатков доступно вручную.</div>
+                    <button type="button"
+                        x-show="!editingStocks"
+                        @click="editingStocks = true"
+                        class="px-4 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium hover:bg-[#a01e24]">
+                        Изменить остаток
+                    </button>
+                </div>
                 @endif
-                <form method="POST" action="{{ route('distributor.products.stocks.update', $product) }}">
+                <form method="POST" action="{{ route('distributor.products.stocks.update', $product) }}" onsubmit="return confirm('Сохранить изменения остатков?')">
                     @csrf
+                    <div class="flex justify-end mb-3">
+                        <button type="button"
+                            x-show="editingStocks"
+                            @click="editingStocks = false"
+                            class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+                            Отменить
+                        </button>
+                    </div>
                     <div class="overflow-x-auto border border-gray-200 rounded-lg mb-4">
                         <table class="min-w-full text-sm">
                             <thead class="bg-gray-50"><tr>
@@ -223,8 +330,9 @@
                                     <td class="px-4 py-2">
                                         <input type="hidden" name="stocks[{{ $loop->index }}][warehouse_id]" value="{{ $wh->id }}" />
                                         <input type="number" name="stocks[{{ $loop->index }}][quantity]" value="{{ $stock?->quantity ?? 0 }}" min="0"
-                                            {{ $stockEditingDisabled ? 'readonly' : '' }}
-                                            class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 {{ $stockEditingDisabled ? 'bg-gray-100' : '' }}" />
+                                            x-bind:readonly="stockEditingDisabled || !editingStocks"
+                                            x-bind:class="stockEditingDisabled || !editingStocks ? 'bg-gray-100' : ''"
+                                            class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
                                     </td>
                                     <td class="px-4 py-2 text-gray-500 text-xs">{{ $stock?->stock_updated_at?->format('d.m.Y H:i') ?? '—' }}</td>
                                 </tr>
@@ -233,7 +341,9 @@
                         </table>
                     </div>
                     @unless($stockEditingDisabled)
-                    <button type="submit" class="px-6 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium">Сохранить остатки</button>
+                    <button type="submit" x-show="editingStocks" class="px-6 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium">
+                        Сохранить остатки
+                    </button>
                     @endunless
                 </form>
             </div>
@@ -296,11 +406,23 @@
                 <ul class="space-y-3">
                     @forelse($product->changeLogs as $log)
                     <li class="p-4 border border-gray-200 rounded-lg text-sm">
-                        <div class="flex justify-between gap-4">
-                            <span class="font-medium text-gray-900">{{ $log->description ?: $log->action }}</span>
+                        <div class="flex justify-between gap-4 items-start">
+                            <div class="space-y-1">
+                                <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium {{ $log->actionBadgeClass() }}">
+                                    {{ $log->actionLabel() }}
+                                </span>
+                                <p class="font-medium text-gray-900">{{ $log->description ?: $log->action }}</p>
+                                @if(is_array($log->meta) && isset($log->meta['old_status'], $log->meta['new_status']))
+                                <p class="text-xs text-gray-500">
+                                    {{ \App\Models\DistributorProduct::statusLabels()[$log->meta['old_status']] ?? $log->meta['old_status'] }}
+                                    →
+                                    {{ \App\Models\DistributorProduct::statusLabels()[$log->meta['new_status']] ?? $log->meta['new_status'] }}
+                                </p>
+                                @endif
+                            </div>
                             <span class="text-gray-400 shrink-0">{{ $log->created_at->format('d.m.Y H:i') }}</span>
                         </div>
-                        <p class="text-gray-500 mt-1">{{ $log->performedByUser?->name ?? 'Система' }}</p>
+                        <p class="text-gray-500 mt-2">{{ $log->performedByUser?->name ?? 'Система' }}</p>
                     </li>
                     @empty
                     <li class="text-gray-500 text-center py-8">Записей пока нет</li>

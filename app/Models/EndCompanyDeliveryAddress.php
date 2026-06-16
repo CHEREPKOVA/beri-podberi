@@ -12,6 +12,7 @@ class EndCompanyDeliveryAddress extends Model
         'name',
         'address',
         'region_id',
+        'contact_id',
         'contact_person',
         'phone',
         'working_hours',
@@ -33,5 +34,10 @@ class EndCompanyDeliveryAddress extends Model
     public function region(): BelongsTo
     {
         return $this->belongsTo(Region::class);
+    }
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(EndCompanyContact::class, 'contact_id');
     }
 }

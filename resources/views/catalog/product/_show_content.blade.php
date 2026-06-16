@@ -50,7 +50,6 @@
         </div>
     </div>
 
-    @include('catalog.product._suppliers')
     @include('catalog.product._warehouse_stocks')
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">

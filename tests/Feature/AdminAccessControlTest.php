@@ -99,6 +99,7 @@ class AdminAccessControlTest extends TestCase
         $this->assertDatabaseHas('admin_action_logs', [
             'admin_id' => $admin->id,
             'action' => 'admin.staff.suspend',
+            'required_permission' => 'staff.manage',
         ]);
 
         $log = DB::table('admin_action_logs')

@@ -1,4 +1,31 @@
-<div x-data="{ showAddForm: false, editingId: null, showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }">
+<div x-data="{
+    showAddForm: false,
+    editingId: null,
+    showDeleteModal: false,
+    deleteFormAction: '',
+    deleteMessage: '',
+    formatPhone(e) {
+        const input = e.target;
+        let digits = input.value.replace(/\D/g, '');
+        if (digits.startsWith('8')) digits = digits.slice(1);
+        if (digits.startsWith('7')) digits = digits.slice(1);
+        digits = digits.slice(0, 10);
+        if (digits.length === 0) {
+            input.value = '';
+            return;
+        }
+        let result = '+7 (' + digits.slice(0, 3);
+        if (digits.length >= 3) result += ')';
+        if (digits.length > 3) result += ' ' + digits.slice(3, 6);
+        if (digits.length > 6) result += '-' + digits.slice(6, 8);
+        if (digits.length > 8) result += '-' + digits.slice(8, 10);
+        input.value = result;
+    },
+    clearPhoneIfEmpty(e) {
+        const v = e.target.value.replace(/\D/g, '');
+        if (v === '' || v === '7') e.target.value = '';
+    }
+}">
     <div class="flex items-center justify-between mb-6">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Контактные данные</h2>
         <button
@@ -171,13 +198,22 @@
                     </div>
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Телефон</label>
-                        <input type="text" name="phone" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        <input
+                            type="tel"
+                            name="phone"
+                            inputmode="tel"
+                            autocomplete="tel"
+                            placeholder="+7 (___) ___-__-__"
+                            @input="formatPhone($event)"
+                            @blur="clearPhoneIfEmpty($event)"
+                            class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                        >
                     </div>
-                    <div>
+                    <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Отдел</label>
                         <input type="text" name="department" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" placeholder="Отдел продаж, Техподдержка...">
                     </div>
-                    <div>
+                    <div class="sm:col-span-2">
                         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Примечание</label>
                         <input type="text" name="notes" class="shadow-theme-xs focus:border-[#c3242a] focus:ring-[#c3242a]/10 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                     </div>

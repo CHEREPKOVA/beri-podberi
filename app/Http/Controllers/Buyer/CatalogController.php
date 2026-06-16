@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Buyer;
 
 use App\Http\Controllers\Concerns\BuildsCatalogListing;
+use App\Http\Controllers\Concerns\ResolvesCatalogContext;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Role;
+use App\Services\Catalog\CatalogSearchSettings;
 use App\Services\Catalog\CatalogQueryService;
 use App\Services\Catalog\ProductCatalogCardService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\View\View;
@@ -16,6 +19,7 @@ use Illuminate\View\View;
 class CatalogController extends Controller
 {
     use BuildsCatalogListing;
+    use ResolvesCatalogContext;
 
     public function index(Request $request, ?ProductCategory $category = null): View
     {
@@ -25,14 +29,21 @@ class CatalogController extends Controller
             abort(404);
         }
 
-        $catalog = new CatalogQueryService($user);
-        $listing = $this->buildCatalogListing($request, $category, $catalog);
+        $regionService = $this->catalogRegionService();
+        $catalog = $this->makeCatalogQueryService($request);
+        $listing = $this->buildCatalogListing($request, $category, $catalog, 'buyer.catalog.index');
 
         return view('buyer.catalog.index', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
-            'companyRegionName' => $user->currentCompanyRegionName(),
-            'companyRegionId' => $user->currentCompanyRegionId(),
+            'companyRegionName' => $regionService->availableRegions($user)->firstWhere('id', $catalog->regionId())?->name
+                ?? $user->currentCompanyRegionName(),
+            'companyRegionId' => $catalog->regionId(),
+            'catalogRegions' => $regionService->availableRegions($user),
+            'showCatalogRegionSelector' => $regionService->showRegionSelector($user),
+            'catalogRegionSetUrl' => route('buyer.catalog.region'),
+            'catalogSearchSuggestUrl' => route('buyer.catalog.search.suggest'),
+            'searchMinQueryLength' => CatalogSearchSettings::minQueryLength(),
         ]));
     }
 
@@ -41,23 +52,42 @@ class CatalogController extends Controller
         $user = $request->user();
         $catalogRole = $user->getCurrentRole();
         $category = $this->resolveCategoryFromRequest($catalogRole, $request->get('category'));
-        $catalog = new CatalogQueryService($user);
-        $listing = $this->buildCatalogListing($request, $category, $catalog);
+        $catalog = $this->makeCatalogQueryService($request);
+        $listing = $this->buildCatalogListing($request, $category, $catalog, 'buyer.catalog.index');
 
         return response()->view('catalog._products', array_merge($listing, [
             'selectedCategory' => $category,
             'selectedCategoryId' => $category?->id,
-            'companyRegionName' => $user->currentCompanyRegionName(),
+            'companyRegionName' => $this->catalogRegionService()->availableRegions($user)->firstWhere('id', $catalog->regionId())?->name
+                ?? $user->currentCompanyRegionName(),
             'catalogIndexRoute' => 'buyer.catalog.index',
             'catalogShowRoute' => 'buyer.catalog.show',
         ]))->header('Cache-Control', 'no-store');
+    }
+
+    public function setRegion(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'region_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ok = $this->catalogRegionService()->setRegionId(
+            $request->user(),
+            (int) $validated['region_id'],
+        );
+
+        if (! $ok) {
+            return response()->json(['message' => 'Регион недоступен'], 422);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     public function show(Request $request, Product $product): View
     {
         $user = $request->user();
         $catalogRole = $user->getCurrentRole();
-        $catalog = new CatalogQueryService($user);
+        $catalog = $this->makeCatalogQueryService($request);
 
         $product->load([
             'manufacturerProfile.regions',

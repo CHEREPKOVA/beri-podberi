@@ -4,6 +4,7 @@ namespace App\Services\Catalog;
 
 use App\Models\DistributorProduct;
 use App\Models\DistributorProductStock;
+use App\Models\DistributorProfile;
 use App\Models\ManufacturerDistributorPartnership;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,23 +29,43 @@ class EndCompanyDistributorOfferService
         $query = $this->regionalOffersQuery();
 
         if (EndCompanyCatalogSettings::requireDistributorPrice()) {
-            $query->whereNotNull('retail_price')->where('retail_price', '>', 0);
+            $regionId = $this->regionId;
+            $query->where(function (Builder $priceQuery) use ($regionId): void {
+                $priceQuery
+                    ->whereHas('regionalPrices', function (Builder $regional) use ($regionId): void {
+                        $regional->where('region_id', $regionId)->where('price', '>', 0);
+                    })
+                    ->orWhere(function (Builder $fallback) use ($regionId): void {
+                        $fallback
+                            ->whereDoesntHave('regionalPrices', fn (Builder $regional) => $regional->where('region_id', $regionId))
+                            ->whereNotNull('retail_price')
+                            ->where('retail_price', '>', 0);
+                    });
+            });
         }
 
         if (EndCompanyCatalogSettings::requireRegionalStock()) {
             $regionId = $this->regionId;
-            $query->whereHas('stocks', function (Builder $stockQuery) use ($regionId): void {
-                $stockQuery
-                    ->whereRaw('quantity > reserved')
-                    ->whereHas('warehouse', function (Builder $warehouseQuery) use ($regionId): void {
-                        $warehouseQuery
-                            ->where('is_active', true)
-                            ->where(function (Builder $regionQuery) use ($regionId): void {
-                                $regionQuery
-                                    ->whereNull('region_id')
-                                    ->orWhere('region_id', $regionId);
-                            });
-                    });
+
+            $query->where(function (Builder $offers) use ($regionId): void {
+                // Классическое поведение: требуем положительный остаток на складе в регионе.
+                $offers->whereHas('stocks', function (Builder $stockQuery) use ($regionId): void {
+                    $stockQuery
+                        ->whereRaw('quantity > reserved')
+                        ->whereHas('warehouse', function (Builder $warehouseQuery) use ($regionId): void {
+                            $warehouseQuery
+                                ->where('is_active', true)
+                                ->where(function (Builder $regionQuery) use ($regionId): void {
+                                    $regionQuery
+                                        ->whereNull('region_id')
+                                        ->orWhere('region_id', $regionId);
+                                });
+                        });
+                })
+                // Новое поведение: позволяем дистрибьютору помечать нулевые остатки как «под заказ».
+                ->orWhereHas('profile', function (Builder $profileQuery): void {
+                    $profileQuery->where('zero_stock_behavior', DistributorProfile::ZERO_STOCK_ON_ORDER);
+                });
             });
         }
 
@@ -98,7 +119,7 @@ class EndCompanyDistributorOfferService
 
         $regionalOffers = $this->regionalOffersQuery()
             ->whereIn('source_product_id', $products->pluck('id'))
-            ->with(['stocks.warehouse.region', 'profile'])
+            ->with(['stocks.warehouse.region', 'profile', 'regionalPrices'])
             ->get()
             ->groupBy('source_product_id');
 
@@ -202,15 +223,133 @@ class EndCompanyDistributorOfferService
 
         return $this->regionalOffersQuery()
             ->where('source_product_id', $productId)
-            ->with(['profile.regions', 'stocks.warehouse.region', 'sourceProduct'])
-            ->orderBy('retail_price')
-            ->get();
+            ->with(['profile.regions', 'stocks.warehouse.region', 'sourceProduct', 'regionalPrices'])
+            ->get()
+            ->sortBy(fn (DistributorProduct $offer): float => $this->effectiveRetailPrice($offer) ?? PHP_FLOAT_MAX)
+            ->values();
+    }
+
+    /**
+     * @param  list<int>  $distributorProfileIds
+     * @return Builder<Product>
+     */
+    public function applyDistributorFilter(Builder $query, array $distributorProfileIds): Builder
+    {
+        if ($distributorProfileIds === [] || $this->regionId === null) {
+            return $query;
+        }
+
+        return $query->whereIn('products.id', $this->regionalOffersQuery()
+            ->whereIn('distributor_profile_id', $distributorProfileIds)
+            ->select('source_product_id'));
+    }
+
+    /**
+     * @return Builder<Product>
+     */
+    public function applyStockFilter(Builder $query, string $stock): Builder
+    {
+        if ($this->regionId === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return match ($stock) {
+            CatalogListingParams::STOCK_IN_STOCK => $query->whereIn('products.id', $this->inStockProductIdsSubquery()),
+            CatalogListingParams::STOCK_ON_ORDER => $query->whereIn('products.id', $this->onOrderProductIdsSubquery()),
+            CatalogListingParams::STOCK_OUT_OF_STOCK => $query->whereIn('products.id', $this->unavailableInRegionProductsQuery()->select('products.id')),
+            default => $query,
+        };
+    }
+
+    /**
+     * @return Builder<Product>
+     */
+    public function applyPriceFilter(Builder $query, ?float $priceMin, ?float $priceMax): Builder
+    {
+        if ($this->regionId === null || ($priceMin === null && $priceMax === null)) {
+            return $query;
+        }
+
+        $regionId = $this->regionId;
+        $offers = $this->regionalOffersQuery()->where(function (Builder $priceQuery) use ($regionId, $priceMin, $priceMax): void {
+            $priceQuery
+                ->whereHas('regionalPrices', function (Builder $regional) use ($regionId, $priceMin, $priceMax): void {
+                    $regional->where('region_id', $regionId)->where('price', '>', 0);
+                    if ($priceMin !== null) {
+                        $regional->where('price', '>=', $priceMin);
+                    }
+                    if ($priceMax !== null) {
+                        $regional->where('price', '<=', $priceMax);
+                    }
+                })
+                ->orWhere(function (Builder $fallback) use ($regionId, $priceMin, $priceMax): void {
+                    $fallback
+                        ->whereDoesntHave('regionalPrices', fn (Builder $regional) => $regional->where('region_id', $regionId))
+                        ->whereNotNull('retail_price')
+                        ->where('retail_price', '>', 0);
+                    if ($priceMin !== null) {
+                        $fallback->where('retail_price', '>=', $priceMin);
+                    }
+                    if ($priceMax !== null) {
+                        $fallback->where('retail_price', '<=', $priceMax);
+                    }
+                });
+        });
+
+        return $query->whereIn('products.id', $offers->select('source_product_id'));
     }
 
     /**
      * @return Builder<DistributorProduct>
      */
-    private function regionalOffersQuery(): Builder
+    private function inStockOffersQuery(): Builder
+    {
+        $regionId = $this->regionId;
+
+        return $this->regionalOffersQuery()
+            ->whereHas('stocks', function (Builder $stockQuery) use ($regionId): void {
+                $stockQuery
+                    ->whereRaw('quantity > reserved')
+                    ->whereHas('warehouse', function (Builder $warehouseQuery) use ($regionId): void {
+                        $warehouseQuery
+                            ->where('is_active', true)
+                            ->where(function (Builder $regionQuery) use ($regionId): void {
+                                $regionQuery
+                                    ->whereNull('region_id')
+                                    ->orWhere('region_id', $regionId);
+                            });
+                    });
+            });
+    }
+
+    /**
+     * @return Builder<Product>
+     */
+    private function inStockProductIdsSubquery(): Builder
+    {
+        return Product::query()->select('products.id')->whereIn(
+            'products.id',
+            $this->inStockOffersQuery()->select('source_product_id')
+        );
+    }
+
+    /**
+     * @return Builder<Product>
+     */
+    private function onOrderProductIdsSubquery(): Builder
+    {
+        $inStockIds = $this->inStockOffersQuery()->select('source_product_id');
+
+        return Product::query()
+            ->select('products.id')
+            ->whereIn('products.id', $this->purchasableOffersQuery()->select('source_product_id'))
+            ->whereNotIn('products.id', $inStockIds);
+    }
+
+    /**
+     * @return Builder<DistributorProduct>
+     */
+    public function regionalOffersQuery(): Builder
     {
         if ($this->regionId === null) {
             return DistributorProduct::query()->whereRaw('1 = 0');
@@ -253,14 +392,20 @@ class EndCompanyDistributorOfferService
     private function offerIsPurchasable(DistributorProduct $offer): bool
     {
         if (EndCompanyCatalogSettings::requireDistributorPrice()) {
-            if ($offer->retail_price === null || (float) $offer->retail_price <= 0) {
+            $price = $this->effectiveRetailPrice($offer);
+            if ($price === null || $price <= 0) {
                 return false;
             }
         }
 
-        if (EndCompanyCatalogSettings::requireRegionalStock()
-            && $this->availableStockForOffer($offer) <= 0) {
-            return false;
+        if (EndCompanyCatalogSettings::requireRegionalStock()) {
+            $behavior = $offer->profile?->zeroStockBehavior() ?? DistributorProfile::ZERO_STOCK_ON_ORDER;
+
+            // Для режима "hide" по-прежнему требуем положительный остаток.
+            if ($behavior === DistributorProfile::ZERO_STOCK_HIDE
+                && $this->availableStockForOffer($offer) <= 0) {
+                return false;
+            }
         }
 
         return true;
@@ -294,15 +439,19 @@ class EndCompanyDistributorOfferService
     private function bestRetailPriceFromOffers(Collection $offers): ?string
     {
         $prices = $offers
-            ->pluck('retail_price')
-            ->filter(static fn ($price): bool => $price !== null && (float) $price > 0)
-            ->map(static fn ($price): float => (float) $price);
+            ->map(fn (DistributorProduct $offer): ?float => $this->effectiveRetailPrice($offer))
+            ->filter(static fn (?float $price): bool => $price !== null && $price > 0);
 
         if ($prices->isEmpty()) {
             return null;
         }
 
         return (string) $prices->min();
+    }
+
+    private function effectiveRetailPrice(DistributorProduct $offer): ?float
+    {
+        return $offer->retailPriceForRegion($this->regionId);
     }
 
     /**
@@ -349,7 +498,7 @@ class EndCompanyDistributorOfferService
                     'min_order_quantity' => $offer->min_order_quantity ?? $offer->sourceProduct?->min_order_quantity,
                     'stock_updated_at' => $stock->stock_updated_at,
                     'shipping_conditions' => $warehouse?->shipping_conditions,
-                    'retail_price' => $offer->retail_price !== null ? (string) $offer->retail_price : null,
+                    'retail_price' => ($price = $this->effectiveRetailPrice($offer)) !== null ? (string) $price : null,
                     'status_note' => $stock->available_quantity > 0 ? null : 'Под заказ',
                 ]);
             }

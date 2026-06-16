@@ -19,12 +19,27 @@
     @if(session('error'))
     <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{{ session('error') }}</div>
     @endif
+    @if(session('import_errors'))
+    <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm">
+        <p class="font-medium mb-2">Замечания при импорте:</p>
+        <ul class="list-disc list-inside space-y-1">
+            @foreach(session('import_errors') as $err)
+            <li>{{ $err }}</li>
+            @endforeach
+        </ul>
+    </div>
+    @endif
 
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-6">
         <div>
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">CSV / Excel</h2>
-            <p class="text-sm text-gray-500 mt-1">Загрузка остатков и цен по внутреннему артикулу. Разделитель — точка с запятой.</p>
-            <p class="text-xs text-gray-400 mt-2 font-mono">internal_sku;retail_price;quantity</p>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">CSV / YML</h2>
+            <p class="text-sm text-gray-500 mt-1">
+                Обновление цен и остатков по внутреннему артикулу существующих позиций номенклатуры.
+                CSV: разделители «;» и «,», UTF-8 и Windows-1251. YML: формат Яндекс.Маркет.
+                Новые товары через импорт не создаются — сначала добавьте позицию из каталога производителя.
+            </p>
+            <p class="text-xs text-gray-400 mt-2 font-mono">internal_sku;retail_price;purchase_price;quantity</p>
+            <p class="text-xs text-gray-400 mt-1">Колонки CSV: внутренний артикул (обяз.), цена, закупочная, остаток.</p>
         </div>
 
         <form method="POST" action="{{ route('distributor.products.import.process') }}" enctype="multipart/form-data" class="space-y-4">
@@ -38,8 +53,8 @@
                 </select>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Файл CSV</label>
-                <input type="file" name="file" accept=".csv,.txt" required class="w-full text-sm" />
+                <label class="block text-sm font-medium text-gray-700 mb-1">Файл CSV или YML</label>
+                <input type="file" name="file" accept=".csv,.txt,.xml,.yml,.yaml" required class="w-full text-sm" />
             </div>
             <button type="submit" class="px-6 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium hover:bg-[#a01e24]">Загрузить</button>
         </form>
@@ -47,7 +62,7 @@
         <hr class="border-gray-200 dark:border-gray-700" />
 
         <div>
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">YML</h2>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">YML по ссылке</h2>
             <p class="text-sm text-gray-500 mt-1">
                 @if($profile->integration_yml_enabled && $profile->integration_yml_feed_url)
                 Настроена ссылка: <span class="font-mono text-xs">{{ $profile->integration_yml_feed_url }}</span>
@@ -56,6 +71,8 @@
                 @endif
             </p>
         </div>
+
+        <hr class="border-gray-200 dark:border-gray-700" />
 
         <div>
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">1С</h2>

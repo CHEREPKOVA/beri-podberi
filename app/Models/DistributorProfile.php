@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DistributorProfile extends Model
 {
+    public const ZERO_STOCK_HIDE = 'hide';
+    public const ZERO_STOCK_ON_ORDER = 'on_order';
     public const LEGAL_FORM_OOO = 'ooo';
     public const LEGAL_FORM_IP = 'ip';
     public const LEGAL_FORM_PAO = 'pao';
@@ -33,6 +35,7 @@ class DistributorProfile extends Model
         'logo',
         'description',
         'delivery_notes',
+        'zero_stock_behavior',
         'locked_fields',
         'integration_csv_enabled',
         'integration_yml_enabled',
@@ -152,6 +155,15 @@ class DistributorProfile extends Model
     public function displayName(): string
     {
         return $this->short_name ?: $this->full_name;
+    }
+
+    public function zeroStockBehavior(): string
+    {
+        $value = $this->zero_stock_behavior ?: self::ZERO_STOCK_ON_ORDER;
+
+        return in_array($value, [self::ZERO_STOCK_HIDE, self::ZERO_STOCK_ON_ORDER], true)
+            ? $value
+            : self::ZERO_STOCK_ON_ORDER;
     }
 
     public function scopeInRegion($query, ?int $regionId)

@@ -51,7 +51,7 @@
                             </div>
                             <div>
                                 <p class="text-sm font-medium text-gray-900">CSV файл</p>
-                                <p class="text-xs text-gray-500">Разделитель: точка с запятой</p>
+                                <p class="text-xs text-gray-500">Разделитель: ; или ,</p>
                             </div>
                         </div>
                     </label>
@@ -76,7 +76,7 @@
                     Файл для импорта
                 </label>
                 <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center" x-data="{ fileName: '' }">
-                    <input type="file" name="file" id="import-file" required accept=".csv,.txt,.xml,.yml" class="hidden"
+                    <input type="file" name="file" id="import-file" required accept=".csv,.txt,.xml,.yml,.yaml" class="hidden"
                         @change="fileName = $event.target.files[0]?.name || ''" />
                     <label for="import-file" class="cursor-pointer">
                         <svg class="mx-auto w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

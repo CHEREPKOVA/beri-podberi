@@ -136,7 +136,6 @@ class CompanyController extends Controller
 
         $selectedTypes = $this->normalizeSelectedCompanyTypes($validated['company_types']);
         abort_if($selectedTypes === [], 422, 'Выберите хотя бы один тип компании.');
-        $primaryCompanyType = $selectedTypes[0];
         $rolesBySlug = Role::query()
             ->whereIn('slug', $selectedTypes)
             ->get()
@@ -155,8 +154,9 @@ class CompanyController extends Controller
         }
 
         $exists = DB::table('role_user')
-            ->where('company_name', $companyName)
-            ->whereIn('company_type', $this->corporateTypes())
+            ->join('roles', 'roles.id', '=', 'role_user.role_id')
+            ->where('role_user.company_name', $companyName)
+            ->whereIn('roles.slug', $this->corporateTypes())
             ->exists();
         if ($exists) {
             return back()
@@ -164,62 +164,116 @@ class CompanyController extends Controller
                 ->withErrors(['full_name' => 'Компания с таким наименованием уже существует.']);
         }
 
-        $user = $existingUser ?: User::create([
-            'name' => $companyName,
-            'email' => $email,
-            'password' => Hash::make((string) $validated['password']),
-            'is_active' => true,
-        ]);
+        if ($existingUser) {
+            $roleConflicts = [];
+            foreach ($selectedTypes as $companyType) {
+                /** @var Role|null $role */
+                $role = $rolesBySlug->get($companyType);
+                if (! $role) {
+                    continue;
+                }
 
-        $attachPayload = [];
-        foreach ($selectedTypes as $companyType) {
-            /** @var Role|null $role */
-            $role = $rolesBySlug->get($companyType);
-            if (! $role) {
-                continue;
+                $existingPivot = DB::table('role_user')
+                    ->where('user_id', $existingUser->id)
+                    ->where('role_id', $role->id)
+                    ->first();
+                if ($existingPivot && (string) $existingPivot->company_name !== $companyName) {
+                    $roleConflicts[] = '«'.$role->name.'» (компания «'.$existingPivot->company_name.'»)';
+                }
             }
 
-            $alreadyAssigned = DB::table('role_user')
-                ->where('user_id', $user->id)
-                ->where('role_id', $role->id)
-                ->where('company_name', $companyName)
-                ->exists();
-            if ($alreadyAssigned) {
-                continue;
+            if ($roleConflicts !== []) {
+                return back()
+                    ->withInput()
+                    ->withErrors([
+                        'email' => 'Пользователь с этим email уже привязан к ролям: '
+                            .implode(', ', $roleConflicts)
+                            .'. Создайте отдельного пользователя или укажите другой email.',
+                    ]);
+            }
+        }
+
+        return DB::transaction(function () use (
+            $existingUser,
+            $validated,
+            $companyName,
+            $inn,
+            $email,
+            $selectedTypes,
+            $rolesBySlug,
+        ): RedirectResponse {
+            $user = $existingUser ?: User::create([
+                'name' => $companyName,
+                'email' => $email,
+                'password' => Hash::make((string) $validated['password']),
+                'is_active' => true,
+            ]);
+
+            $assignedTypes = [];
+            foreach ($selectedTypes as $companyType) {
+                /** @var Role|null $role */
+                $role = $rolesBySlug->get($companyType);
+                if (! $role) {
+                    continue;
+                }
+
+                $pivotAttributes = [
+                    'company_name' => $companyName,
+                    'company_type' => $companyType,
+                    'company_status' => 'active',
+                    'company_legal_name' => $companyName,
+                ];
+
+                $existingPivot = DB::table('role_user')
+                    ->where('user_id', $user->id)
+                    ->where('role_id', $role->id)
+                    ->first();
+
+                if ($existingPivot) {
+                    $user->roles()->updateExistingPivot($role->id, $pivotAttributes);
+                    $assignedTypes[] = $companyType;
+
+                    continue;
+                }
+
+                $user->roles()->attach($role->id, $pivotAttributes);
+                $assignedTypes[] = $companyType;
             }
 
-            $attachPayload[$role->id] = [
-                'company_name' => $companyName,
-                'company_type' => $companyType,
-                'company_status' => 'active',
-                'company_legal_name' => $companyName,
-            ];
-        }
+            if ($assignedTypes === []) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['company_types' => 'Не удалось назначить роли компании. Проверьте email и выбранные типы.']);
+            }
 
-        if ($attachPayload !== []) {
-            $user->roles()->attach($attachPayload);
-        }
+            if (in_array(Role::SLUG_MANUFACTURER, $selectedTypes, true) && (! $existingUser || ! $user->manufacturerProfile()->exists())) {
+                ManufacturerProfile::updateOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'full_name' => $companyName,
+                        'inn' => $inn,
+                    ]
+                );
+            }
 
-        if (in_array(Role::SLUG_MANUFACTURER, $selectedTypes, true) && (! $existingUser || ! $user->manufacturerProfile()->exists())) {
-            ManufacturerProfile::updateOrCreate(
-                ['user_id' => $user->id],
-                [
-                    'full_name' => $companyName,
-                    'inn' => $inn,
-                ]
-            );
-        }
+            $primaryCompanyType = DB::table('role_user')
+                ->join('roles', 'roles.id', '=', 'role_user.role_id')
+                ->where('role_user.company_name', $companyName)
+                ->whereIn('roles.slug', $assignedTypes)
+                ->orderBy('roles.sort_order')
+                ->value('roles.slug') ?? $assignedTypes[0];
 
-        $companyKey = $this->encodeCompanyKey($primaryCompanyType, $companyName);
+            $companyKey = $this->encodeCompanyKey((string) $primaryCompanyType, $companyName);
 
-        return redirect()
-            ->route('admin.companies.show', $companyKey)
-            ->with('success', $existingUser
-                ? 'Компания создана и привязана к существующему пользователю.'
-                : 'Компания создана. Доступ для входа в личный кабинет добавлен.');
+            return redirect()
+                ->route('admin.companies.show', $companyKey)
+                ->with('success', $existingUser
+                    ? 'Компания создана и привязана к существующему пользователю.'
+                    : 'Компания создана. Доступ для входа в личный кабинет добавлен.');
+        });
     }
 
-    public function show(Request $request, string $companyKey): View
+    public function show(Request $request, string $companyKey): View|RedirectResponse
     {
         [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
         $tab = $request->string('tab', 'company')->toString();
@@ -231,6 +285,15 @@ class CompanyController extends Controller
             ->distinct()
             ->pluck('roles.slug')
             ->all();
+
+        abort_if($companyRoleSlugs === [], 404, 'Компания не найдена.');
+
+        if (! in_array($companyType, $companyRoleSlugs, true)) {
+            return redirect()->route('admin.companies.show', [
+                'companyKey' => $this->encodeCompanyKey($companyRoleSlugs[0], $companyName),
+                'tab' => $tab,
+            ]);
+        }
 
         $company = DB::table('role_user')
             ->join('roles', 'roles.id', '=', 'role_user.role_id')

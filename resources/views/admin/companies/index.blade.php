@@ -78,8 +78,9 @@
                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                 @forelse($companies as $company)
                     @php
-                        $companyKey = rtrim(strtr(base64_encode($company->type . '|' . $company->name), '+/', '-_'), '=');
                         $types = array_filter(explode(',', (string) ($company->types_csv ?? '')));
+                        $linkType = $types[0] ?? $company->type;
+                        $companyKey = rtrim(strtr(base64_encode($linkType . '|' . $company->name), '+/', '-_'), '=');
                     @endphp
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <td class="px-4 py-3">

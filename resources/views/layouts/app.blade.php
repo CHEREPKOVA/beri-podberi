@@ -19,10 +19,71 @@
         body { font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif; }
         .shadow-theme-xs { box-shadow: 0px 1px 2px 0px rgba(16, 24, 40, 0.05); }
         [x-cloak] { display: none !important; }
+        .form-control-brand {
+            @apply w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm
+                focus:outline-none focus:border-[#c3242a] focus:ring-2 focus:ring-[#c3242a]/25;
+        }
+        .flatpickr-calendar {
+            font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif !important;
+            box-shadow: 0 10px 30px rgba(0,0,0,.12) !important;
+            border: 1px solid #fecaca !important;
+        }
+        .flatpickr-day.selected,
+        .flatpickr-day.startRange,
+        .flatpickr-day.endRange,
+        .flatpickr-day.selected:hover {
+            background: #c3242a !important;
+            border-color: #c3242a !important;
+        }
+        .flatpickr-day.today {
+            border-color: #c3242a !important;
+        }
+        .flatpickr-months .flatpickr-month,
+        .flatpickr-current-month .flatpickr-monthDropdown-months,
+        .flatpickr-weekday {
+            color: #c3242a !important;
+            fill: #c3242a !important;
+        }
+        .ts-wrapper.single .ts-control {
+            border-radius: 0.5rem !important;
+            border-color: #d1d5db !important;
+            min-height: 2.5rem !important;
+            padding: 0.4rem 0.75rem !important;
+            box-shadow: none !important;
+        }
+        .ts-wrapper.focus .ts-control,
+        .ts-wrapper.single.input-active .ts-control {
+            border-color: #c3242a !important;
+            box-shadow: 0 0 0 3px rgba(195, 36, 42, 0.2) !important;
+        }
+        .ts-dropdown .option.active {
+            background-color: #c3242a !important;
+        }
+        .ts-dropdown .option:hover {
+            background-color: #fee2e2 !important;
+            color: #991b1b !important;
+        }
     </style>
     @stack('styles')
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" x-data="{ sidebarOpen: true }">
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200"
+      x-data="{
+          sidebarOpen: true,
+          cartItemsCount: {{ (int) ($sidebarCartItemsCount ?? $buyerCartItemsCount ?? 0) }},
+          toast: null,
+          toastOk: true,
+          toastTimer: null,
+          showToast(message, ok = true) {
+              this.toast = message;
+              this.toastOk = ok !== false;
+              clearTimeout(this.toastTimer);
+              this.toastTimer = setTimeout(() => { this.toast = null; }, 4500);
+          },
+          setCartCount(count) {
+              this.cartItemsCount = Number(count) || 0;
+          }
+      }"
+      @cart-updated.window="if ($event.detail.count != null) setCartCount($event.detail.count); if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false)">
     @php
         $authUser = auth()->user();
         $activeRoles = $authUser?->activeRoles() ?? collect();
@@ -34,6 +95,7 @@
         $isAdminPanelRole = $currentRole?->isAdminPanel() ?? false;
         $canManageStaff = $authUser?->hasPermission('staff.manage') ?? false;
         $canManageCompanies = $authUser?->hasPermission('companies.manage') ?? false;
+        $canManageOrders = $authUser?->hasPermission('orders.manage') ?? false;
         $canManageCatalog = $authUser?->hasPermission('catalog.manage') ?? false;
         $canManageDirectories = $authUser?->hasPermission('directories.manage') ?? false;
         $canViewAudit = $authUser?->hasPermission('audit.view') ?? false;
@@ -53,7 +115,38 @@
                 @php
                     $currentRoute = request()->route()?->getName();
                     $currentRole = auth()->user()?->getCurrentRole();
+                    $sidebarCart = match ($currentRole?->slug) {
+                        'end_company', 'company_employee' => [
+                            'url' => route('buyer.cart.index'),
+                            'active' => str_starts_with($currentRoute ?? '', 'buyer.cart')
+                                || str_starts_with($currentRoute ?? '', 'buyer.checkout'),
+                        ],
+                        'distributor' => [
+                            'url' => route('distributor.purchases.cart.index'),
+                            'active' => str_starts_with($currentRoute ?? '', 'distributor.purchases.cart')
+                                || str_starts_with($currentRoute ?? '', 'distributor.purchases.checkout'),
+                        ],
+                        default => null,
+                    };
                 @endphp
+                @if($sidebarCart)
+                    <a href="{{ $sidebarCart['url'] }}"
+                       class="relative mb-3 flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 transition-colors
+                           {{ $sidebarCart['active']
+                               ? 'border-[#c3242a] bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400'
+                               : 'border-[#c3242a]/70 text-[#c3242a] hover:bg-red-50 dark:hover:bg-red-900/20' }}">
+                        <span class="relative shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z"/>
+                            </svg>
+                            <span x-show="cartItemsCount > 0"
+                                  x-cloak
+                                  class="absolute -top-2 -right-2 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-[1.15rem] text-center font-semibold ring-2 ring-white dark:ring-gray-800"
+                                  x-text="cartItemsCount > 99 ? '99+' : cartItemsCount"></span>
+                        </span>
+                        <span x-show="sidebarOpen" x-transition class="font-semibold">Корзина</span>
+                    </a>
+                @endif
 
                 {{-- Главная --}}
                 <a href="{{ url('/dashboard') }}"
@@ -89,6 +182,17 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Компании</span>
+                    </a>
+                    @endif
+
+                    @if($canManageOrders)
+                    <a href="{{ route('admin.orders.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'admin.orders') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Заказы</span>
                     </a>
                     @endif
 
@@ -189,6 +293,21 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Номенклатура</span>
                     </a>
+                    <a href="{{ route('manufacturer.orders.index') }}"
+                       class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.orders') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <span class="relative shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                            </svg>
+                            @if(($ordersAttentionCount ?? 0) > 0)
+                                <span class="absolute -top-2 -right-2 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-[1.15rem] text-center font-semibold ring-2 ring-white dark:ring-gray-800">
+                                    {{ $ordersAttentionCount > 99 ? '99+' : $ordersAttentionCount }}
+                                </span>
+                            @endif
+                        </span>
+                        <span x-show="sidebarOpen" x-transition>Заказы</span>
+                    </a>
                 </div>
 
                 <div class="pt-4 mt-2 border-t border-gray-200 dark:border-gray-700 space-y-1">
@@ -238,6 +357,36 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Номенклатура</span>
                     </a>
+                    <a href="{{ route('distributor.orders.index') }}"
+                       class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.orders') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <span class="relative shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                            </svg>
+                            @if(($ordersAttentionCount ?? 0) > 0)
+                                <span class="absolute -top-2 -right-2 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-[1.15rem] text-center font-semibold ring-2 ring-white dark:ring-gray-800">
+                                    {{ $ordersAttentionCount > 99 ? '99+' : $ordersAttentionCount }}
+                                </span>
+                            @endif
+                        </span>
+                        <span x-show="sidebarOpen" x-transition>Заказы</span>
+                    </a>
+                    <a href="{{ route('distributor.purchases.index') }}"
+                       class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.purchases') && ! str_starts_with($currentRoute ?? '', 'distributor.purchases.cart') && ! str_starts_with($currentRoute ?? '', 'distributor.purchases.checkout') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <span class="relative shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                            </svg>
+                            @if(($purchasesAttentionCount ?? 0) > 0)
+                                <span class="absolute -top-2 -right-2 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-[1.15rem] text-center font-semibold ring-2 ring-white dark:ring-gray-800">
+                                    {{ $purchasesAttentionCount > 99 ? '99+' : $purchasesAttentionCount }}
+                                </span>
+                            @endif
+                        </span>
+                        <span x-show="sidebarOpen" x-transition>Мои покупки</span>
+                    </a>
                 </div>
                 @endif
 
@@ -266,14 +415,68 @@
                     </a>
                 </div>
                 @endif
+
+                @if(in_array($currentRole?->slug, ['end_company', 'company_employee'], true))
+                <div class="pt-4">
+                    <a href="{{ route('buyer.orders.index') }}"
+                       class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'buyer.orders') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <span class="relative shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                            </svg>
+                            @if(($ordersAttentionCount ?? 0) > 0)
+                                <span class="absolute -top-2 -right-2 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-[1.15rem] text-center font-semibold ring-2 ring-white dark:ring-gray-800">
+                                    {{ $ordersAttentionCount > 99 ? '99+' : $ordersAttentionCount }}
+                                </span>
+                            @endif
+                        </span>
+                        <span x-show="sidebarOpen" x-transition>Заказы</span>
+                    </a>
+                </div>
+                @endif
             </nav>
         </aside>
         {{-- Main --}}
         <div :class="sidebarOpen ? 'ml-64' : 'ml-20'" class="flex-1 transition-all duration-300">
             <header class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6">
-                <h1 class="text-lg font-semibold">@yield('heading', 'Главная')</h1>
+                <h1 class="min-w-0 flex flex-wrap items-center gap-2.5 text-lg font-semibold">@yield('heading', 'Главная')</h1>
                 <div class="flex items-center gap-4">
                     @auth
+                    {{-- Уведомления в шапке — на следующем этапе
+                    @php
+                        $unreadNotifications = auth()->user()->unreadNotifications()->latest()->limit(8)->get();
+                        $unreadCount = auth()->user()->unreadNotifications()->count();
+                    @endphp
+                    <div class="relative" x-data="{ open: false }">
+                        <button type="button" @click="open = !open" class="relative rounded-lg border border-gray-300 dark:border-gray-600 p-2 text-gray-600 dark:text-gray-300 hover:border-[#c3242a] hover:text-[#c3242a]">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V4a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                            @if($unreadCount > 0)
+                                <span class="absolute -top-1 -right-1 min-w-[1.1rem] h-4 px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-4 text-center">{{ $unreadCount > 9 ? '9+' : $unreadCount }}</span>
+                            @endif
+                        </button>
+                        <div x-show="open" @click.outside="open = false" x-cloak
+                             class="absolute right-0 mt-2 w-80 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg z-50">
+                            <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-900 dark:text-white">Уведомления</div>
+                            <ul class="max-h-80 overflow-y-auto">
+                                @forelse($unreadNotifications as $notification)
+                                    <li class="px-3 py-2 text-sm border-b border-gray-100 dark:border-gray-700/60">
+                                        <p class="text-gray-900 dark:text-white">{{ $notification->data['message'] ?? 'Уведомление' }}</p>
+                                        <p class="text-[10px] text-gray-400 mt-1">{{ $notification->created_at?->format('d.m.Y H:i') }}</p>
+                                    </li>
+                                @empty
+                                    <li class="px-3 py-4 text-sm text-gray-500">Нет новых уведомлений</li>
+                                @endforelse
+                            </ul>
+                            @if($unreadCount > 0)
+                                <form method="POST" action="{{ route('notifications.read_all') }}" class="p-2 border-t border-gray-200 dark:border-gray-700">
+                                    @csrf
+                                    <button type="submit" class="w-full text-xs text-[#c3242a] hover:underline">Отметить все прочитанными</button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+                    --}}
                     <span class="text-sm text-gray-500">Вы вошли как: {{ $currentRoleLabel }}</span>
                     @if($canSwitchRole)
                     <button type="button"
@@ -296,36 +499,6 @@
     </div>
 
     @auth
-    @if(auth()->user()->needsRoleSelection())
-    {{-- Модальное окно выбора роли (при нескольких ролях сразу после авторизации) --}}
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog" aria-labelledby="role-select-title">
-        <div class="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 shadow-xl p-6" @click.stop>
-            <h2 id="role-select-title" class="text-lg font-semibold text-gray-900 dark:text-white mb-6">Выберите, в каком качестве вы хотите войти</h2>
-            <form method="POST" action="{{ route('role.store') }}">
-                @csrf
-                <div class="space-y-3 mb-6">
-                    @foreach($activeRoles as $role)
-                        @php
-                            $companyName = $role->pivot->company_name ?? null;
-                            $optionLabel = $role->labelWithCompany($companyName);
-                        @endphp
-                        <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-600 p-3 transition hover:bg-gray-50 dark:hover:bg-gray-700/50 has-[:checked]:border-[#c3242a] has-[:checked]:ring-2 has-[:checked]:ring-[#c3242a]/20">
-                            <input type="radio" name="role_id" value="{{ $role->id }}" required
-                                class="h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]" />
-                            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ $optionLabel }}</span>
-                        </label>
-                    @endforeach
-                </div>
-                @error('role_id')<p class="mb-3 text-sm text-red-500">{{ $message }}</p>@enderror
-                <button type="submit"
-                    class="w-full rounded-lg bg-[#c3242a] px-4 py-3 text-sm font-medium text-white hover:bg-[#a01e24] transition">
-                    Продолжить
-                </button>
-            </form>
-        </div>
-    </div>
-    @endif
-
     @if($canSwitchRole && !auth()->user()->needsRoleSelection())
     <div id="role-switch-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog" aria-labelledby="role-switch-title">
         <div class="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 shadow-xl p-6">
@@ -358,6 +531,170 @@
     @endif
     @endauth
 
+    <div x-show="toast"
+         x-cloak
+         x-transition.opacity.duration.200ms
+         class="fixed bottom-6 right-6 z-[80] max-w-sm rounded-xl border bg-white dark:bg-gray-800 shadow-xl px-4 py-3"
+         :class="toastOk ? 'border-[#c3242a]/30' : 'border-amber-300'">
+        <div class="flex items-start gap-3">
+            <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white"
+                  :class="toastOk ? 'bg-[#c3242a]' : 'bg-amber-500'">
+                <svg x-show="toastOk" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <svg x-show="!toastOk" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 5a7 7 0 100 14 7 7 0 000-14z"/></svg>
+            </span>
+            <div>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white" x-text="toastOk ? 'Добавлено в корзину' : 'Не удалось добавить'"></p>
+                <p class="text-sm text-gray-600 dark:text-gray-300 mt-0.5" x-text="toast"></p>
+            </div>
+            <button type="button" class="ml-auto text-gray-400 hover:text-gray-600" @click="toast = null">✕</button>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        function sanitizeQty(raw) {
+            const digits = String(raw ?? '').replace(/\D+/g, '');
+            if (!digits) return '';
+            const normalized = digits.replace(/^0+/, '');
+            return normalized || '';
+        }
+
+        function resolveMinQty(form, qtyInput) {
+            const fromInput = Number(qtyInput?.dataset?.minQty || 0);
+            const fromForm = Number(form?.dataset?.minQty || 0);
+            const select = form?.querySelector?.('.js-cart-offer-select');
+            const selected = select?.selectedOptions?.[0];
+            const fromSelect = Number(selected?.dataset?.minQty || 0);
+            const minQty = Math.max(fromInput, fromForm, fromSelect, 1);
+            return Number.isFinite(minQty) ? minQty : 1;
+        }
+
+        function bindQtyInput(input) {
+            if (!input || input.dataset.qtyBound === '1') return;
+            input.dataset.qtyBound = '1';
+            input.addEventListener('input', () => {
+                const next = sanitizeQty(input.value);
+                if (input.value !== next) input.value = next;
+            });
+            input.addEventListener('blur', () => {
+                const minQty = resolveMinQty(input.closest('form'), input);
+                const next = sanitizeQty(input.value);
+                const num = Number(next || 0);
+                input.value = String(num >= minQty ? num : minQty);
+            });
+            input.addEventListener('keydown', (e) => {
+                if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault();
+            });
+        }
+
+        function syncOfferMinQty(select) {
+            const form = select.closest('form');
+            const option = select.selectedOptions?.[0];
+            const minQty = Math.max(1, Number(option?.dataset?.minQty || 1));
+            if (form) form.dataset.minQty = String(minQty);
+            const qtyInput = form?.querySelector?.('.js-cart-qty');
+            if (qtyInput) {
+                qtyInput.dataset.minQty = String(minQty);
+                const current = Number(sanitizeQty(qtyInput.value) || 0);
+                if (current < minQty) qtyInput.value = String(minQty);
+            }
+        }
+
+        async function submitAddToCart(form) {
+            const qtyInput = form.querySelector('.js-cart-qty, input[name="quantity"]');
+            const minQty = resolveMinQty(form, qtyInput);
+            if (qtyInput) {
+                const qty = sanitizeQty(qtyInput.value);
+                qtyInput.value = qty || String(minQty);
+                if (!qty || Number(qty) < 1) {
+                    window.dispatchEvent(new CustomEvent('cart-updated', {
+                        detail: { count: null, message: 'Укажите количество больше 0.', success: false }
+                    }));
+                    return;
+                }
+                if (Number(qty) < minQty) {
+                    qtyInput.value = String(minQty);
+                    window.dispatchEvent(new CustomEvent('cart-updated', {
+                        detail: {
+                            count: null,
+                            message: `Минимальная партия — ${minQty} шт. Укажите количество не меньше ${minQty}.`,
+                            success: false,
+                        }
+                    }));
+                    return;
+                }
+            }
+
+            const btn = form.querySelector('.js-add-to-cart-btn, button[type="submit"]');
+            if (btn) btn.disabled = true;
+
+            try {
+                const response = await fetch(form.getAttribute('action') || form.dataset.cartStoreUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': csrf,
+                    },
+                    credentials: 'same-origin',
+                    body: new FormData(form),
+                });
+
+                const payload = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    const firstError = payload?.errors
+                        ? Object.values(payload.errors).flat()[0]
+                        : (payload?.message || 'Не удалось добавить товар в корзину.');
+                    window.dispatchEvent(new CustomEvent('cart-updated', {
+                        detail: { count: null, message: firstError, success: false }
+                    }));
+                    return;
+                }
+
+                window.dispatchEvent(new CustomEvent('cart-updated', {
+                    detail: {
+                        count: payload.cart_items_count,
+                        message: payload.message || 'Товар добавлен в корзину.',
+                        success: true,
+                    }
+                }));
+            } catch (e) {
+                window.dispatchEvent(new CustomEvent('cart-updated', {
+                    detail: { count: null, message: 'Ошибка сети. Попробуйте ещё раз.', success: false }
+                }));
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        document.addEventListener('change', (e) => {
+            if (e.target?.matches?.('.js-cart-offer-select')) syncOfferMinQty(e.target);
+        });
+
+        document.addEventListener('input', (e) => {
+            if (e.target?.matches?.('.js-cart-qty')) bindQtyInput(e.target);
+        });
+
+        document.addEventListener('focusin', (e) => {
+            if (e.target?.matches?.('.js-cart-qty')) bindQtyInput(e.target);
+        });
+
+        document.addEventListener('submit', (e) => {
+            const form = e.target?.closest?.('form.js-add-to-cart');
+            if (!form) return;
+            e.preventDefault();
+            submitAddToCart(form);
+        });
+
+        document.querySelectorAll('.js-cart-qty').forEach(bindQtyInput);
+        document.querySelectorAll('.js-cart-offer-select').forEach((select) => {
+            if (select.value) syncOfferMinQty(select);
+        });
+    })();
+    </script>
     @stack('scripts')
 </body>
 </html>

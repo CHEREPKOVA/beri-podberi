@@ -123,7 +123,7 @@ class CatalogController extends Controller
             'product' => $product,
             'backUrl' => route('buyer.catalog.index', ['category' => $product->category?->slug]),
             'analogShowRoute' => 'buyer.catalog.show',
-            'showActions' => $cardData['cardRole'] === 'distributor',
+            'showActions' => in_array($cardData['cardRole'], ['distributor', 'end_company', 'manufacturer', 'admin'], true),
             'liveUrl' => route('buyer.catalog.product.live', $product),
         ]));
     }

@@ -7,7 +7,6 @@ use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class TestUsersSeeder extends Seeder
 {
@@ -51,8 +50,10 @@ class TestUsersSeeder extends Seeder
                 ['email' => $data['email']],
                 [
                     'name' => $data['name'],
-                    'password' => Hash::make(self::TEST_PASSWORD),
+                    // plain: у User есть cast password => hashed
+                    'password' => self::TEST_PASSWORD,
                     'email_verified_at' => now(),
+                    'is_active' => true,
                 ]
             );
 
@@ -66,13 +67,14 @@ class TestUsersSeeder extends Seeder
             }
         }
 
-        // Пользователь с несколькими ролями (дистрибьютор + конечный покупатель), с названиями компаний для модального окна
+        // Пользователь с несколькими ролями (дистрибьютор + конечный покупатель), с названиями компаний для выбора роли при входе
         $multiRoleUser = User::updateOrCreate(
             ['email' => 'distributor-buyer@test.com'],
             [
                 'name' => 'Дистрибьютор и Покупатель',
-                'password' => Hash::make(self::TEST_PASSWORD),
+                'password' => self::TEST_PASSWORD,
                 'email_verified_at' => now(),
+                'is_active' => true,
             ]
         );
         $distributorRole = Role::findBySlug(Role::SLUG_DISTRIBUTOR);

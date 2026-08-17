@@ -389,6 +389,23 @@ class EndCompanyDistributorOfferService
         return $offers->filter(fn (DistributorProduct $offer): bool => $this->offerIsPurchasable($offer));
     }
 
+    public function isOfferPurchasable(DistributorProduct $offer): bool
+    {
+        return $this->offerIsPurchasable($offer);
+    }
+
+    public function availableStockForOffer(DistributorProduct $offer): int
+    {
+        return (int) $this->stocksInRegion($offer)->sum(
+            static fn (DistributorProductStock $stock): int => $stock->available_quantity
+        );
+    }
+
+    public function effectiveRetailPrice(DistributorProduct $offer): ?float
+    {
+        return $offer->retailPriceForRegion($this->regionId);
+    }
+
     private function offerIsPurchasable(DistributorProduct $offer): bool
     {
         if (EndCompanyCatalogSettings::requireDistributorPrice()) {
@@ -449,24 +466,12 @@ class EndCompanyDistributorOfferService
         return (string) $prices->min();
     }
 
-    private function effectiveRetailPrice(DistributorProduct $offer): ?float
-    {
-        return $offer->retailPriceForRegion($this->regionId);
-    }
-
     /**
      * @param  Collection<int, DistributorProduct>  $offers
      */
     private function totalAvailableStockFromOffers(Collection $offers): int
     {
         return (int) $offers->sum(fn (DistributorProduct $offer): int => $this->availableStockForOffer($offer));
-    }
-
-    private function availableStockForOffer(DistributorProduct $offer): int
-    {
-        return (int) $this->stocksInRegion($offer)->sum(
-            static fn (DistributorProductStock $stock): int => $stock->available_quantity
-        );
     }
 
     /**

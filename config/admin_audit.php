@@ -45,7 +45,17 @@ return [
         ],
         'companies' => [
             'label' => 'Компании',
-            'prefixes' => ['admin.companies.'],
+            'prefixes' => ['admin.companies.', 'security.company_'],
+            'sources' => ['admin_action'],
+        ],
+        'orders' => [
+            'label' => 'Заказы',
+            'prefixes' => ['admin.orders.'],
+            'sources' => ['admin_action'],
+        ],
+        'security' => [
+            'label' => 'Безопасность',
+            'prefixes' => ['security.'],
             'sources' => ['admin_action'],
         ],
         'catalog' => [
@@ -121,6 +131,13 @@ return [
         'admin.companies.users.reset-password' => 'Сброс пароля пользователя компании',
         'admin.companies.users.delete' => 'Удаление пользователя из компании',
 
+        'admin.orders.update_status' => 'Смена статуса заказа модератором',
+        'admin.orders.comment' => 'Служебный комментарий к заказу',
+        'admin.orders.pause' => 'Приостановка заказа',
+        'admin.orders.resume' => 'Снятие приостановки заказа',
+
+        'security.company_invitation.accepted' => 'Принятие приглашения компании',
+        'security.password.reset' => 'Сброс пароля пользователем',
         'admin.system-settings.update' => 'Изменение системных настроек',
 
         'admin.catalog.categories.store' => 'Создание категории каталога',

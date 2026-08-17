@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreStaffRequest;
+use App\Http\Requests\Admin\UpdateStaffRequest;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -71,22 +73,9 @@ class StaffController extends Controller
     /**
      * Сохранение нового администратора/менеджера.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(StoreStaffRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
-            'role_id' => 'required|exists:roles,id',
-            'permission_overrides' => 'nullable|array',
-            'permission_overrides.*' => 'nullable|in:inherit,allow,deny',
-        ], [], [
-            'name' => 'Имя',
-            'email' => 'Email',
-            'password' => 'Пароль',
-            'role_id' => 'Роль',
-            'permission_overrides' => 'Переопределения прав',
-        ]);
+        $validated = $request->validated();
 
         $role = Role::findOrFail($validated['role_id']);
         if (! in_array($role->slug, self::STAFF_ROLE_SLUGS, true)) {
@@ -127,25 +116,12 @@ class StaffController extends Controller
     /**
      * Обновление администратора/менеджера.
      */
-    public function update(Request $request, User $staff): RedirectResponse
+    public function update(UpdateStaffRequest $request, User $staff): RedirectResponse
     {
         $this->ensureStaffUser($staff);
         $this->rejectProtectedAdmin($staff);
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $staff->id,
-            'password' => 'nullable|string|min:8|confirmed',
-            'role_id' => 'required|exists:roles,id',
-            'permission_overrides' => 'nullable|array',
-            'permission_overrides.*' => 'nullable|in:inherit,allow,deny',
-        ], [], [
-            'name' => 'Имя',
-            'email' => 'Email',
-            'password' => 'Пароль',
-            'role_id' => 'Роль',
-            'permission_overrides' => 'Переопределения прав',
-        ]);
+        $validated = $request->validated();
 
         $role = Role::findOrFail($validated['role_id']);
         if (! in_array($role->slug, self::STAFF_ROLE_SLUGS, true)) {

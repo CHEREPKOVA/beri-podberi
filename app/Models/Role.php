@@ -85,7 +85,7 @@ class Role extends Model
     }
 
     /**
-     * Подпись для модального окна выбора роли: «Роль – компания «Название»» или просто роль.
+     * Подпись для выбора роли: «Роль – компания «Название»» или просто роль.
      */
     public function labelWithCompany(?string $companyName): string
     {

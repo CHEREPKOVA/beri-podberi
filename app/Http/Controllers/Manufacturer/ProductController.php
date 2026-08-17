@@ -160,7 +160,7 @@ class ProductController extends Controller
 
     public function edit(Request $request, Product $product): View
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $profile = $request->user()->manufacturerProfile;
 
@@ -209,7 +209,7 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $validated = $this->validateProduct($request, $product);
 
@@ -256,7 +256,7 @@ class ProductController extends Controller
 
     public function analogSearch(Request $request, Product $product): JsonResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $search = trim((string) $request->query('q', ''));
         if (mb_strlen($search) < 2) {
@@ -286,7 +286,7 @@ class ProductController extends Controller
 
     public function destroy(Request $request, Product $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         foreach ($product->images as $image) {
             Storage::disk('public')->delete($image->path);
@@ -320,7 +320,7 @@ class ProductController extends Controller
 
     public function publish(Request $request, Product $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         if (! $product->canBePublished()) {
             return back()->with('error', 'Невозможно опубликовать товар: заполните обязательные поля.');
@@ -337,7 +337,7 @@ class ProductController extends Controller
 
     public function hide(Request $request, Product $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $product->update([
             'status' => Product::STATUS_HIDDEN,
@@ -594,7 +594,7 @@ class ProductController extends Controller
     public function deleteImage(Request $request, ProductImage $image): RedirectResponse
     {
         $product = $image->product;
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         Storage::disk('public')->delete($image->path);
         $image->delete();
@@ -609,7 +609,7 @@ class ProductController extends Controller
     public function setPrimaryImage(Request $request, ProductImage $image): RedirectResponse
     {
         $product = $image->product;
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $product->images()->update(['is_primary' => false]);
         $image->update(['is_primary' => true]);
@@ -620,7 +620,7 @@ class ProductController extends Controller
     public function deleteDocument(Request $request, ProductDocument $document): RedirectResponse
     {
         $product = $document->product;
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         Storage::disk('public')->delete($document->file_path);
         $document->delete();
@@ -1236,7 +1236,7 @@ class ProductController extends Controller
 
     public function catalogShow(Request $request, Product $product): View
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         if (! $product->isVisibleInCatalog()) {
             abort(404);
@@ -1309,12 +1309,5 @@ class ProductController extends Controller
             ),
             default => $query->orderBy($sortField, $sortDir),
         };
-    }
-
-    private function authorizeProduct(Request $request, Product $product): void
-    {
-        if ($product->manufacturer_profile_id !== $request->user()->manufacturerProfile?->id) {
-            abort(403);
-        }
     }
 }

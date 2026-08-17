@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,38 @@ class AdminAuditLogger
         }
 
         return null;
+    }
+
+    /**
+     * Запись критичного события вне админ-панели (регистрация, смена пароля и т.п.).
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function logSecurityEvent(
+        string $action,
+        ?User $actor = null,
+        ?string $companyName = null,
+        ?string $companyType = null,
+        ?string $targetType = null,
+        ?int $targetId = null,
+        array $context = [],
+    ): void {
+        DB::table('admin_action_logs')->insert([
+            'admin_id' => $actor?->id,
+            'admin_name' => $actor?->name ?? ($context['email'] ?? 'system'),
+            'action' => $action,
+            'required_permission' => null,
+            'target_type' => $targetType,
+            'target_id' => $targetId,
+            'company_name' => $companyName,
+            'company_type' => $companyType,
+            'context' => json_encode(array_merge([
+                'ip' => request()->ip(),
+                'user_agent' => (string) request()->userAgent(),
+            ], $this->sanitizeInput($context)), JSON_UNESCAPED_UNICODE),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     public function logRequest(Request $request, int $responseStatus): void

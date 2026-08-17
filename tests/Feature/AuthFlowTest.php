@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -30,6 +31,28 @@ class AuthFlowTest extends TestCase
         $this->assertNotNull($user->last_login_at);
         $this->assertSame('127.0.0.1', $user->last_login_ip);
         $this->assertNotEmpty($user->last_login_user_agent);
+    }
+
+    public function test_login_with_multiple_roles_shows_role_selection_in_auth_block(): void
+    {
+        $this->seed(RoleSeeder::class);
+
+        $user = User::factory()->withRoles(['distributor', 'end_company'])->create([
+            'password' => Hash::make('Secret123'),
+        ]);
+
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'Secret123',
+        ])->assertRedirect(route('role.select'));
+
+        $this->assertAuthenticatedAs($user);
+
+        $this->get(route('role.select'))
+            ->assertOk()
+            ->assertSee('Выберите, в каком качестве вы хотите войти', false)
+            ->assertSee('name="role_id"', false)
+            ->assertDontSee('name="password"', false);
     }
 
     public function test_login_returns_general_error_message_without_field_binding(): void
@@ -68,6 +91,32 @@ class AuthFlowTest extends TestCase
             ])
             ->assertRedirect('/login')
             ->assertSessionHasErrors(['auth', 'throttle_seconds']);
+    }
+
+    public function test_login_throttle_is_scoped_to_email_and_ip(): void
+    {
+        $user = User::factory()->create([
+            'password' => Hash::make('Secret123'),
+        ]);
+        $other = User::factory()->create([
+            'password' => Hash::make('Secret123'),
+        ]);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->from('/login')->post('/login', [
+                'email' => $user->email,
+                'password' => 'Wrong123',
+            ]);
+        }
+
+        $this->from('/login')
+            ->post('/login', [
+                'email' => $other->email,
+                'password' => 'Secret123',
+            ])
+            ->assertRedirect(route('dashboard'));
+
+        $this->assertAuthenticatedAs($other);
     }
 
     public function test_password_reset_requires_letters_and_numbers(): void

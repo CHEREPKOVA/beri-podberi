@@ -28,9 +28,9 @@
                     <div class="relative">
                         <select name="status" class="appearance-none pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
                             <option value="">Все статусы</option>
-                            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Активна</option>
-                            <option value="pending" {{ request('status') === 'pending' ? 'selected' : '' }}>На модерации</option>
-                            <option value="blocked" {{ request('status') === 'blocked' ? 'selected' : '' }}>Заблокирована</option>
+                            @foreach(\App\Support\CompanyStatus::labels() as $status => $label)
+                                <option value="{{ $status }}" {{ request('status') === $status ? 'selected' : '' }}>{{ $label }}</option>
+                            @endforeach
                         </select>
                         <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -58,7 +58,7 @@
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                     </svg>
-                    Добавить компанию
+                    Пригласить компанию
                 </a>
             </div>
         </div>
@@ -122,13 +122,17 @@
                             @endif
                         </td>
                         <td class="px-4 py-3">
-                            @if($company->status === 'active')
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">Активна</span>
-                            @elseif($company->status === 'pending')
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-800">На модерации</span>
-                            @else
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-200 text-gray-800">Заблокирована</span>
-                            @endif
+                            @php
+                                $statusLabel = \App\Support\CompanyStatus::label((string) $company->status);
+                                $statusClass = match ($company->status) {
+                                    'active' => 'bg-green-100 text-green-800',
+                                    'awaiting_confirmation' => 'bg-amber-100 text-amber-800',
+                                    'pending' => 'bg-yellow-100 text-yellow-800',
+                                    'rejected' => 'bg-red-100 text-red-800',
+                                    default => 'bg-gray-200 text-gray-800',
+                                };
+                            @endphp
+                            <span class="px-2 py-0.5 rounded-full text-xs {{ $statusClass }}">{{ $statusLabel }}</span>
                         </td>
                         <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
                             {{ $company->users_count }} / активных: {{ $company->active_users_count }}

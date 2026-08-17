@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\RejectCompanyModerationRequest;
+use App\Http\Requests\Admin\StoreCompanyInvitationRequest;
+use App\Models\CompanyInvitation;
 use App\Models\DeliveryMethod;
 use App\Models\ManufacturerProfile;
 use App\Models\Permission;
@@ -11,18 +14,24 @@ use App\Models\Role;
 use App\Models\TransportCompany;
 use App\Models\User;
 use App\Services\AdminJournalService;
+use App\Services\CompanyInvitationService;
+use App\Services\CompanyModerationService;
+use App\Support\CompanyStatus;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class CompanyController extends Controller
 {
-    private const COMPANY_STATUSES = ['active', 'pending', 'blocked'];
+    public function __construct(
+        private CompanyInvitationService $invitations,
+        private CompanyModerationService $moderation,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -58,7 +67,7 @@ class CompanyController extends Controller
             $rows->where('roles.slug', '=', $request->string('type')->toString());
         }
 
-        if ($request->filled('status') && in_array($request->string('status')->toString(), self::COMPANY_STATUSES, true)) {
+        if ($request->filled('status') && in_array($request->string('status')->toString(), CompanyStatus::all(), true)) {
             $rows->having('status', '=', $request->string('status')->toString());
         }
 
@@ -116,161 +125,108 @@ class CompanyController extends Controller
         return view('admin.companies.create', compact('companyTypes'));
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(StoreCompanyInvitationRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'company_types' => ['required', 'array', 'min:1'],
-            'company_types.*' => ['required', 'string', Rule::in($this->corporateTypes())],
-            'full_name' => 'required|string|max:255',
-            'inn' => ['required', 'string', 'regex:/^\d{10,12}$/'],
-            'email' => 'required|string|email|max:255',
-            'password' => 'nullable|string|min:8|confirmed',
-        ], [], [
-            'company_types' => 'Типы компании',
-            'company_types.*' => 'Тип компании',
-            'full_name' => 'Полное наименование',
-            'inn' => 'ИНН',
-            'email' => 'Email для входа',
-            'password' => 'Пароль',
-        ]);
+        $validated = $request->validated();
 
         $selectedTypes = $this->normalizeSelectedCompanyTypes($validated['company_types']);
-        abort_if($selectedTypes === [], 422, 'Выберите хотя бы один тип компании.');
-        $rolesBySlug = Role::query()
-            ->whereIn('slug', $selectedTypes)
-            ->get()
-            ->keyBy('slug');
-        abort_if($rolesBySlug->count() !== count($selectedTypes), 500, 'Одна или несколько ролей компании не настроены.');
+        abort_if($selectedTypes === [], 422, 'Выберите хотя бы одну роль.');
 
-        $companyName = trim($validated['full_name']);
-        $inn = $validated['inn'];
-        $email = trim($validated['email']);
-        $existingUser = User::where('email', $email)->first();
+        try {
+            $invitation = $this->invitations->invite(
+                $request->user(),
+                $validated['email'],
+                $validated['full_name'],
+                $selectedTypes,
+            );
+        } catch (InvalidArgumentException $e) {
+            $field = str_contains($e->getMessage(), 'email') ? 'email' : 'full_name';
 
-        if (! $existingUser && empty($validated['password'])) {
-            return back()
-                ->withInput()
-                ->withErrors(['password' => 'Укажите пароль для нового пользователя.']);
+            return back()->withInput()->withErrors([$field => $e->getMessage()]);
         }
 
-        $exists = DB::table('role_user')
-            ->join('roles', 'roles.id', '=', 'role_user.role_id')
-            ->where('role_user.company_name', $companyName)
-            ->whereIn('roles.slug', $this->corporateTypes())
-            ->exists();
-        if ($exists) {
-            return back()
-                ->withInput()
-                ->withErrors(['full_name' => 'Компания с таким наименованием уже существует.']);
+        $primaryType = $invitation->company_types[0] ?? $selectedTypes[0];
+        $companyKey = $this->encodeCompanyKey($primaryType, $invitation->company_name);
+
+        return redirect()
+            ->route('admin.companies.show', $companyKey)
+            ->with('success', 'Приглашение отправлено на '.$invitation->email.'. Ссылка действительна 3 суток.');
+    }
+
+    public function resendInvitation(Request $request, string $companyKey): RedirectResponse
+    {
+        [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
+        $invitation = $this->requirePendingInvitation($companyName);
+
+        try {
+            $this->invitations->resend($invitation);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['invitation' => $e->getMessage()]);
         }
 
-        if ($existingUser) {
-            $roleConflicts = [];
-            foreach ($selectedTypes as $companyType) {
-                /** @var Role|null $role */
-                $role = $rolesBySlug->get($companyType);
-                if (! $role) {
-                    continue;
-                }
+        return redirect()
+            ->route('admin.companies.show', $this->encodeCompanyKey($companyType, $companyName))
+            ->with('success', 'Приглашение отправлено повторно.');
+    }
 
-                $existingPivot = DB::table('role_user')
-                    ->where('user_id', $existingUser->id)
-                    ->where('role_id', $role->id)
-                    ->first();
-                if ($existingPivot && (string) $existingPivot->company_name !== $companyName) {
-                    $roleConflicts[] = '«'.$role->name.'» (компания «'.$existingPivot->company_name.'»)';
-                }
-            }
+    public function cancelInvitation(Request $request, string $companyKey): RedirectResponse
+    {
+        [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
+        $invitation = $this->requirePendingInvitation($companyName);
 
-            if ($roleConflicts !== []) {
-                return back()
-                    ->withInput()
-                    ->withErrors([
-                        'email' => 'Пользователь с этим email уже привязан к ролям: '
-                            .implode(', ', $roleConflicts)
-                            .'. Создайте отдельного пользователя или укажите другой email.',
-                    ]);
-            }
+        try {
+            $this->invitations->cancel($invitation);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['invitation' => $e->getMessage()]);
         }
 
-        return DB::transaction(function () use (
-            $existingUser,
-            $validated,
-            $companyName,
-            $inn,
-            $email,
-            $selectedTypes,
-            $rolesBySlug,
-        ): RedirectResponse {
-            $user = $existingUser ?: User::create([
-                'name' => $companyName,
-                'email' => $email,
-                'password' => Hash::make((string) $validated['password']),
-                'is_active' => true,
-            ]);
+        return redirect()
+            ->route('admin.companies.show', $this->encodeCompanyKey($companyType, $companyName))
+            ->with('success', 'Приглашение отменено. Ссылка больше не действует.');
+    }
 
-            $assignedTypes = [];
-            foreach ($selectedTypes as $companyType) {
-                /** @var Role|null $role */
-                $role = $rolesBySlug->get($companyType);
-                if (! $role) {
-                    continue;
-                }
+    public function deleteInvitation(Request $request, string $companyKey): RedirectResponse
+    {
+        [, $companyName] = $this->decodeCompanyKey($companyKey);
+        $invitation = $this->requirePendingInvitation($companyName);
 
-                $pivotAttributes = [
-                    'company_name' => $companyName,
-                    'company_type' => $companyType,
-                    'company_status' => 'active',
-                    'company_legal_name' => $companyName,
-                ];
+        $this->invitations->delete($invitation);
 
-                $existingPivot = DB::table('role_user')
-                    ->where('user_id', $user->id)
-                    ->where('role_id', $role->id)
-                    ->first();
+        return redirect()
+            ->route('admin.companies.index')
+            ->with('success', 'Приглашение и карточка компании удалены.');
+    }
 
-                if ($existingPivot) {
-                    $user->roles()->updateExistingPivot($role->id, $pivotAttributes);
-                    $assignedTypes[] = $companyType;
+    public function approveRegistration(Request $request, string $companyKey): RedirectResponse
+    {
+        [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
 
-                    continue;
-                }
+        try {
+            $this->moderation->approve($companyName);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['moderation' => $e->getMessage()]);
+        }
 
-                $user->roles()->attach($role->id, $pivotAttributes);
-                $assignedTypes[] = $companyType;
-            }
+        return redirect()
+            ->route('admin.companies.show', $this->encodeCompanyKey($companyType, $companyName))
+            ->with('success', 'Регистрация подтверждена. Компания активирована, уведомление отправлено на email.');
+    }
 
-            if ($assignedTypes === []) {
-                return back()
-                    ->withInput()
-                    ->withErrors(['company_types' => 'Не удалось назначить роли компании. Проверьте email и выбранные типы.']);
-            }
+    public function rejectRegistration(RejectCompanyModerationRequest $request, string $companyKey): RedirectResponse
+    {
+        [$companyType, $companyName] = $this->decodeCompanyKey($companyKey);
 
-            if (in_array(Role::SLUG_MANUFACTURER, $selectedTypes, true) && (! $existingUser || ! $user->manufacturerProfile()->exists())) {
-                ManufacturerProfile::updateOrCreate(
-                    ['user_id' => $user->id],
-                    [
-                        'full_name' => $companyName,
-                        'inn' => $inn,
-                    ]
-                );
-            }
+        $validated = $request->validated();
 
-            $primaryCompanyType = DB::table('role_user')
-                ->join('roles', 'roles.id', '=', 'role_user.role_id')
-                ->where('role_user.company_name', $companyName)
-                ->whereIn('roles.slug', $assignedTypes)
-                ->orderBy('roles.sort_order')
-                ->value('roles.slug') ?? $assignedTypes[0];
+        try {
+            $this->moderation->reject($companyName, $validated['reason']);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['moderation' => $e->getMessage()]);
+        }
 
-            $companyKey = $this->encodeCompanyKey((string) $primaryCompanyType, $companyName);
-
-            return redirect()
-                ->route('admin.companies.show', $companyKey)
-                ->with('success', $existingUser
-                    ? 'Компания создана и привязана к существующему пользователю.'
-                    : 'Компания создана. Доступ для входа в личный кабинет добавлен.');
-        });
+        return redirect()
+            ->route('admin.companies.show', $this->encodeCompanyKey($companyType, $companyName))
+            ->with('success', 'Регистрация отклонена. Уведомление отправлено на email.');
     }
 
     public function show(Request $request, string $companyKey): View|RedirectResponse
@@ -337,7 +293,7 @@ class CompanyController extends Controller
         foreach ($companyRoleSlugs as $roleSlug) {
             $companyRoleKeys[$roleSlug] = $this->encodeCompanyKey($roleSlug, $companyName);
         }
-        $statusOptions = self::COMPANY_STATUSES;
+        $statusOptions = CompanyStatus::all();
         $companyKey = $this->encodeCompanyKey($companyType, $companyName);
         $companyProfile = null;
 
@@ -352,8 +308,10 @@ class CompanyController extends Controller
         $deliveryMethods = DeliveryMethod::active()->orderBy('sort_order')->get();
         $transportCompanies = TransportCompany::active()->orderBy('name')->get();
         $permissionLabels = Permission::query()->orderBy('name')->pluck('name', 'slug');
+        $invitation = $this->invitations->findPendingForCompany($companyName);
+        $rejectReason = $this->moderation->rejectReason($companyName);
 
-        return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies', 'companyRoleSlugs', 'companyRoleKeys', 'permissionLabels'));
+        return view('admin.companies.show', compact('company', 'companyKey', 'tab', 'companyProfile', 'employees', 'roleOptions', 'statusOptions', 'activity', 'deliveryMethods', 'transportCompanies', 'companyRoleSlugs', 'companyRoleKeys', 'permissionLabels', 'invitation', 'rejectReason'));
     }
 
     public function updateCompany(Request $request, string $companyKey): RedirectResponse
@@ -372,7 +330,7 @@ class CompanyController extends Controller
         }
 
         $rules = [
-            'status' => 'required|in:active,pending,blocked',
+            'status' => 'required|in:'.implode(',', CompanyStatus::all()),
             'region' => 'nullable|string|max:255',
             'legal_name' => 'nullable|string|max:255',
             'contact_email' => 'nullable|email|max:255',
@@ -408,16 +366,16 @@ class CompanyController extends Controller
             ]);
         }
 
-        if ($validated['status'] === 'blocked') {
-            User::query()
-                ->whereHas('roles', fn (EloquentBuilder $q) => $q->where('role_user.company_name', $companyName))
-                ->update(['is_active' => false]);
-        }
-
-        if ($validated['status'] === 'active') {
+        if ($validated['status'] === CompanyStatus::ACTIVE) {
             User::query()
                 ->whereHas('roles', fn (EloquentBuilder $q) => $q->where('role_user.company_name', $companyName))
                 ->update(['is_active' => true]);
+        }
+
+        if (in_array($validated['status'], [CompanyStatus::BLOCKED, CompanyStatus::PENDING, CompanyStatus::REJECTED, CompanyStatus::AWAITING_CONFIRMATION], true)) {
+            User::query()
+                ->whereHas('roles', fn (EloquentBuilder $q) => $q->where('role_user.company_name', $companyName))
+                ->update(['is_active' => false]);
         }
 
         return redirect()->route('admin.companies.show', $companyKey)->with('success', 'Данные компании обновлены.');
@@ -433,6 +391,11 @@ class CompanyController extends Controller
                 ->whereIn('roles.slug', [$companyType, Role::SLUG_COMPANY_EMPLOYEE]))
             ->with(['roles' => fn ($q) => $q->wherePivot('company_name', $companyName)])
             ->get();
+
+        CompanyInvitation::query()
+            ->where('company_name', $companyName)
+            ->whereNull('accepted_at')
+            ->delete();
 
         DB::table('role_user')
             ->where('company_name', $companyName)
@@ -700,6 +663,14 @@ class CompanyController extends Controller
             'mysql' => 'GROUP_CONCAT(DISTINCT roles.slug ORDER BY roles.sort_order SEPARATOR ",")',
             default => 'GROUP_CONCAT(DISTINCT roles.slug ORDER BY roles.sort_order, ",")',
         };
+    }
+
+    private function requirePendingInvitation(string $companyName): CompanyInvitation
+    {
+        $invitation = $this->invitations->findPendingForCompany($companyName);
+        abort_if(! $invitation, 404, 'Активное приглашение для компании не найдено.');
+
+        return $invitation;
     }
 
 }

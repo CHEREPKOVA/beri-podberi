@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\AdminAuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -126,6 +127,17 @@ class ForgotPasswordController extends Controller
         );
 
         if ($status === Password::PASSWORD_RESET) {
+            $resetUser = User::query()->where('email', $request->input('email'))->first();
+            app(AdminAuditLogger::class)->logSecurityEvent(
+                'security.password.reset',
+                $resetUser,
+                null,
+                null,
+                'user',
+                $resetUser?->id,
+                ['email' => $request->input('email')],
+            );
+
             return redirect()->route('login')->with('status', 'Пароль успешно изменён. Войдите с новым паролем.');
         }
 

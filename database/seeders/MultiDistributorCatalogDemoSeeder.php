@@ -11,11 +11,12 @@ use App\Models\ManufacturerProfile;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductImage;
+use App\Models\ProductStock;
 use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * Демо-товар с несколькими дистрибьюторами в одном регионе (Москва).
@@ -109,6 +110,8 @@ class MultiDistributorCatalogDemoSeeder extends Seeder
             ProductImage::factory()->for($product)->primary()->create();
         }
 
+        $this->ensureManufacturerMoscowStocks($manufacturer, $product, $moscow->id);
+
         $linkedDistributors = 0;
 
         foreach (self::DISTRIBUTORS as $index => $config) {
@@ -185,8 +188,72 @@ class MultiDistributorCatalogDemoSeeder extends Seeder
         $this->command->line("  Товар: {$product->name}");
         $this->command->line('  Артикул: '.self::DEMO_SKU.' (id: '.$product->id.')');
         $this->command->line("  Дистрибьюторов в Москве: {$linkedDistributors}");
+        $this->command->line('  Склады производителя в Москве: Склад АккумТрейд (Москва), Транзитный склад (Москва).');
         $this->command->line('  Проверка: войти как company@test.com / password → Каталог → карточка товара.');
         $this->command->line('  Или поиск в каталоге: «демо нескольких дистрибьюторов».');
+    }
+
+    private function ensureManufacturerMoscowStocks(ManufacturerProfile $manufacturer, Product $demoProduct, int $moscowId): void
+    {
+        if (! $manufacturer->regions()->where('regions.id', $moscowId)->exists()) {
+            $hasPrimary = $manufacturer->regions()->wherePivot('is_primary', true)->exists();
+            $manufacturer->regions()->attach($moscowId, ['is_primary' => ! $hasPrimary]);
+        }
+
+        $main = Warehouse::updateOrCreate(
+            [
+                'manufacturer_profile_id' => $manufacturer->id,
+                'name' => 'Склад АккумТрейд (Москва)',
+            ],
+            [
+                'address' => 'г. Москва, промзона Капотня, 12',
+                'region_id' => $moscowId,
+                'type' => Warehouse::TYPE_MAIN,
+                'is_active' => true,
+                'shipping_conditions' => 'Отгрузка в день заказа при наличии',
+            ],
+        );
+
+        $transit = Warehouse::updateOrCreate(
+            [
+                'manufacturer_profile_id' => $manufacturer->id,
+                'name' => 'Транзитный склад (Москва)',
+            ],
+            [
+                'address' => 'г. Москва, МКАД 14 км',
+                'region_id' => $moscowId,
+                'type' => Warehouse::TYPE_TRANSIT,
+                'is_active' => true,
+                'shipping_conditions' => 'Отгрузка на следующий день',
+            ],
+        );
+
+        ProductStock::updateOrCreate(
+            ['product_id' => $demoProduct->id, 'warehouse_id' => $main->id],
+            ['quantity' => 48, 'reserved' => 0, 'stock_updated_at' => now()],
+        );
+        ProductStock::updateOrCreate(
+            ['product_id' => $demoProduct->id, 'warehouse_id' => $transit->id],
+            ['quantity' => 16, 'reserved' => 0, 'stock_updated_at' => now()],
+        );
+
+        $catalogProducts = Product::query()
+            ->where('manufacturer_profile_id', $manufacturer->id)
+            ->where('show_in_catalog', true)
+            ->where('status', Product::STATUS_ACTIVE)
+            ->where('id', '!=', $demoProduct->id)
+            ->get();
+
+        foreach ($catalogProducts as $index => $product) {
+            ProductStock::updateOrCreate(
+                ['product_id' => $product->id, 'warehouse_id' => $main->id],
+                [
+                    'quantity' => 20 + (($index * 7) % 80),
+                    'reserved' => 0,
+                    'stock_updated_at' => now(),
+                ],
+            );
+        }
     }
 
     private function ensureDistributorInMoscow(string $email, int $moscowId, int $index): ?DistributorProfile
@@ -205,7 +272,7 @@ class MultiDistributorCatalogDemoSeeder extends Seeder
             $user = User::create([
                 'name' => $short,
                 'email' => $email,
-                'password' => Hash::make('password'),
+                'password' => 'password',
                 'email_verified_at' => now(),
             ]);
             $user->roles()->attach($role->id, [

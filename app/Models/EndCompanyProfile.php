@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class EndCompanyProfile extends Model
 {
@@ -99,6 +100,11 @@ class EndCompanyProfile extends Model
     public function platformOrders(): HasMany
     {
         return $this->hasMany(PlatformOrder::class);
+    }
+
+    public function cart(): HasOne
+    {
+        return $this->hasOne(Cart::class);
     }
 
     public function regionIds(): array

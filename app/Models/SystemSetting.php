@@ -68,6 +68,7 @@ class SystemSetting extends Model
             'display' => 'Отображение',
             'security' => 'Безопасность',
             'catalog' => 'Каталог',
+            'registration' => 'Регистрация',
         ];
     }
 

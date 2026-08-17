@@ -15,7 +15,10 @@
                         <th class="text-left py-2 pr-4">Мин. партия</th>
                         <th class="text-left py-2 pr-4">Цена</th>
                         <th class="text-left py-2 pr-4">Обновлено</th>
-                        <th class="text-left py-2">Условия</th>
+                        <th class="text-left py-2 pr-4">Условия</th>
+                        @if(in_array($cardRole ?? '', ['end_company', 'distributor'], true))
+                            <th class="text-left py-2">Заказ</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
@@ -28,10 +31,63 @@
                                 <span x-text="row.available_quantity"></span>
                                 <span x-show="row.status_note" class="block text-[10px] text-amber-700" x-text="row.status_note"></span>
                             </td>
-                            <td class="py-2 pr-4 text-gray-700 dark:text-gray-300" x-text="row.min_order_quantity"></td>
+                            <td class="py-2 pr-4 text-gray-700 dark:text-gray-300" x-text="row.min_order_quantity_label"></td>
                             <td class="py-2 pr-4 text-gray-700 dark:text-gray-300" x-text="row.retail_price_formatted"></td>
                             <td class="py-2 pr-4 text-gray-700 dark:text-gray-300" x-text="row.stock_updated_at_formatted"></td>
-                            <td class="py-2 text-gray-700 dark:text-gray-300" x-text="row.shipping_conditions"></td>
+                            <td class="py-2 pr-4 text-gray-700 dark:text-gray-300" x-text="row.shipping_conditions"></td>
+                            @if(($cardRole ?? '') === 'end_company')
+                                <td class="py-2">
+                                    <template x-if="live.can_add_to_order && row.distributor_product_id">
+                                        <form method="POST"
+                                              action="{{ route('buyer.cart.items.store') }}"
+                                              class="js-add-to-cart inline-flex items-center gap-2"
+                                              data-cart-store-url="{{ route('buyer.cart.items.store') }}"
+                                              :data-min-qty="Number(row.min_order_quantity) > 0 ? Number(row.min_order_quantity) : 1">
+                                            @csrf
+                                            <input type="hidden" name="distributor_product_id" :value="row.distributor_product_id">
+                                            <input type="text"
+                                                   name="quantity"
+                                                   inputmode="numeric"
+                                                   pattern="[1-9][0-9]*"
+                                                   :value="Number(row.min_order_quantity) > 0 ? Number(row.min_order_quantity) : 1"
+                                                   :data-min-qty="Number(row.min_order_quantity) > 0 ? Number(row.min_order_quantity) : 1"
+                                                   autocomplete="off"
+                                                   class="js-cart-qty w-16 rounded-md border-2 border-[#c3242a]/40 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs text-center font-medium focus:border-[#c3242a] focus:ring-2 focus:ring-[#c3242a]/25"
+                                                   required>
+                                            <button type="submit"
+                                                    class="js-add-to-cart-btn inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-[#c3242a] text-white hover:bg-[#a01e24] disabled:opacity-60">
+                                                В корзину
+                                            </button>
+                                        </form>
+                                    </template>
+                                </td>
+                            @elseif(($cardRole ?? '') === 'distributor')
+                                <td class="py-2">
+                                    <template x-if="live.can_add_to_purchase">
+                                        <form method="POST"
+                                              action="{{ route('distributor.purchases.cart.items.store') }}"
+                                              class="js-add-to-cart inline-flex items-center gap-2"
+                                              data-cart-store-url="{{ route('distributor.purchases.cart.items.store') }}"
+                                              :data-min-qty="Number(live.purchase_min_qty) > 0 ? Number(live.purchase_min_qty) : 1">
+                                            @csrf
+                                            <input type="hidden" name="product_id" value="{{ $product->id }}">
+                                            <input type="text"
+                                                   name="quantity"
+                                                   inputmode="numeric"
+                                                   pattern="[1-9][0-9]*"
+                                                   :value="Number(live.purchase_min_qty) > 0 ? Number(live.purchase_min_qty) : 1"
+                                                   :data-min-qty="Number(live.purchase_min_qty) > 0 ? Number(live.purchase_min_qty) : 1"
+                                                   autocomplete="off"
+                                                   class="js-cart-qty w-16 rounded-md border-2 border-[#c3242a]/40 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs text-center font-medium focus:border-[#c3242a] focus:ring-2 focus:ring-[#c3242a]/25"
+                                                   required>
+                                            <button type="submit"
+                                                    class="js-add-to-cart-btn inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-[#c3242a] text-white hover:bg-[#a01e24] disabled:opacity-60">
+                                                В корзину
+                                            </button>
+                                        </form>
+                                    </template>
+                                </td>
+                            @endif
                         </tr>
                     </template>
                 </tbody>

@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo('/login');
+
+        // За reverse-proxy / балансировщиком хостинга X-Forwarded-* нужны для корректного HTTPS.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'role.selected' => \App\Http\Middleware\EnsureCurrentRoleSelected::class,
             'role' => \App\Http\Middleware\RequireRole::class,

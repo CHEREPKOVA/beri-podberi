@@ -52,7 +52,7 @@ class PartnerCatalogDemoSeeder extends Seeder
                 ['email' => $data['email']],
                 [
                     'name' => $data['short'],
-                    'password' => Hash::make('password'),
+                    'password' => 'password',
                     'email_verified_at' => now(),
                 ],
             );
@@ -114,7 +114,7 @@ class PartnerCatalogDemoSeeder extends Seeder
                 ['email' => $data['email']],
                 [
                     'name' => $data['short'],
-                    'password' => Hash::make('password'),
+                    'password' => 'password',
                     'email_verified_at' => now(),
                 ],
             );
@@ -152,7 +152,7 @@ class PartnerCatalogDemoSeeder extends Seeder
                     'end_company_profile_id' => $profile->id,
                     'manufacturer_profile_id' => $manufacturer->id,
                     'total_amount' => 45000,
-                    'status' => PlatformOrder::STATUS_PROCESSING,
+                    'status' => PlatformOrder::STATUS_AWAITING_CONFIRMATION,
                     'ordered_at' => now()->subDays(3),
                 ],
             );

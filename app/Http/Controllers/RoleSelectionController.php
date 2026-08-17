@@ -10,7 +10,7 @@ use Illuminate\View\View;
 class RoleSelectionController extends Controller
 {
     /**
-     * Показать экран выбора роли (при нескольких ролях у пользователя).
+     * Показать выбор роли в блоке авторизации (при нескольких ролях у пользователя).
      */
     public function show(Request $request): View|RedirectResponse
     {
@@ -23,7 +23,7 @@ class RoleSelectionController extends Controller
             return redirect()->intended(route('dashboard'));
         }
 
-        return view('auth.role-select', [
+        return view('auth.login', [
             'roles' => $user->activeRoles(),
         ]);
     }

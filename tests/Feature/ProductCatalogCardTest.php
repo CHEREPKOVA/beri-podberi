@@ -10,9 +10,11 @@ use App\Models\ManufacturerDistributorPartnership;
 use App\Models\ManufacturerProfile;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductStock;
 use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Warehouse;
 use App\Services\Catalog\CatalogQueryService;
 use App\Services\Catalog\ProductCatalogCardService;
 use App\Services\CurrentRoleService;
@@ -76,16 +78,36 @@ class ProductCatalogCardTest extends TestCase
             ->assertJsonStructure(['live' => ['warehouse_stock_rows', 'display_price_formatted']]);
     }
 
-    public function test_distributor_card_shows_only_own_warehouse_rows(): void
+    public function test_distributor_card_shows_manufacturer_stocks_not_other_distributors(): void
     {
         $region = Region::factory()->create(['name' => 'Казань']);
-        $manufacturer = ManufacturerProfile::factory()->create();
+        $manufacturer = ManufacturerProfile::factory()->create([
+            'short_name' => 'ЗаводКазань',
+            'full_name' => 'ООО «ЗаводКазань»',
+        ]);
         $category = ProductCategory::factory()->create();
         $product = Product::factory()->create([
             'manufacturer_profile_id' => $manufacturer->id,
             'category_id' => $category->id,
             'show_in_catalog' => true,
             'status' => Product::STATUS_ACTIVE,
+            'base_price' => 1500,
+        ]);
+
+        $mfrWarehouse = Warehouse::query()->create([
+            'manufacturer_profile_id' => $manufacturer->id,
+            'name' => 'Склад производителя Казань',
+            'address' => 'Казань',
+            'region_id' => $region->id,
+            'type' => Warehouse::TYPE_MAIN,
+            'is_active' => true,
+        ]);
+        ProductStock::query()->create([
+            'product_id' => $product->id,
+            'warehouse_id' => $mfrWarehouse->id,
+            'quantity' => 40,
+            'reserved' => 0,
+            'stock_updated_at' => now(),
         ]);
 
         $ownDist = $this->createDistributorUser('Свой Дистрибьютор', $region, $manufacturer);
@@ -127,8 +149,43 @@ class ProductCatalogCardTest extends TestCase
         $data = $card->build($product->fresh(['category.parent', 'additionalCategories', 'images', 'unitType', 'attributeValues.attribute', 'documents', 'manufacturerProfile.regions', 'stocks.warehouse.region']));
 
         $this->assertSame('distributor', $data['cardRole']);
+        $this->assertTrue($data['canAddToPurchase']);
         $this->assertCount(1, $data['warehouseStockRows']);
-        $this->assertStringContainsString('Свой', $data['warehouseStockRows']->first()['distributor_name']);
+        $this->assertSame('ЗаводКазань', $data['warehouseStockRows']->first()['distributor_name']);
+        $this->assertSame('Склад производителя Казань', $data['warehouseStockRows']->first()['warehouse_name']);
+        $this->assertStringNotContainsString('Чужой', $data['warehouseStockRows']->first()['distributor_name']);
+        $this->assertStringNotContainsString('Свой', $data['warehouseStockRows']->first()['distributor_name']);
+    }
+
+    public function test_distributor_card_has_purchase_cart_in_warehouse_block(): void
+    {
+        $region = Region::factory()->create(['name' => 'Казань']);
+        $manufacturer = ManufacturerProfile::factory()->create();
+        $category = ProductCategory::factory()->create();
+        $product = Product::factory()->create([
+            'manufacturer_profile_id' => $manufacturer->id,
+            'category_id' => $category->id,
+            'show_in_catalog' => true,
+            'status' => Product::STATUS_ACTIVE,
+            'base_price' => 1500,
+            'min_order_quantity' => 1,
+        ]);
+        $manufacturer->regions()->sync([$region->id => ['is_primary' => true]]);
+
+        $ownDist = $this->createDistributorUser('Свой Дистрибьютор', $region, $manufacturer);
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+        app(CurrentRoleService::class)->set($ownDist, $distRole->id);
+
+        $response = $this->actingAs($ownDist)
+            ->get(route('buyer.catalog.show', $product));
+
+        $response->assertOk();
+        $response->assertSee('Наличие у поставщиков');
+        $response->assertSee('Заказ');
+        $response->assertSee(route('distributor.purchases.cart.items.store'), false);
+        $response->assertSee(route('distributor.purchases.cart.index'), false);
+        $response->assertSee('js-add-to-cart', false);
+        $response->assertDontSee('>В корзину закупок<', false);
     }
 
     /**

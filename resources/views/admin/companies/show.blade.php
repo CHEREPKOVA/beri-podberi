@@ -4,13 +4,93 @@
 @section('heading', 'Карточка компании: ' . $company->name)
 
 @section('content')
-<div x-data="{ activeTab: '{{ $tab }}', showDeleteModal: false, deleteFormAction: '', deleteMessage: '' }" class="space-y-6">
+<div x-data="{ activeTab: '{{ $tab }}', showDeleteModal: false, deleteFormAction: '', deleteMessage: '', showRejectModal: false }" class="space-y-6">
     @if(session('success'))
         <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
             {{ session('success') }}
             @if(session('temporary_password'))
                 <div class="mt-2 text-sm">Временный пароль: <span class="font-semibold">{{ session('temporary_password') }}</span></div>
             @endif
+        </div>
+    @endif
+
+    @if($errors->has('invitation') || $errors->has('moderation'))
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            {{ $errors->first('invitation') ?: $errors->first('moderation') }}
+        </div>
+    @endif
+
+    @if(($invitation ?? null) && ! $invitation->isAccepted())
+        <div class="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-4 rounded-lg">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <div class="font-medium">Приглашение: {{ $invitation->statusLabel() }}</div>
+                    <div class="mt-1 text-sm">
+                        Email: {{ $invitation->email }}
+                        @if($invitation->expires_at)
+                            · действует до {{ $invitation->expires_at->timezone(config('app.timezone'))->format('d.m.Y H:i') }}
+                        @endif
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <form method="POST" action="{{ route('admin.companies.invitation.resend', $companyKey) }}">
+                        @csrf
+                        <button type="submit" class="px-3 py-1.5 rounded-lg bg-[#c3242a] text-white text-sm hover:bg-[#a01e24]">
+                            Отправить повторно
+                        </button>
+                    </form>
+                    @if(! $invitation->isCancelled())
+                        <form method="POST" action="{{ route('admin.companies.invitation.cancel', $companyKey) }}"
+                              onsubmit="return confirm('Отменить приглашение? Ссылка перестанет действовать.');">
+                            @csrf
+                            <button type="submit" class="px-3 py-1.5 rounded-lg border border-amber-400 text-amber-900 text-sm hover:bg-amber-100">
+                                Отменить
+                            </button>
+                        </form>
+                    @endif
+                    <form method="POST" action="{{ route('admin.companies.invitation.delete', $companyKey) }}"
+                          onsubmit="return confirm('Удалить приглашение и карточку компании?');">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 text-sm hover:bg-red-50">
+                            Удалить
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if(in_array($company->status, ['pending', 'rejected'], true))
+        <div class="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-4 rounded-lg">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <div class="font-medium">
+                        Модерация: {{ \App\Support\CompanyStatus::label((string) $company->status) }}
+                    </div>
+                    @if($company->status === 'rejected' && ($rejectReason ?? null))
+                        <div class="mt-1 text-sm">Причина отклонения: {{ $rejectReason }}</div>
+                    @elseif($company->status === 'pending')
+                        <div class="mt-1 text-sm">Компания зарегистрирована и ожидает решения администратора.</div>
+                    @endif
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    @if($company->status === 'pending' || $company->status === 'rejected')
+                        <form method="POST" action="{{ route('admin.companies.moderation.approve', $companyKey) }}">
+                            @csrf
+                            <button type="submit" class="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700">
+                                Подтвердить регистрацию
+                            </button>
+                        </form>
+                    @endif
+                    @if($company->status === 'pending')
+                        <button type="button" @click="showRejectModal = true"
+                                class="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 text-sm hover:bg-red-50">
+                            Отклонить регистрацию
+                        </button>
+                    @endif
+                </div>
+            </div>
         </div>
     @endif
 
@@ -92,7 +172,7 @@
                             <select name="status" class="w-full appearance-none pl-3 pr-8 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-[#c3242a] focus:border-transparent cursor-pointer">
                                 @foreach($statusOptions as $status)
                                     <option value="{{ $status }}" {{ $company->status === $status ? 'selected' : '' }}>
-                                        {{ $status === 'active' ? 'Активна' : ($status === 'pending' ? 'На модерации' : 'Заблокирована') }}
+                                        {{ \App\Support\CompanyStatus::label($status) }}
                                     </option>
                                 @endforeach
                             </select>
@@ -356,6 +436,36 @@
                     </div>
                 @endif
             </div>
+        </div>
+    </div>
+
+    {{-- Модальное окно отклонения регистрации --}}
+    <div x-show="showRejectModal" x-cloak
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showRejectModal = false">
+        <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Отклонить регистрацию</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Укажите причину — она будет отправлена на email компании.</p>
+            <form method="POST" action="{{ route('admin.companies.moderation.reject', $companyKey) }}" class="space-y-4">
+                @csrf
+                <div>
+                    <label for="reject_reason" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Причина <span class="text-red-500">*</span></label>
+                    <textarea id="reject_reason" name="reason" rows="4" required maxlength="1000"
+                        class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm @error('reason') border-red-500 @enderror"
+                        placeholder="Например: некорректные реквизиты">{{ old('reason') }}</textarea>
+                    @error('reason')
+                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" @click="showRejectModal = false"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                        Отмена
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
+                        Отклонить
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

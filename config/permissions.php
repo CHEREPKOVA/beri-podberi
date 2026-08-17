@@ -50,6 +50,13 @@ return [
             'sort_order' => 50,
         ],
         [
+            'slug' => 'orders.manage',
+            'name' => 'Мониторинг и модерация заказов',
+            'description' => 'Просмотр всех заказов платформы, смена статусов, служебные комментарии и приостановка',
+            'group_key' => 'orders',
+            'sort_order' => 55,
+        ],
+        [
             'slug' => 'support.manage',
             'name' => 'Работа с поддержкой',
             'description' => 'Обработка обращений и коммуникаций',
@@ -75,6 +82,7 @@ return [
         'manager' => [
             'dashboard.view',
             'companies.manage',
+            'orders.manage',
             'support.manage',
             'stats.view',
             'audit.view',

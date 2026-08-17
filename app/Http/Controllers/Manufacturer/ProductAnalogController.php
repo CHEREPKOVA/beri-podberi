@@ -30,7 +30,7 @@ class ProductAnalogController extends Controller
 
     public function edit(Request $request, Product $product): View
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $product->load(['category', 'analogs', 'analogOf']);
 
@@ -48,7 +48,7 @@ class ProductAnalogController extends Controller
 
     public function update(Request $request, Product $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $validated = $request->validate([
             'analog_ids' => ['nullable', 'array'],
@@ -77,12 +77,5 @@ class ProductAnalogController extends Controller
 
         return redirect()->route('manufacturer.catalog.analogs.edit', $product)
             ->with('success', 'Связи аналогов обновлены.');
-    }
-
-    private function authorizeProduct(Request $request, Product $product): void
-    {
-        if ((int) $product->manufacturer_profile_id !== (int) $request->user()->manufacturerProfile?->id) {
-            abort(403);
-        }
     }
 }

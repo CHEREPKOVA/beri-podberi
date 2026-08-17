@@ -108,7 +108,7 @@ class ProfileController extends Controller
 
     public function updateContact(Request $request, ManufacturerContact $contact): RedirectResponse
     {
-        $this->authorizeContact($request, $contact);
+        $this->authorize('manage', $contact);
 
         $validated = $request->validate([
             'full_name' => 'required|string|max:255',
@@ -128,7 +128,7 @@ class ProfileController extends Controller
 
     public function deleteContact(Request $request, ManufacturerContact $contact): RedirectResponse
     {
-        $this->authorizeContact($request, $contact);
+        $this->authorize('manage', $contact);
 
         if (! $contact->canBeDeleted()) {
             return redirect()
@@ -197,7 +197,7 @@ class ProfileController extends Controller
 
     public function updateWarehouse(Request $request, Warehouse $warehouse): RedirectResponse
     {
-        $this->authorizeWarehouse($request, $warehouse);
+        $this->authorize('manage', $warehouse);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -221,7 +221,7 @@ class ProfileController extends Controller
 
     public function deleteWarehouse(Request $request, Warehouse $warehouse): RedirectResponse
     {
-        $this->authorizeWarehouse($request, $warehouse);
+        $this->authorize('manage', $warehouse);
 
         // TODO: Проверка на связанные активные заказы
         $warehouse->delete();
@@ -324,7 +324,7 @@ class ProfileController extends Controller
 
     public function deleteDocument(Request $request, ManufacturerDocument $document): RedirectResponse
     {
-        $this->authorizeDocument($request, $document);
+        $this->authorize('manage', $document);
 
         Storage::disk('public')->delete($document->file_path);
         $document->delete();
@@ -332,26 +332,5 @@ class ProfileController extends Controller
         return redirect()
             ->route('manufacturer.profile', ['tab' => 'documents'])
             ->with('success', 'Документ удалён');
-    }
-
-    private function authorizeContact(Request $request, ManufacturerContact $contact): void
-    {
-        if ($contact->manufacturer_profile_id !== $request->user()->manufacturerProfile?->id) {
-            abort(403);
-        }
-    }
-
-    private function authorizeWarehouse(Request $request, Warehouse $warehouse): void
-    {
-        if ($warehouse->manufacturer_profile_id !== $request->user()->manufacturerProfile?->id) {
-            abort(403);
-        }
-    }
-
-    private function authorizeDocument(Request $request, ManufacturerDocument $document): void
-    {
-        if ($document->manufacturer_profile_id !== $request->user()->manufacturerProfile?->id) {
-            abort(403);
-        }
     }
 }

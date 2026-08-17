@@ -75,11 +75,18 @@ class CurrentRoleService
 
     /**
      * Вызвать после успешного входа: установить единственную роль при одной роли.
-     * При нескольких ролях редирект не делаем — на странице покажется модальное окно выбора.
+     * При нескольких ролях — редирект на выбор роли в блоке авторизации.
      */
     public function applyAfterLogin(User $user): ?RedirectResponse
     {
-        $this->setSingleRoleIfOnlyOne($user);
+        if ($this->setSingleRoleIfOnlyOne($user)) {
+            return null;
+        }
+
+        if ($this->needsRoleSelection($user)) {
+            return redirect()->route('role.select');
+        }
+
         return null;
     }
 }

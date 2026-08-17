@@ -113,7 +113,7 @@ class ProductController extends Controller
 
     public function show(Request $request, DistributorProduct $product): View
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $product->load([
             'category',
@@ -152,7 +152,7 @@ class ProductController extends Controller
 
     public function update(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         if ($product->managed_by_1c && $product->isSyncedFrom1c()) {
             $data = $request->validate([
@@ -194,7 +194,7 @@ class ProductController extends Controller
 
     public function updatePrice(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         $validated = $request->validate([
             'price_type' => ['required', 'in:purchase,retail'],
@@ -241,7 +241,7 @@ class ProductController extends Controller
 
     public function updateRegionalPrices(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
         $profile = $request->user()->getOrCreateDistributorProfile();
         $regionIds = $profile->regions()->pluck('regions.id');
 
@@ -286,7 +286,7 @@ class ProductController extends Controller
 
     public function updateStocks(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
         $profile = $request->user()->getOrCreateDistributorProfile();
 
         if ($profile->integration_import_1c_stocks && $product->managed_by_1c) {
@@ -338,7 +338,7 @@ class ProductController extends Controller
 
     public function publish(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
         $oldStatus = $product->status;
         $product->update(['status' => DistributorProduct::STATUS_ACTIVE]);
         DistributorProductLogger::logStatusChange(
@@ -356,7 +356,7 @@ class ProductController extends Controller
 
     public function hide(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
         $oldStatus = $product->status;
         $product->update(['status' => DistributorProduct::STATUS_HIDDEN]);
         DistributorProductLogger::logStatusChange(
@@ -374,7 +374,7 @@ class ProductController extends Controller
 
     public function archive(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
         $oldStatus = $product->status;
         $product->update(['status' => DistributorProduct::STATUS_ARCHIVE]);
         DistributorProductLogger::logStatusChange(
@@ -811,7 +811,7 @@ class ProductController extends Controller
 
     public function storeDocument(Request $request, DistributorProduct $product): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         if ($product->status === DistributorProduct::STATUS_ARCHIVE) {
             return back()->with('error', 'Нельзя добавлять документы к архивному товару.');
@@ -845,7 +845,7 @@ class ProductController extends Controller
 
     public function deleteDocument(Request $request, DistributorProduct $product, DistributorProductDocument $document): RedirectResponse
     {
-        $this->authorizeProduct($request, $product);
+        $this->authorize('manage', $product);
 
         if ($document->distributor_product_id !== $product->id) {
             abort(404);
@@ -862,13 +862,5 @@ class ProductController extends Controller
         DistributorProductLogger::log($product, 'document_removed', 'Удалён документ: '.$name, null, $request->user());
 
         return back()->with('success', 'Документ удалён.');
-    }
-
-    protected function authorizeProduct(Request $request, DistributorProduct $product): void
-    {
-        $profile = $request->user()->getOrCreateDistributorProfile();
-        if ($product->distributor_profile_id !== $profile->id) {
-            abort(403);
-        }
     }
 }

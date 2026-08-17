@@ -51,8 +51,6 @@ class WarehouseController extends Controller
 
     public function updateStock(Request $request): RedirectResponse
     {
-        $profile = $request->user()->getOrCreateManufacturerProfile();
-
         $validated = $request->validate([
             'product_stock_id' => 'required|integer|exists:product_stocks,id',
             'quantity' => 'required|integer|min:0',
@@ -62,11 +60,11 @@ class WarehouseController extends Controller
             ->with(['product', 'warehouse'])
             ->findOrFail($validated['product_stock_id']);
 
-        if (
-            $stock->warehouse?->manufacturer_profile_id !== $profile->id
-            || $stock->product?->manufacturer_profile_id !== $profile->id
-        ) {
-            abort(403);
+        if ($stock->warehouse) {
+            $this->authorize('manage', $stock->warehouse);
+        }
+        if ($stock->product) {
+            $this->authorize('manage', $stock->product);
         }
 
         $stock->update([

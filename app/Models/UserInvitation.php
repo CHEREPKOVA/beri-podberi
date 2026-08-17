@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\HashesInvitationToken;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
 
 /**
  * Приглашение внутреннего сотрудника.
@@ -12,6 +12,9 @@ use Illuminate\Support\Str;
  * производитель, дистрибьютор или конечная компания.
  */
 class UserInvitation extends Model
+{
+    use HashesInvitationToken;
+
     protected $table = 'user_invitations';
 
     protected $fillable = [
@@ -60,10 +63,10 @@ class UserInvitation extends Model
     }
 
     /**
-     * Создать новый токен приглашения.
+     * @deprecated Используйте createPlainToken() + hashToken()
      */
     public static function createToken(): string
     {
-        return Str::random(64);
+        return self::createPlainToken();
     }
 }

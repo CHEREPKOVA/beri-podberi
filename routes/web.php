@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\DeliveryMethodController as AdminDeliveryMethodCo
 use App\Http\Controllers\Admin\DirectoriesController as AdminDirectoriesController;
 use App\Http\Controllers\Admin\DocumentTypeController as AdminDocumentTypeController;
 use App\Http\Controllers\Admin\FederalDistrictController as AdminFederalDistrictController;
+use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\OrderStatusController as AdminOrderStatusController;
 use App\Http\Controllers\Admin\PlatformRoleController as AdminPlatformRoleController;
 use App\Http\Controllers\Admin\ProductAnalogController as AdminProductAnalogController;
@@ -22,15 +23,25 @@ use App\Http\Controllers\Admin\TransportCompanyController as AdminTransportCompa
 use App\Http\Controllers\Admin\UnitTypeController as AdminUnitTypeController;
 use App\Http\Controllers\Admin\WarehouseTypeController as AdminWarehouseTypeController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\CompanyInvitationController;
+use App\Http\Controllers\Buyer\CartController as BuyerCartController;
 use App\Http\Controllers\Buyer\CatalogController as BuyerCatalogController;
+use App\Http\Controllers\Buyer\CheckoutController as BuyerCheckoutController;
+use App\Http\Controllers\Buyer\OrderController as BuyerOrderController;
 use App\Http\Controllers\Catalog\ProductLiveController;
 use App\Http\Controllers\Catalog\SearchSuggestController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Distributor\ProductController as DistributorProductController;
 use App\Http\Controllers\Distributor\ProfileController as DistributorProfileController;
+use App\Http\Controllers\Distributor\PurchaseCartController as DistributorPurchaseCartController;
+use App\Http\Controllers\Distributor\PurchaseCheckoutController as DistributorPurchaseCheckoutController;
+use App\Http\Controllers\Distributor\PurchaseOrderController as DistributorPurchaseOrderController;
 use App\Http\Controllers\Distributor\WarehouseController as DistributorWarehouseController;
 use App\Http\Controllers\EndCompany\ProfileController as EndCompanyProfileController;
 use App\Http\Controllers\ForgotPasswordController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\Manufacturer\OrderController as ManufacturerOrderController;
 use App\Http\Controllers\Manufacturer\PartnerCatalogController as ManufacturerPartnerCatalogController;
 use App\Http\Controllers\Manufacturer\ProductController as ManufacturerProductController;
 use App\Http\Controllers\Manufacturer\ProfileController as ManufacturerProfileController;
@@ -45,13 +56,16 @@ Route::get('/', function () {
 });
 
 Route::middleware(['auth', 'user.active'])->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-
-    // Выбор роли при входе (несколько ролей)
+    // Выбор роли при входе (несколько ролей) — тот же UI-блок, что и форма логина
     Route::get('/role-select', [RoleSelectionController::class, 'show'])->name('role.select');
     Route::post('/role-select', [RoleSelectionController::class, 'store'])->name('role.store');
     // Смена роли из раздела «Профиль»
     Route::post('/role-switch', [RoleSelectionController::class, 'switch'])->name('role.switch');
+
+    Route::middleware(['role.selected'])->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read_all');
+    });
 
     // Панель администратора (роли: admin, manager, analyst; доступ определяется permissions)
     Route::middleware(['role.selected', 'role:admin,manager,analyst', 'admin.audit'])->prefix('admin')->name('admin.')->group(function () {
@@ -73,11 +87,27 @@ Route::middleware(['auth', 'user.active'])->group(function () {
             Route::get('/companies/{companyKey}', [AdminCompanyController::class, 'show'])->name('companies.show');
             Route::put('/companies/{companyKey}', [AdminCompanyController::class, 'updateCompany'])->name('companies.update');
             Route::delete('/companies/{companyKey}', [AdminCompanyController::class, 'destroy'])->name('companies.destroy');
+            Route::post('/companies/{companyKey}/invitation/resend', [AdminCompanyController::class, 'resendInvitation'])->name('companies.invitation.resend');
+            Route::post('/companies/{companyKey}/invitation/cancel', [AdminCompanyController::class, 'cancelInvitation'])->name('companies.invitation.cancel');
+            Route::delete('/companies/{companyKey}/invitation', [AdminCompanyController::class, 'deleteInvitation'])->name('companies.invitation.delete');
+            Route::post('/companies/{companyKey}/moderation/approve', [AdminCompanyController::class, 'approveRegistration'])->name('companies.moderation.approve');
+            Route::post('/companies/{companyKey}/moderation/reject', [AdminCompanyController::class, 'rejectRegistration'])->name('companies.moderation.reject');
             Route::put('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'updateUser'])->name('companies.users.update');
             Route::post('/companies/{companyKey}/users/{user}/suspend', [AdminCompanyController::class, 'suspendUser'])->name('companies.users.suspend');
             Route::post('/companies/{companyKey}/users/{user}/activate', [AdminCompanyController::class, 'activateUser'])->name('companies.users.activate');
             Route::post('/companies/{companyKey}/users/{user}/reset-password', [AdminCompanyController::class, 'resetPassword'])->name('companies.users.reset-password');
             Route::delete('/companies/{companyKey}/users/{user}', [AdminCompanyController::class, 'deleteUser'])->name('companies.users.delete');
+        });
+
+        Route::middleware('permission:orders.manage')->group(function () {
+            Route::get('/orders', [AdminOrderController::class, 'index'])->name('orders.index');
+            Route::get('/orders/{order}', [AdminOrderController::class, 'show'])->name('orders.show');
+            Route::get('/orders/{order}/documents/{document}/download', [AdminOrderController::class, 'downloadDocument'])->name('orders.documents.download');
+            Route::get('/orders/{order}/documents/{document}/preview', [AdminOrderController::class, 'previewDocument'])->name('orders.documents.preview');
+            Route::post('/orders/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('orders.update_status');
+            Route::post('/orders/{order}/comment', [AdminOrderController::class, 'storeComment'])->name('orders.comment');
+            Route::post('/orders/{order}/pause', [AdminOrderController::class, 'pause'])->name('orders.pause');
+            Route::post('/orders/{order}/resume', [AdminOrderController::class, 'resume'])->name('orders.resume');
         });
 
         Route::middleware('permission:directories.manage')->group(function () {
@@ -210,6 +240,25 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::post('/partners/distributors/{distributor}/exclusive', [ManufacturerPartnerCatalogController::class, 'assignExclusive'])
             ->middleware('manufacturer.partner:exclusive')
             ->name('partners.distributors.exclusive');
+
+        Route::get('/orders', [ManufacturerOrderController::class, 'index'])->name('orders.index');
+        Route::get('/orders/export', [ManufacturerOrderController::class, 'export'])->name('orders.export');
+        Route::get('/orders/{order}', [ManufacturerOrderController::class, 'show'])->name('orders.show');
+        Route::get('/orders/{order}/print', [ManufacturerOrderController::class, 'print'])->name('orders.print');
+        Route::get('/orders/{order}/history/export', [ManufacturerOrderController::class, 'exportHistory'])->name('orders.history.export');
+        Route::post('/orders/{order}/assign-responsible', [ManufacturerOrderController::class, 'assignResponsible'])->name('orders.assign_responsible');
+        Route::post('/orders/{order}/confirm', [ManufacturerOrderController::class, 'confirm'])->name('orders.confirm');
+        Route::post('/orders/{order}/reject', [ManufacturerOrderController::class, 'reject'])->name('orders.reject');
+        Route::post('/orders/{order}/send-for-approval', [ManufacturerOrderController::class, 'sendForApproval'])->name('orders.send_for_approval');
+        Route::post('/orders/{order}/mark-in-work', [ManufacturerOrderController::class, 'markInWork'])->name('orders.mark_in_work');
+        Route::post('/orders/{order}/mark-ready', [ManufacturerOrderController::class, 'markReady'])->name('orders.mark_ready');
+        Route::post('/orders/{order}/mark-shipped', [ManufacturerOrderController::class, 'markShipped'])->name('orders.mark_shipped');
+        Route::post('/orders/{order}/complete', [ManufacturerOrderController::class, 'complete'])->name('orders.complete');
+        Route::post('/orders/{order}/claims', [ManufacturerOrderController::class, 'storeClaim'])->name('orders.claims.store');
+        Route::post('/orders/{order}/documents', [ManufacturerOrderController::class, 'storeDocument'])->name('orders.documents.store');
+        Route::get('/orders/{order}/documents/{document}/download', [ManufacturerOrderController::class, 'downloadDocument'])->name('orders.documents.download');
+        Route::get('/orders/{order}/documents/{document}/preview', [ManufacturerOrderController::class, 'previewDocument'])->name('orders.documents.preview');
+        Route::delete('/orders/{order}/documents/{document}', [ManufacturerOrderController::class, 'destroyDocument'])->name('orders.documents.destroy');
     });
 
     // Профиль дистрибьютора
@@ -244,6 +293,47 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::post('/products/{product}/archive', [DistributorProductController::class, 'archive'])->name('products.archive');
         Route::post('/products/{product}/documents', [DistributorProductController::class, 'storeDocument'])->name('products.documents.store');
         Route::delete('/products/{product}/documents/{document}', [DistributorProductController::class, 'deleteDocument'])->name('products.documents.delete');
+
+        Route::get('/orders', [DistributorOrderController::class, 'index'])->name('orders.index');
+        Route::get('/orders/export', [DistributorOrderController::class, 'export'])->name('orders.export');
+        Route::get('/orders/{order}', [DistributorOrderController::class, 'show'])->name('orders.show');
+        Route::get('/orders/{order}/print', [DistributorOrderController::class, 'print'])->name('orders.print');
+        Route::post('/orders/{order}/assign-responsible', [DistributorOrderController::class, 'assignResponsible'])->name('orders.assign_responsible');
+        Route::post('/orders/{order}/confirm', [DistributorOrderController::class, 'confirm'])->name('orders.confirm');
+        Route::post('/orders/{order}/reject', [DistributorOrderController::class, 'reject'])->name('orders.reject');
+        Route::post('/orders/{order}/send-for-approval', [DistributorOrderController::class, 'sendForApproval'])->name('orders.send_for_approval');
+        Route::post('/orders/{order}/mark-in-work', [DistributorOrderController::class, 'markInWork'])->name('orders.mark_in_work');
+        Route::post('/orders/{order}/mark-ready', [DistributorOrderController::class, 'markReady'])->name('orders.mark_ready');
+        Route::post('/orders/{order}/mark-shipped', [DistributorOrderController::class, 'markShipped'])->name('orders.mark_shipped');
+        Route::post('/orders/{order}/complete', [DistributorOrderController::class, 'complete'])->name('orders.complete');
+        Route::post('/orders/{order}/documents', [DistributorOrderController::class, 'storeDocument'])->name('orders.documents.store');
+        Route::get('/orders/{order}/documents/{document}/download', [DistributorOrderController::class, 'downloadDocument'])->name('orders.documents.download');
+        Route::get('/orders/{order}/documents/{document}/preview', [DistributorOrderController::class, 'previewDocument'])->name('orders.documents.preview');
+        Route::delete('/orders/{order}/documents/{document}', [DistributorOrderController::class, 'destroyDocument'])->name('orders.documents.destroy');
+
+        Route::get('/purchases/cart', [DistributorPurchaseCartController::class, 'index'])->name('purchases.cart.index');
+        Route::post('/purchases/cart/items', [DistributorPurchaseCartController::class, 'store'])->name('purchases.cart.items.store');
+        Route::put('/purchases/cart/items/{cartItem}', [DistributorPurchaseCartController::class, 'update'])->name('purchases.cart.items.update');
+        Route::delete('/purchases/cart/items/{cartItem}', [DistributorPurchaseCartController::class, 'destroy'])->name('purchases.cart.items.destroy');
+        Route::get('/purchases/checkout/{manufacturer}', [DistributorPurchaseCheckoutController::class, 'create'])->name('purchases.checkout.create');
+        Route::post('/purchases/checkout/{manufacturer}', [DistributorPurchaseCheckoutController::class, 'store'])->name('purchases.checkout.store');
+        Route::get('/purchases', [DistributorPurchaseOrderController::class, 'index'])->name('purchases.index');
+        Route::get('/purchases/{order}', [DistributorPurchaseOrderController::class, 'show'])->name('purchases.show');
+        Route::get('/purchases/{order}/print', [DistributorPurchaseOrderController::class, 'print'])->name('purchases.print');
+        Route::post('/purchases/{order}/submit', [DistributorPurchaseOrderController::class, 'submit'])->name('purchases.submit');
+        Route::post('/purchases/{order}/cancel', [DistributorPurchaseOrderController::class, 'cancel'])->name('purchases.cancel');
+        Route::post('/purchases/{order}/approve-changes', [DistributorPurchaseOrderController::class, 'approveChanges'])->name('purchases.approve_changes');
+        Route::post('/purchases/{order}/reject-changes', [DistributorPurchaseOrderController::class, 'rejectChanges'])->name('purchases.reject_changes');
+        Route::post('/purchases/{order}/confirm-receipt', [DistributorPurchaseOrderController::class, 'confirmReceipt'])->name('purchases.confirm_receipt');
+        Route::post('/purchases/{order}/reorder', [DistributorPurchaseOrderController::class, 'reorder'])->name('purchases.reorder');
+        Route::post('/purchases/{order}/assign-responsible', [DistributorPurchaseOrderController::class, 'assignResponsible'])->name('purchases.assign_responsible');
+        Route::post('/purchases/{order}/items', [DistributorPurchaseOrderController::class, 'storeItem'])->name('purchases.items.store');
+        Route::put('/purchases/{order}/items/{item}', [DistributorPurchaseOrderController::class, 'updateItem'])->name('purchases.items.update');
+        Route::delete('/purchases/{order}/items/{item}', [DistributorPurchaseOrderController::class, 'destroyItem'])->name('purchases.items.destroy');
+        Route::post('/purchases/{order}/documents', [DistributorPurchaseOrderController::class, 'storeDocument'])->name('purchases.documents.store');
+        Route::get('/purchases/{order}/documents/{document}/download', [DistributorPurchaseOrderController::class, 'downloadDocument'])->name('purchases.documents.download');
+        Route::get('/purchases/{order}/documents/{document}/preview', [DistributorPurchaseOrderController::class, 'previewDocument'])->name('purchases.documents.preview');
+        Route::delete('/purchases/{order}/documents/{document}', [DistributorPurchaseOrderController::class, 'destroyDocument'])->name('purchases.documents.destroy');
     });
 
     // Профиль конечной компании
@@ -272,13 +362,39 @@ Route::middleware(['auth', 'user.active'])->group(function () {
         Route::get('/catalog/product/{product}/live', ProductLiveController::class)->name('catalog.product.live');
         Route::get('/catalog/{category?}', [BuyerCatalogController::class, 'index'])->name('catalog.index')->where('category', '[a-z0-9\-]+');
     });
+
+    // Корзина, оформление и заказы конечной компании
+    Route::middleware(['role.selected', 'role:end_company,company_employee'])->prefix('buyer')->name('buyer.')->group(function () {
+        Route::get('/cart', [BuyerCartController::class, 'index'])->name('cart.index');
+        Route::get('/cart/live', [BuyerCartController::class, 'live'])->name('cart.live');
+        Route::post('/cart/items', [BuyerCartController::class, 'store'])->name('cart.items.store');
+        Route::put('/cart/items/{cartItem}', [BuyerCartController::class, 'update'])->name('cart.items.update');
+        Route::delete('/cart/items/{cartItem}', [BuyerCartController::class, 'destroy'])->name('cart.items.destroy');
+
+        Route::get('/checkout/{distributor}', [BuyerCheckoutController::class, 'create'])->name('checkout.create');
+        Route::post('/checkout/{distributor}', [BuyerCheckoutController::class, 'store'])->name('checkout.store');
+
+        Route::get('/orders', [BuyerOrderController::class, 'index'])->name('orders.index');
+        Route::get('/orders/{order}', [BuyerOrderController::class, 'show'])->name('orders.show');
+        Route::post('/orders/{order}/cancel', [BuyerOrderController::class, 'cancel'])->name('orders.cancel');
+        Route::post('/orders/{order}/approve-changes', [BuyerOrderController::class, 'approveChanges'])->name('orders.approve_changes');
+        Route::post('/orders/{order}/reject-changes', [BuyerOrderController::class, 'rejectChanges'])->name('orders.reject_changes');
+        Route::post('/orders/{order}/confirm-receipt', [BuyerOrderController::class, 'confirmReceipt'])->name('orders.confirm_receipt');
+        Route::post('/orders/{order}/reorder', [BuyerOrderController::class, 'reorder'])->name('orders.reorder');
+        Route::post('/orders/{order}/documents', [BuyerOrderController::class, 'storeDocument'])->name('orders.documents.store');
+        Route::get('/orders/{order}/documents/{document}/download', [BuyerOrderController::class, 'downloadDocument'])->name('orders.documents.download');
+        Route::get('/orders/{order}/documents/{document}/preview', [BuyerOrderController::class, 'previewDocument'])->name('orders.documents.preview');
+        Route::delete('/orders/{order}/documents/{document}', [BuyerOrderController::class, 'destroyDocument'])->name('orders.documents.destroy');
+    });
 });
 
 Route::get('/login', function () {
     return view('auth.login');
 })->name('login');
 
-Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+Route::post('/login', [LoginController::class, 'store'])
+    ->middleware('throttle:20,1')
+    ->name('login.store');
 
 Route::post('/logout', function (Request $request) {
     Auth::logout();
@@ -294,8 +410,20 @@ Route::get('/signup', function () {
 
 // Забыли пароль: форма ввода email
 Route::get('/reset-password', [ForgotPasswordController::class, 'showForgotForm'])->name('password.request');
-Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLink'])->name('password.email');
+Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLink'])
+    ->middleware('throttle:5,1')
+    ->name('password.email');
 
 // Сброс пароля по ссылке из письма (маршрут password.reset нужен для Laravel ResetPassword notification)
 Route::get('/reset-password/{token}', [ForgotPasswordController::class, 'showResetForm'])->name('password.reset');
-Route::post('/reset-password', [ForgotPasswordController::class, 'resetPassword'])->name('password.update');
+Route::post('/reset-password', [ForgotPasswordController::class, 'resetPassword'])
+    ->middleware('throttle:5,1')
+    ->name('password.update');
+
+// Регистрация внешней компании по приглашению
+Route::get('/invite/company/{token}', [CompanyInvitationController::class, 'show'])
+    ->middleware('throttle:30,1')
+    ->name('company-invitation.show');
+Route::post('/invite/company/{token}', [CompanyInvitationController::class, 'accept'])
+    ->middleware('throttle:10,1')
+    ->name('company-invitation.accept');

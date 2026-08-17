@@ -56,7 +56,16 @@ class FactoryDemoSeeder extends Seeder
             return;
         }
 
-        $regions = Region::take(5)->pluck('id');
+        $moscowId = Region::query()->where('name', 'Москва')->value('id');
+        $regions = collect([$moscowId])->filter()
+            ->concat(
+                Region::query()
+                    ->when($moscowId, fn ($q) => $q->where('id', '!=', $moscowId))
+                    ->take(4)
+                    ->pluck('id')
+            )
+            ->unique()
+            ->values();
         if ($regions->isEmpty()) {
             $this->command->warn('Нет регионов. Сначала выполните RegionSeeder.');
             return;

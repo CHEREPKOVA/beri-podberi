@@ -116,7 +116,7 @@ class ProfileController extends Controller
 
     public function updateContact(Request $request, EndCompanyContact $contact): RedirectResponse
     {
-        $this->authorizeContact($request, $contact);
+        $this->authorize('manage', $contact);
 
         $validated = $request->validate([
             'full_name' => 'required|string|max:255',
@@ -137,7 +137,7 @@ class ProfileController extends Controller
 
     public function deleteContact(Request $request, EndCompanyContact $contact): RedirectResponse
     {
-        $this->authorizeContact($request, $contact);
+        $this->authorize('manage', $contact);
 
         if (! $contact->canBeDeleted()) {
             return redirect()
@@ -191,7 +191,7 @@ class ProfileController extends Controller
 
     public function updateDeliveryAddress(Request $request, EndCompanyDeliveryAddress $address): RedirectResponse
     {
-        $this->authorizeAddress($request, $address);
+        $this->authorize('manage', $address);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -224,7 +224,7 @@ class ProfileController extends Controller
 
     public function deleteDeliveryAddress(Request $request, EndCompanyDeliveryAddress $address): RedirectResponse
     {
-        $this->authorizeAddress($request, $address);
+        $this->authorize('manage', $address);
 
         $name = $address->name;
         $profile = $address->profile;
@@ -238,7 +238,7 @@ class ProfileController extends Controller
 
     public function setDefaultDeliveryAddress(Request $request, EndCompanyDeliveryAddress $address): RedirectResponse
     {
-        $this->authorizeAddress($request, $address);
+        $this->authorize('manage', $address);
 
         $profile = $address->profile;
         $profile->deliveryAddresses()->update(['is_default' => false]);
@@ -306,7 +306,7 @@ class ProfileController extends Controller
 
     public function deleteDocument(Request $request, EndCompanyDocument $document): RedirectResponse
     {
-        $this->authorizeDocument($request, $document);
+        $this->authorize('manage', $document);
 
         $name = $document->name;
         $profile = $document->profile;
@@ -329,26 +329,5 @@ class ProfileController extends Controller
             'section' => $section,
             'summary' => mb_substr($summary, 0, 500),
         ]);
-    }
-
-    private function authorizeContact(Request $request, EndCompanyContact $contact): void
-    {
-        if ($contact->end_company_profile_id !== $request->user()->endCompanyProfile?->id) {
-            abort(403);
-        }
-    }
-
-    private function authorizeAddress(Request $request, EndCompanyDeliveryAddress $address): void
-    {
-        if ($address->end_company_profile_id !== $request->user()->endCompanyProfile?->id) {
-            abort(403);
-        }
-    }
-
-    private function authorizeDocument(Request $request, EndCompanyDocument $document): void
-    {
-        if ($document->end_company_profile_id !== $request->user()->endCompanyProfile?->id) {
-            abort(403);
-        }
     }
 }

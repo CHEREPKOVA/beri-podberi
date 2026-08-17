@@ -100,12 +100,16 @@ class User extends Authenticatable
             return $this->manufacturerProfile;
         }
 
-        return $this->manufacturerProfile()->create([
+        $profile = $this->manufacturerProfile()->create([
             'full_name' => $this->roles()
                 ->where('slug', Role::SLUG_MANUFACTURER)
                 ->first()?->pivot?->company_name ?? $this->name,
             'inn' => '',
         ]);
+
+        $this->setRelation('manufacturerProfile', $profile);
+
+        return $profile;
     }
 
     public function getOrCreateDistributorProfile(): DistributorProfile
@@ -114,12 +118,16 @@ class User extends Authenticatable
             return $this->distributorProfile;
         }
 
-        return $this->distributorProfile()->create([
+        $profile = $this->distributorProfile()->create([
             'full_name' => $this->roles()
                 ->where('slug', Role::SLUG_DISTRIBUTOR)
                 ->first()?->pivot?->company_name ?? $this->name,
             'inn' => '',
         ]);
+
+        $this->setRelation('distributorProfile', $profile);
+
+        return $profile;
     }
 
     public function getOrCreateEndCompanyProfile(): EndCompanyProfile
@@ -128,12 +136,16 @@ class User extends Authenticatable
             return $this->endCompanyProfile;
         }
 
-        return $this->endCompanyProfile()->create([
+        $profile = $this->endCompanyProfile()->create([
             'full_name' => $this->roles()
                 ->where('slug', Role::SLUG_END_COMPANY)
                 ->first()?->pivot?->company_name ?? $this->name,
             'inn' => '',
         ]);
+
+        $this->setRelation('endCompanyProfile', $profile);
+
+        return $profile;
     }
 
     public function hasRole(string $slug): bool

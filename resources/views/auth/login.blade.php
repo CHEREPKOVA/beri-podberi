@@ -1,6 +1,10 @@
 @extends('layouts.guest')
 
-@section('title', 'Вход')
+@php
+    $selectingRole = isset($roles) && $roles->count() > 1;
+@endphp
+
+@section('title', $selectingRole ? 'Выберите роль для работы' : 'Вход')
 
 @section('content')
 <div class="relative z-0 bg-white">
@@ -17,7 +21,7 @@
                 <div>
                     <div class="mb-5 sm:mb-8">
                     </div>
-                    @if($errors->has('throttle_seconds'))
+                    @if(! $selectingRole && $errors->has('throttle_seconds'))
                         @php
                             $throttleSeconds = (int) $errors->first('throttle_seconds');
                         @endphp
@@ -26,7 +30,7 @@
                             class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                         </div>
                     @endif
-                    @if($errors->has('auth') && !$errors->has('throttle_seconds'))
+                    @if(! $selectingRole && $errors->has('auth') && !$errors->has('throttle_seconds'))
                         <div class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                             {{ $errors->first('auth') }}
                         </div>
@@ -37,6 +41,32 @@
                         </div>
                     @endif
                     <div>
+                        @if($selectingRole)
+                            <h1 class="mb-5 text-xl font-semibold text-gray-900">Выберите, в каком качестве вы хотите войти</h1>
+                            <form method="POST" action="{{ route('role.store') }}">
+                                @csrf
+                                <div class="space-y-4">
+                                    @foreach($roles as $role)
+                                        @php
+                                            $companyName = $role->pivot->company_name ?? null;
+                                            $optionLabel = $role->labelWithCompany($companyName);
+                                        @endphp
+                                        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-white p-4 transition hover:border-[#c3242a]/40 hover:bg-gray-50/50 has-[:checked]:border-[#c3242a] has-[:checked]:ring-2 has-[:checked]:ring-[#c3242a]/20">
+                                            <input type="radio" name="role_id" value="{{ $role->id }}" {{ (string) old('role_id') === (string) $role->id ? 'checked' : '' }}
+                                                class="mt-1 h-4 w-4 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]" required />
+                                            <span class="text-sm font-medium text-gray-900">{{ $optionLabel }}</span>
+                                        </label>
+                                    @endforeach
+                                </div>
+                                @error('role_id')<p class="mt-2 text-sm text-red-500">{{ $message }}</p>@enderror
+                                <div class="mt-6">
+                                    <button type="submit"
+                                        class="flex w-full items-center justify-center rounded-lg bg-[#c3242a] px-4 py-3 text-sm font-medium text-white shadow transition hover:bg-[#a01e24]">
+                                        Продолжить
+                                    </button>
+                                </div>
+                            </form>
+                        @else
                         <form method="POST" action="{{ url('/login') }}">
                             @csrf
                             <div class="space-y-5">
@@ -90,6 +120,7 @@
                                 <a href="{{ url('/signup') }}" class="text-[#c3242a] hover:text-[#a01e24]">Зарегистрироваться</a>
                             </p>
                         </div>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -101,6 +132,7 @@
     </div>
 </div>
 <style>[x-cloak]{display:none!important}</style>
+@if(! $selectingRole)
 <script>
     (() => {
         const node = document.getElementById('throttle-message');
@@ -137,4 +169,5 @@
         }, 1000);
     })();
 </script>
+@endif
 @endsection

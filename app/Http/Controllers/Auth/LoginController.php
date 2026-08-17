@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
+use App\Models\User;
 use App\Services\CurrentRoleService;
+use App\Support\CompanyStatus;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -33,7 +36,8 @@ class LoginController extends Controller
 
         $maxFailedLogins = (int) SystemSetting::getActiveParsed('limits.max_failed_logins', 5);
         $throttlingEnabled = $maxFailedLogins > 0;
-        $throttleKey = Str::lower('login:'.$request->ip());
+        $email = Str::lower((string) $request->input('email'));
+        $throttleKey = Str::transliterate('login:'.$email.'|'.$request->ip());
 
         if ($throttlingEnabled && RateLimiter::tooManyAttempts($throttleKey, $maxFailedLogins)) {
             $seconds = RateLimiter::availableIn($throttleKey);
@@ -65,12 +69,13 @@ class LoginController extends Controller
         $user = $request->user();
 
         if (! $user->is_active) {
+            $inactiveMessage = $this->inactiveAccountMessage($user);
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
             throw ValidationException::withMessages([
-                'auth' => __('auth.blocked', [], 'ru'),
+                'auth' => $inactiveMessage,
             ]);
         }
 
@@ -86,5 +91,24 @@ class LoginController extends Controller
         }
 
         return redirect()->intended(route('dashboard'));
+    }
+
+    private function inactiveAccountMessage(User $user): string
+    {
+        $statuses = DB::table('role_user')
+            ->where('user_id', $user->id)
+            ->pluck('company_status')
+            ->map(fn ($status) => strtolower((string) $status))
+            ->all();
+
+        if (in_array(CompanyStatus::PENDING, $statuses, true)) {
+            return __('auth.pending_moderation', [], 'ru');
+        }
+
+        if (in_array(CompanyStatus::REJECTED, $statuses, true)) {
+            return __('auth.rejected', [], 'ru');
+        }
+
+        return __('auth.blocked', [], 'ru');
     }
 }

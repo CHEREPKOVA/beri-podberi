@@ -49,6 +49,26 @@ class OrderStatus extends Model
         return $labels !== [] ? $labels : PlatformOrder::fallbackStatusLabels();
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public static function descriptionsMap(): array
+    {
+        if (! Schema::hasTable('order_statuses')) {
+            return PlatformOrder::fallbackStatusDescriptions();
+        }
+
+        $descriptions = static::query()->active()->ordered()
+            ->whereNotNull('description')
+            ->where('description', '!=', '')
+            ->pluck('description', 'slug')
+            ->all();
+
+        return $descriptions !== []
+            ? $descriptions + PlatformOrder::fallbackStatusDescriptions()
+            : PlatformOrder::fallbackStatusDescriptions();
+    }
+
     public function isInUse(): bool
     {
         return PlatformOrder::query()->where('status', $this->slug)->exists();

@@ -237,8 +237,8 @@ class CompanyController extends Controller
             ->join('roles', 'roles.id', '=', 'role_user.role_id')
             ->where('role_user.company_name', '=', $companyName)
             ->whereIn('roles.slug', $this->corporateTypes())
-            ->orderBy('roles.sort_order')
-            ->distinct()
+            ->groupBy('roles.slug')
+            ->orderByRaw('MIN(roles.sort_order)')
             ->pluck('roles.slug')
             ->all();
 

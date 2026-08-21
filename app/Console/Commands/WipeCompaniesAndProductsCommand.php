@@ -13,7 +13,9 @@ class WipeCompaniesAndProductsCommand extends Command
 {
     protected $signature = 'data:wipe-companies {--force : Выполнить без подтверждения}';
 
-    protected $description = 'Удаляет все товары и компании (производители, дистрибьюторы, конечные компании) вместе с заказами, корзинами и пользователями этих компаний. Справочники и администраторы платформы сохраняются.';
+    protected $description = 'Удаляет все товары и компании (производители, дистрибьюторы, конечные компании) вместе с заказами, корзинами и пользователями этих компаний. Справочники и сотрудники платформы без привязки к компании сохраняются.';
+
+    private const PROTECTED_ADMIN_ID = 1;
 
     /**
      * Таблицы с данными товаров, компаний, заказов и приглашений.
@@ -92,6 +94,8 @@ class WipeCompaniesAndProductsCommand extends Command
         }
 
         $before = $this->counts();
+        $companyUserIds = $this->collectCompanyUserIds();
+        $keepUserIds = $this->platformStaffUserIdsToKeep($companyUserIds);
 
         Schema::disableForeignKeyConstraints();
 
@@ -108,7 +112,7 @@ class WipeCompaniesAndProductsCommand extends Command
                 }
             }
 
-            $deletedUsers = $this->deleteCompanyUsers();
+            $deletedUsers = $this->deleteCompanyUsers($companyUserIds, $keepUserIds);
         } finally {
             Schema::enableForeignKeyConstraints();
         }
@@ -124,14 +128,15 @@ class WipeCompaniesAndProductsCommand extends Command
         $this->line("  производителей: {$before['manufacturers']} → {$after['manufacturers']}");
         $this->line("  дистрибьюторов: {$before['distributors']} → {$after['distributors']}");
         $this->line("  конечных компаний: {$before['end_companies']} → {$after['end_companies']}");
-        $this->line("  пользователей компаний: {$deletedUsers}");
+        $this->line("  пользователей компаний: {$before['company_users']} → {$after['company_users']}");
         $this->line("  заказов: {$before['orders']} → {$after['orders']}");
+        $this->line("  учётных записей пользователей: удалено {$deletedUsers}, осталось {$after['users']}");
 
         return self::SUCCESS;
     }
 
     /**
-     * @return array{products: int, distributor_products: int, manufacturers: int, distributors: int, end_companies: int, orders: int}
+     * @return array{products: int, distributor_products: int, manufacturers: int, distributors: int, end_companies: int, orders: int, company_users: int, users: int}
      */
     private function counts(): array
     {
@@ -142,6 +147,8 @@ class WipeCompaniesAndProductsCommand extends Command
             'distributors' => $this->tableCount('distributor_profiles'),
             'end_companies' => $this->tableCount('end_company_profiles'),
             'orders' => $this->tableCount('platform_orders'),
+            'company_users' => count($this->collectCompanyUserIds()),
+            'users' => $this->tableCount('users'),
         ];
     }
 
@@ -154,40 +161,121 @@ class WipeCompaniesAndProductsCommand extends Command
         return (int) DB::table($table)->count();
     }
 
-    private function deleteCompanyUsers(): int
+    /**
+     * Пользователи компаний: профили, корпоративные роли, приглашения.
+     *
+     * @return list<int>
+     */
+    private function collectCompanyUserIds(): array
     {
-        $adminPanelRoles = config('roles.admin_panel_roles', [
-            Role::SLUG_ADMIN,
-            Role::SLUG_MANAGER,
-            Role::SLUG_ANALYST,
-        ]);
+        $ids = collect();
 
-        $keepUserIds = DB::table('role_user')
-            ->join('roles', 'roles.id', '=', 'role_user.role_id')
-            ->whereIn('roles.slug', $adminPanelRoles)
-            ->pluck('role_user.user_id')
-            ->unique()
-            ->all();
+        foreach (['manufacturer_profiles', 'distributor_profiles', 'end_company_profiles'] as $table) {
+            if (Schema::hasTable($table) && Schema::hasColumn($table, 'user_id')) {
+                $ids = $ids->merge(DB::table($table)->whereNotNull('user_id')->pluck('user_id'));
+            }
+        }
 
-        $corporateRoleIds = Role::query()
-            ->whereIn('slug', [
+        if (Schema::hasTable('role_user')) {
+            $corporateSlugs = $this->corporateRoleSlugs();
+
+            $ids = $ids->merge(
+                DB::table('role_user')
+                    ->join('roles', 'roles.id', '=', 'role_user.role_id')
+                    ->where(function ($query) use ($corporateSlugs): void {
+                        $query->whereIn('roles.slug', $corporateSlugs)
+                            ->orWhere(function ($companyQuery): void {
+                                $companyQuery->whereNotNull('role_user.company_name')
+                                    ->where('role_user.company_name', '!=', '');
+                            })
+                            ->orWhere(function ($typeQuery): void {
+                                $typeQuery->whereNotNull('role_user.company_type')
+                                    ->where('role_user.company_type', '!=', '');
+                            });
+                    })
+                    ->pluck('role_user.user_id')
+            );
+        }
+
+        if (Schema::hasTable('company_invitations')) {
+            $ids = $ids->merge(DB::table('company_invitations')->whereNotNull('user_id')->pluck('user_id'));
+        }
+
+        return $ids->map(fn ($id): int => (int) $id)->unique()->filter()->values()->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function corporateRoleSlugs(): array
+    {
+        return array_values(array_unique(array_merge(
+            Role::corporateSlugsWithEmployees(),
+            [
                 Role::SLUG_MANUFACTURER,
                 Role::SLUG_DISTRIBUTOR,
                 Role::SLUG_END_COMPANY,
                 Role::SLUG_COMPANY_EMPLOYEE,
-            ])
+            ],
+        )));
+    }
+
+    /**
+     * Сотрудники платформы без привязки к компании. Главный админ всегда сохраняется.
+     *
+     * @param  list<int>  $companyUserIds
+     * @return list<int>
+     */
+    private function platformStaffUserIdsToKeep(array $companyUserIds): array
+    {
+        $staffIds = DB::table('role_user')
+            ->join('roles', 'roles.id', '=', 'role_user.role_id')
+            ->whereIn('roles.slug', config('roles.admin_panel_roles', [
+                Role::SLUG_ADMIN,
+                Role::SLUG_MANAGER,
+                Role::SLUG_ANALYST,
+            ]))
+            ->pluck('role_user.user_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        $keepIds = array_values(array_diff($staffIds, $companyUserIds));
+        $keepIds[] = self::PROTECTED_ADMIN_ID;
+
+        return array_values(array_unique($keepIds));
+    }
+
+    /**
+     * @param  list<int>  $companyUserIds
+     * @param  list<int>  $keepUserIds
+     */
+    private function deleteCompanyUsers(array $companyUserIds, array $keepUserIds): int
+    {
+        $corporateRoleIds = Role::query()
+            ->whereIn('slug', $this->corporateRoleSlugs())
             ->pluck('id');
 
-        DB::table('role_user')->whereIn('role_id', $corporateRoleIds)->delete();
+        DB::table('role_user')
+            ->where(function ($query) use ($corporateRoleIds): void {
+                $query->whereIn('role_id', $corporateRoleIds)
+                    ->orWhere(function ($companyQuery): void {
+                        $companyQuery->whereNotNull('company_name')->where('company_name', '!=', '');
+                    })
+                    ->orWhere(function ($typeQuery): void {
+                        $typeQuery->whereNotNull('company_type')->where('company_type', '!=', '');
+                    });
+            })
+            ->delete();
 
-        if ($keepUserIds === []) {
-            $this->warn('Администраторы платформы не найдены — пользователи не удаляются.');
+        $userIds = User::query()
+            ->whereNotIn('id', $keepUserIds)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
 
-            return 0;
-        }
-
-        $userIds = User::query()->whereNotIn('id', $keepUserIds)->pluck('id');
-        if ($userIds->isEmpty()) {
+        $userIds = array_values(array_unique(array_merge($userIds, array_diff($companyUserIds, $keepUserIds))));
+        if ($userIds === []) {
             return 0;
         }
 
@@ -206,7 +294,24 @@ class WipeCompaniesAndProductsCommand extends Command
             DB::table('catalog_search_logs')->whereIn('user_id', $userIds)->delete();
         }
 
-        return User::query()->whereIn('id', $userIds)->delete();
+        if (Schema::hasTable('user_permissions')) {
+            DB::table('user_permissions')->whereIn('user_id', $userIds)->delete();
+        }
+
+        if (Schema::hasTable('user_password_histories')) {
+            DB::table('user_password_histories')->whereIn('user_id', $userIds)->delete();
+        }
+
+        if (Schema::hasTable('password_reset_tokens') && Schema::hasColumn('users', 'email')) {
+            $emails = DB::table('users')->whereIn('id', $userIds)->pluck('email')->filter()->all();
+            if ($emails !== []) {
+                DB::table('password_reset_tokens')->whereIn('email', $emails)->delete();
+            }
+        }
+
+        DB::table('role_user')->whereIn('user_id', $userIds)->delete();
+
+        return DB::table('users')->whereIn('id', $userIds)->delete();
     }
 
     private function wipeUploadedFiles(): void

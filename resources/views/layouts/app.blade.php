@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <style>html{background:#fff}html.dark{background:#111827}</style>
     <title>@yield('title', 'Личный кабинет') — {{ config('app.name') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
@@ -84,6 +85,7 @@
           }
       }"
       @cart-updated.window="if ($event.detail.count != null) setCartCount($event.detail.count); if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false)">
+    @include('partials.page-preloader')
     @php
         $authUser = auth()->user();
         $activeRoles = $authUser?->activeRoles() ?? collect();

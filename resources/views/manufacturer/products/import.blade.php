@@ -4,7 +4,7 @@
 @section('heading', 'Импорт товаров')
 
 @section('content')
-<div class="max-w-2xl mx-auto space-y-6">
+<div class="max-w-2xl mx-auto space-y-6" x-data="{ format: 'csv' }">
 
     <a href="{{ route('manufacturer.products.index') }}" class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
         <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -44,7 +44,7 @@
                 </label>
                 <div class="grid grid-cols-2 gap-4">
                     <label class="relative flex cursor-pointer rounded-lg border p-4 transition-colors border-gray-200 hover:border-[#c3242a] has-[:checked]:border-[#c3242a] has-[:checked]:bg-red-50">
-                        <input type="radio" name="format" value="csv" class="sr-only" checked />
+                        <input type="radio" name="format" value="csv" class="sr-only" x-model="format" checked />
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                                 <span class="text-xs font-bold text-green-700">CSV</span>
@@ -57,7 +57,7 @@
                     </label>
 
                     <label class="relative flex cursor-pointer rounded-lg border p-4 transition-colors border-gray-200 hover:border-[#c3242a] has-[:checked]:border-[#c3242a] has-[:checked]:bg-red-50">
-                        <input type="radio" name="format" value="yml" class="sr-only" />
+                        <input type="radio" name="format" value="yml" class="sr-only" x-model="format" />
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
                                 <span class="text-xs font-bold text-orange-700">YML</span>
@@ -106,28 +106,46 @@
     </div>
 
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Формат CSV файла</h3>
-        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Файл должен содержать заголовки столбцов в первой строке. Обязательные поля: <strong>Артикул</strong> и <strong>Наименование</strong>.
-        </p>
-        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto">
-            <table class="text-sm">
-                <thead>
-                    <tr class="text-left text-gray-500">
-                        <th class="pr-6 pb-2">Столбец</th>
-                        <th class="pr-6 pb-2">Обязательный</th>
-                        <th class="pb-2">Описание</th>
-                    </tr>
-                </thead>
-                <tbody class="text-gray-700 dark:text-gray-300">
-                    <tr><td class="pr-6 py-1">Артикул / SKU</td><td class="pr-6">Да</td><td>Уникальный идентификатор товара</td></tr>
-                    <tr><td class="pr-6 py-1">Наименование / Name</td><td class="pr-6">Да</td><td>Название товара</td></tr>
-                    <tr><td class="pr-6 py-1">Категория / Category</td><td class="pr-6">Нет</td><td>Название категории</td></tr>
-                    <tr><td class="pr-6 py-1">Цена / Price</td><td class="pr-6">Нет</td><td>Базовая цена</td></tr>
-                    <tr><td class="pr-6 py-1">Остаток / Stock</td><td class="pr-6">Нет</td><td>Количество на основном складе</td></tr>
-                    <tr><td class="pr-6 py-1">Описание / Description</td><td class="pr-6">Нет</td><td>Описание товара</td></tr>
-                </tbody>
-            </table>
+        <div x-show="format === 'csv'">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Формат CSV файла</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Файл должен содержать заголовки столбцов в первой строке. Обязательные поля: <strong>Артикул</strong> и <strong>Наименование</strong>.
+            </p>
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto">
+                <table class="text-sm">
+                    <thead>
+                        <tr class="text-left text-gray-500">
+                            <th class="pr-6 pb-2">Столбец</th>
+                            <th class="pr-6 pb-2">Обязательный</th>
+                            <th class="pb-2">Описание</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-700 dark:text-gray-300">
+                        <tr><td class="pr-6 py-1">Артикул / SKU</td><td class="pr-6">Да</td><td>Уникальный идентификатор товара</td></tr>
+                        <tr><td class="pr-6 py-1">Наименование / Name</td><td class="pr-6">Да</td><td>Название товара</td></tr>
+                        <tr><td class="pr-6 py-1">Категория / Category</td><td class="pr-6">Нет</td><td>Название категории</td></tr>
+                        <tr><td class="pr-6 py-1">Цена / Price</td><td class="pr-6">Нет</td><td>Базовая цена</td></tr>
+                        <tr><td class="pr-6 py-1">Остаток / Stock</td><td class="pr-6">Нет</td><td>Количество на основном складе</td></tr>
+                        <tr><td class="pr-6 py-1">Описание / Description</td><td class="pr-6">Нет</td><td>Описание товара</td></tr>
+                        <tr><td class="pr-6 py-1">main_image_url</td><td class="pr-6">Нет</td><td>URL основной картинки (http/https)</td></tr>
+                        <tr><td class="pr-6 py-1">gallery_image_urls</td><td class="pr-6">Нет</td><td>URL дополнительных картинок через `|` (пример: url1|url2|url3)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div x-show="format === 'yml'">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Формат YML файла</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Файл должен быть в формате Яндекс.Маркет: с корневым элементом <strong>yml_catalog</strong>, секциями <strong>categories</strong> и <strong>offers</strong>.
+                Для импорта обязательны данные оффера: <strong>vendorCode</strong> или <strong>sku</strong> для артикула и <strong>name</strong> для названия.
+            </p>
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto text-sm text-gray-700 dark:text-gray-300 space-y-2">
+                <p><strong>Обязательные поля оффера:</strong> артикул и наименование.</p>
+                <p><strong>Поддерживаются:</strong> категория, цена, старая цена, остаток, описание, изображения и другие стандартные поля YML.</p>
+                <p><strong>Важно:</strong> каждый товар должен быть оформлен как отдельный элемент <code>offer</code>.</p>
+                <p><strong>Картинки:</strong> берём все теги <code>picture</code> внутри <code>offer</code>; первый становится основным, остальные — дополнительными.</p>
+            </div>
         </div>
     </div>
 </div>

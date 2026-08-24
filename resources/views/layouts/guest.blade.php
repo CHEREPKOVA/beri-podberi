@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <style>html{background:#fff}</style>
     <title>@yield('title', 'Вход') — {{ config('app.name') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
@@ -30,6 +31,7 @@
     @stack('styles')
 </head>
 <body class="h-full bg-gray-50">
+    @include('partials.page-preloader')
     @yield('content')
     @stack('scripts')
 </body>

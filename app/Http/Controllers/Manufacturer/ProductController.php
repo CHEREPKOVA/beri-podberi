@@ -24,6 +24,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -966,6 +967,8 @@ class ProductController extends Controller
             'base_price' => ['цена', 'price', 'base_price', 'базовая цена', 'retail_price'],
             'stock' => ['остаток', 'stock', 'quantity', 'количество'],
             'description' => ['описание', 'description'],
+            'main_image_url' => ['main_image_url', 'main_image', 'primary_image_url', 'primary_image'],
+            'gallery_image_urls' => ['gallery_image_urls', 'gallery_images', 'additional_image_urls', 'additional_images', 'gallery'],
         ]);
 
         if (! isset($headerMap['sku']) || ! isset($headerMap['name'])) {
@@ -1053,6 +1056,11 @@ class ProductController extends Controller
                     $stats['errors'][] = "Строка {$row} ({$sku}): остаток не загружен — нет активного склада.";
                 }
             }
+
+            $imageUrls = $this->extractImageUrlsFromCsvRow($data, $headerMap);
+            if ($imageUrls !== null) {
+                $this->syncProductImagesFromUrls($existing, $imageUrls, $stats, $sku, $row);
+            }
         }
 
         fclose($handle);
@@ -1088,7 +1096,9 @@ class ProductController extends Controller
             }
         }
 
+        $offerIndex = 0;
         foreach ($shop->offers->offer as $offer) {
+            $offerIndex++;
             $sku = trim((string) ($offer['id'] ?? $offer->vendorCode ?? ''));
 
             if ($sku === '') {
@@ -1163,9 +1173,220 @@ class ProductController extends Controller
                     );
                 }
             }
+
+            $imageUrls = $this->extractImageUrlsFromYmlOffer($offer);
+            if ($imageUrls !== []) {
+                $this->syncProductImagesFromUrls($product, $imageUrls, $stats, $sku, $offerIndex);
+            }
         }
 
         return $stats;
+    }
+
+    /**
+     * @param  array<string, int>  $headerMap
+     * @return array<int, string>|null null => в строке вообще не задано ничего про картинки
+     */
+    private function extractImageUrlsFromCsvRow(array $data, array $headerMap): ?array
+    {
+        $hasAnyImageColumn = isset($headerMap['main_image_url']) || isset($headerMap['gallery_image_urls']);
+        if (! $hasAnyImageColumn) {
+            return null;
+        }
+
+        $main = '';
+        if (isset($headerMap['main_image_url'])) {
+            $main = trim((string) ($data[$headerMap['main_image_url']] ?? ''));
+        }
+
+        $galleryRaw = '';
+        if (isset($headerMap['gallery_image_urls'])) {
+            $galleryRaw = trim((string) ($data[$headerMap['gallery_image_urls']] ?? ''));
+        }
+
+        if ($main === '' && $galleryRaw === '') {
+            return null;
+        }
+
+        $gallery = $galleryRaw !== '' ? $this->splitImageUrls($galleryRaw) : [];
+        $urls = [];
+
+        if ($main !== '') {
+            $urls[] = $main;
+        }
+        $urls = array_merge($urls, $gallery);
+
+        // убрать дубли и пустые элементы, сохранить порядок
+        $urls = array_values(array_unique(array_filter($urls, static fn ($u) => $u !== ''), SORT_REGULAR));
+
+        return $urls;
+    }
+
+    /**
+     * Разделители: `|` (предпочтительно), также допускаем перевод строк и `,`.
+     *
+     * @return array<int, string>
+     */
+    private function splitImageUrls(string $raw): array
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return [];
+        }
+
+        $parts = preg_split('/[|\r\n]+/u', $raw) ?: [];
+
+        // если разделитель `|` не найден, попробуем запятую (наиболее частый вариант в excel)
+        if (count($parts) <= 1 && str_contains($raw, ',')) {
+            $parts = preg_split('/\s*,\s*/u', $raw) ?: [];
+        }
+
+        $parts = array_values(array_filter(array_map(static fn ($p) => trim((string) $p), $parts), static fn ($p) => $p !== ''));
+
+        return $parts;
+    }
+
+    /**
+     * @return array<int, string> 1-й picture => основная картинка
+     */
+    private function extractImageUrlsFromYmlOffer(\SimpleXMLElement $offer): array
+    {
+        if (! isset($offer->picture)) {
+            return [];
+        }
+
+        $urls = [];
+        foreach ($offer->picture as $pic) {
+            $url = trim((string) $pic);
+            if ($url !== '') {
+                $urls[] = $url;
+            }
+        }
+
+        return array_values(array_unique($urls, SORT_REGULAR));
+    }
+
+    /**
+     * @param  array<string, mixed>  $stats
+     */
+    private function syncProductImagesFromUrls(Product $product, array $imageUrls, array &$stats, string $sku, int $sourceIndex): void
+    {
+        if ($imageUrls === []) {
+            return;
+        }
+
+        $downloaded = [];
+
+        foreach ($imageUrls as $url) {
+            try {
+                $filePath = $this->downloadImageUrlToPublic($url);
+                $downloaded[] = [
+                    'path' => $filePath,
+                    'original_name' => $url,
+                ];
+            } catch (\Throwable $e) {
+                $stats['errors'][] = "Изображение не скачано (sku={$sku}, idx={$sourceIndex}): ".$e->getMessage();
+            }
+        }
+
+        // Если ни одной картинки скачать не удалось — оставляем существующие как есть.
+        if ($downloaded === []) {
+            return;
+        }
+
+        // Синхронимся: старые изображения заменяем на новые.
+        $product->loadMissing('images');
+
+        foreach ($product->images as $img) {
+            Storage::disk('public')->delete($img->path);
+        }
+
+        $product->images()->delete();
+
+        foreach ($downloaded as $i => $item) {
+            ProductImage::create([
+                'product_id' => $product->id,
+                'path' => $item['path'],
+                'original_name' => $item['original_name'],
+                'is_primary' => $i === 0,
+                'sort_order' => $i,
+            ]);
+        }
+    }
+
+    /**
+     * @return string path относительно disk public (например `products/images/uuid.jpg`)
+     */
+    private function downloadImageUrlToPublic(string $url): string
+    {
+        $url = trim($url);
+        $parts = parse_url($url);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            throw new \RuntimeException('Разрешены только http/https ссылки: '.$url);
+        }
+
+        $maxBytes = 8 * 1024 * 1024; // 8MB на картинку
+        $timeoutSeconds = 15;
+
+        $response = Http::timeout($timeoutSeconds)
+            ->withHeaders([
+                'User-Agent' => 'beri-podberi-importer/1.0',
+            ])
+            ->get($url);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('HTTP '.$response->status().' при загрузке');
+        }
+
+        $body = $response->body();
+        if (! is_string($body) || $body === '') {
+            throw new \RuntimeException('Пустой ответ при загрузке');
+        }
+
+        if (strlen($body) > $maxBytes) {
+            throw new \RuntimeException('Слишком большой размер (max '.($maxBytes / 1024 / 1024).'MB)');
+        }
+
+        $contentType = (string) $response->header('Content-Type', '');
+        $contentType = strtolower(trim(explode(';', $contentType)[0] ?? ''));
+
+        $mimeToExt = [
+            'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'image/gif' => 'gif',
+        ];
+
+        $ext = $mimeToExt[$contentType] ?? '';
+
+        if ($ext === '') {
+            $urlPath = (string) ($parts['path'] ?? '');
+            $fromUrlExt = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
+            $ext = $mimeToExt['image/'.$fromUrlExt] ?? '';
+        }
+
+        if ($ext === '') {
+            throw new \RuntimeException('Не удалось определить расширение/тип изображения (Content-Type: '.$contentType.')');
+        }
+
+        // Страховка: если Content-Type явно не image/*, но расширение похоже на изображение — всё равно разрешим.
+        if ($contentType !== '' && ! str_starts_with($contentType, 'image/')) {
+            $allowedExt = ['jpg', 'png', 'webp', 'gif'];
+            if (! in_array(strtolower($ext), $allowedExt, true)) {
+                throw new \RuntimeException('Неверный Content-Type: '.$contentType);
+            }
+        }
+
+        $filename = Str::uuid()->toString().'.'.$ext;
+        $dir = 'products/images';
+
+        // сохраняем байты "как есть" — распознавание делаем по Content-Type/extension
+        Storage::disk('public')->put($dir.'/'.$filename, $body);
+
+        return $dir.'/'.$filename;
     }
 
     private function extractYmlOfferName(\SimpleXMLElement $offer): string

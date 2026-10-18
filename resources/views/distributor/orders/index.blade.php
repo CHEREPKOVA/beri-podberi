@@ -185,7 +185,7 @@
                                     @endif
                                 </td>
                                 <td class="py-3 px-3 text-gray-600 dark:text-gray-300">
-                                    {{ $order->responsibleContact?->full_name ?? '—' }}
+                                    {{ $order->responsibleContact?->displayName() ?? '—' }}
                                 </td>
                                 <td class="py-3 px-5">
                                     <div class="flex items-center gap-1 min-h-[2rem] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">

@@ -92,6 +92,11 @@ class EndCompanyProfile extends Model
         return $this->hasMany(EndCompanyDeliveryAddress::class);
     }
 
+    public function employeeRoles(): HasMany
+    {
+        return $this->hasMany(EndCompanyEmployeeRole::class)->orderBy('sort_order')->orderBy('name');
+    }
+
     public function profileChanges(): HasMany
     {
         return $this->hasMany(EndCompanyProfileChange::class)->orderByDesc('created_at');

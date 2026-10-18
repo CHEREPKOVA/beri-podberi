@@ -9,9 +9,9 @@ class DistributorProductPolicy
 {
     public function manage(User $user, DistributorProduct $product): bool
     {
-        $profile = $user->getOrCreateDistributorProfile();
+        $profile = $user->currentDistributorProfile();
 
-        return (int) $product->distributor_profile_id === (int) $profile->id;
+        return $profile !== null && (int) $product->distributor_profile_id === (int) $profile->id;
     }
 
     public function view(User $user, DistributorProduct $product): bool

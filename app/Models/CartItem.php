@@ -10,6 +10,8 @@ class CartItem extends Model
     protected $fillable = [
         'cart_id',
         'distributor_product_id',
+        'region_id',
+        'distributor_warehouse_id',
         'quantity',
         'unit_price',
         'list_unit_price',
@@ -32,6 +34,16 @@ class CartItem extends Model
     public function distributorProduct(): BelongsTo
     {
         return $this->belongsTo(DistributorProduct::class);
+    }
+
+    public function region(): BelongsTo
+    {
+        return $this->belongsTo(Region::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(DistributorWarehouse::class, 'distributor_warehouse_id');
     }
 
     public function lineTotal(): float

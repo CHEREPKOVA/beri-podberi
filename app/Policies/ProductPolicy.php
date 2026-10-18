@@ -9,7 +9,7 @@ class ProductPolicy
 {
     public function manage(User $user, Product $product): bool
     {
-        return (int) $product->manufacturer_profile_id === (int) $user->manufacturerProfile?->id;
+        return (int) $product->manufacturer_profile_id === (int) $user->currentManufacturerProfile()?->id;
     }
 
     public function view(User $user, Product $product): bool

@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Distributor\StorePurchaseCartItemRequest;
 use App\Http\Requests\Distributor\UpdatePurchaseCartItemRequest;
 use App\Models\DistributorPurchaseCartItem;
-use App\Models\Role;
 use App\Services\Cart\DistributorPurchaseCartService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -73,6 +72,6 @@ class PurchaseCartController extends Controller
 
     private function ensureAccess(Request $request): void
     {
-        abort_unless($request->user()?->getCurrentRole()?->slug === Role::SLUG_DISTRIBUTOR, 403);
+        abort_unless($request->user()?->isDistributorStaff(), 403);
     }
 }

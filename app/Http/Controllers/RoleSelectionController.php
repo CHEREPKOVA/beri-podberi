@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\CabinetRoleNavigation;
 use App\Services\CurrentRoleService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -51,9 +53,9 @@ class RoleSelectionController extends Controller
     }
 
     /**
-     * Смена текущей роли из раздела «Профиль».
+     * Смена роли из шапки кабинета. Пользователь остаётся в том же разделе новой роли.
      */
-    public function switch(Request $request): RedirectResponse
+    public function switch(Request $request): JsonResponse|RedirectResponse
     {
         $request->validate([
             'role_id' => 'required|integer|exists:roles,id',
@@ -66,9 +68,27 @@ class RoleSelectionController extends Controller
 
         $ok = app(CurrentRoleService::class)->set($user, (int) $request->role_id);
         if (! $ok) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Выберите одну из ваших ролей.',
+                    'errors' => ['role_id' => ['Выберите одну из ваших ролей.']],
+                ], 422);
+            }
+
             return back()->withErrors(['role_id' => 'Выберите одну из ваших ролей.']);
         }
 
-        return redirect()->route('dashboard')->with('status', 'Роль успешно изменена.');
+        $from = $request->headers->get('X-Cabinet-From') ?: $request->headers->get('referer');
+        $url = app(CabinetRoleNavigation::class)->urlAfterSwitch($user, $from, $request->getHost());
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'url' => $url,
+                'message' => 'Роль успешно изменена.',
+            ]);
+        }
+
+        return redirect()->to($url)->with('status', 'Роль успешно изменена.');
     }
 }

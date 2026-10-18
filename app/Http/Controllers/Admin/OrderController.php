@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\LoadsOrderDetailRelations;
+use App\Http\Controllers\Concerns\ManagesOrderCorrespondence;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\PauseOrderRequest;
 use App\Http\Requests\Admin\StoreOrderServiceCommentRequest;
 use App\Http\Requests\Admin\UpdateOrderStatusRequest;
+use App\Http\Requests\StoreOrderMessageRequest;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderDocument;
+use App\Models\PlatformOrderMessage;
+use App\Models\PlatformOrderMessageAttachment;
 use App\Services\Order\AdminOrderMonitoringService;
 use App\Services\Order\OrderDocumentService;
 use App\Services\Order\OrderStatusWorkflowService;
@@ -21,6 +25,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class OrderController extends Controller
 {
     use LoadsOrderDetailRelations;
+    use ManagesOrderCorrespondence;
 
     public function __construct(
         private AdminOrderMonitoringService $monitoring,
@@ -74,6 +79,14 @@ class OrderController extends Controller
             null,
             null,
             'admin.orders.documents.preview',
+        ), $this->correspondenceUiContext(
+            request(),
+            $order,
+            PlatformOrderMessage::ROLE_ADMIN,
+            'admin.orders.messages.store',
+            'admin.orders.messages.attachments.download',
+            'admin.orders.messages.attachments.preview',
+            'admin.orders.messages.destroy',
         )));
     }
 
@@ -93,6 +106,47 @@ class OrderController extends Controller
         abort_unless((int) $document->platform_order_id === (int) $order->id, 404);
 
         return $this->documents->preview($document);
+    }
+
+    public function storeMessage(StoreOrderMessageRequest $request, PlatformOrder $order): RedirectResponse
+    {
+        if (! $request->user()?->hasPermission('orders.manage')) {
+            abort(403);
+        }
+
+        return $this->storeCorrespondenceMessage(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_ADMIN,
+            'admin.orders.show',
+        );
+    }
+
+    public function downloadMessageAttachment(
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        return $this->downloadCorrespondenceAttachment($order, $attachment);
+    }
+
+    public function previewMessageAttachment(
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        return $this->previewCorrespondenceAttachment($order, $attachment);
+    }
+
+    public function destroyMessage(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessage $message,
+    ): RedirectResponse {
+        return $this->destroyCorrespondenceMessage(
+            $request,
+            $order,
+            $message,
+            'admin.orders.show',
+        );
     }
 
     public function updateStatus(UpdateOrderStatusRequest $request, PlatformOrder $order): RedirectResponse

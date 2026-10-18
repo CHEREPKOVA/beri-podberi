@@ -15,9 +15,13 @@ class ManufacturerProfile extends Model
     use HasFactory;
 
     public const LEGAL_FORM_OOO = 'ooo';
+
     public const LEGAL_FORM_IP = 'ip';
+
     public const LEGAL_FORM_PAO = 'pao';
+
     public const LEGAL_FORM_AO = 'ao';
+
     public const LEGAL_FORM_GOS = 'gos';
 
     protected $fillable = [
@@ -95,6 +99,11 @@ class ManufacturerProfile extends Model
         return $this->hasMany(Warehouse::class);
     }
 
+    public function employeeRoles(): HasMany
+    {
+        return $this->hasMany(ManufacturerEmployeeRole::class)->orderBy('sort_order')->orderBy('name');
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(ManufacturerDocument::class);
@@ -103,6 +112,16 @@ class ManufacturerProfile extends Model
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    public function discountSets(): HasMany
+    {
+        return $this->hasMany(ManufacturerDiscountSet::class);
+    }
+
+    public function promoCodes(): HasMany
+    {
+        return $this->hasMany(ManufacturerPromoCode::class);
     }
 
     public function distributorPartnerships(): HasMany
@@ -143,6 +162,7 @@ class ManufacturerProfile extends Model
         if ($regionId === null) {
             return $query;
         }
+
         return $query->whereHas('regions', fn ($q) => $q->where('regions.id', $regionId));
     }
 
@@ -158,9 +178,10 @@ class ManufacturerProfile extends Model
 
     public function getLogoUrlAttribute(): ?string
     {
-        if (!$this->logo) {
+        if (! $this->logo) {
             return null;
         }
-        return asset('storage/' . $this->logo);
+
+        return asset('storage/'.$this->logo);
     }
 }

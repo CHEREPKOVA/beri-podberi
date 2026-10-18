@@ -37,6 +37,9 @@
                 · позиций: <span class="font-semibold">{{ $totals['items_count'] }}</span>
                 · сумма: <span class="font-semibold text-[#c3242a]">{{ number_format($totals['total_amount'], 2, ',', ' ') }} ₽</span>
             </p>
+            @if(($totals['discount_amount'] ?? 0) > 0)
+                <p class="mt-1 text-xs text-green-700">Экономия по скидкам: −{{ number_format($totals['discount_amount'], 2, ',', ' ') }} ₽</p>
+            @endif
             <p class="mt-1 text-xs text-gray-500">Каждый производитель оформляется отдельным заказом.</p>
         </div>
 
@@ -50,6 +53,9 @@
                         <div>
                             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ $group['manufacturer_name'] }}</h2>
                             <p class="text-sm text-gray-500">{{ $group['items_count'] }} поз. · {{ number_format($group['subtotal'], 2, ',', ' ') }} ₽</p>
+                            @if(($group['discount_amount'] ?? 0) > 0)
+                                <p class="text-xs text-green-700">Скидка: −{{ number_format($group['discount_amount'], 2, ',', ' ') }} ₽</p>
+                            @endif
                         </div>
                     </div>
                     @if(!$group['has_blocking_warnings'])
@@ -82,7 +88,17 @@
                                             <p class="text-xs mt-1 {{ $warning['blocking'] ? 'text-[#c3242a]' : 'text-amber-600' }}">{{ $warning['message'] }}</p>
                                         @endforeach
                                     </td>
-                                    <td class="py-3 px-3 whitespace-nowrap">{{ number_format($item['unit_price'], 2, ',', ' ') }} ₽</td>
+                                    <td class="py-3 px-3 whitespace-nowrap">
+                                        @if(!empty($item['has_discount']))
+                                            <p class="text-xs text-gray-400 line-through">{{ number_format($item['list_unit_price'], 2, ',', ' ') }} ₽</p>
+                                            <p>{{ number_format($item['unit_price'], 2, ',', ' ') }} ₽</p>
+                                            @if(!empty($item['discount_label']))
+                                                <p class="text-xs text-green-700">{{ $item['discount_label'] }}</p>
+                                            @endif
+                                        @else
+                                            {{ number_format($item['unit_price'], 2, ',', ' ') }} ₽
+                                        @endif
+                                    </td>
                                     <td class="py-3 px-3">
                                         <form method="POST" action="{{ route('distributor.purchases.cart.items.update', $item['cart_item_id']) }}" class="flex items-center gap-2">
                                             @csrf

@@ -8,10 +8,12 @@ use App\Models\DistributorProduct;
 use App\Models\DistributorProductPriceHistory;
 use App\Models\DistributorProfile;
 use App\Models\EndCompanyProfile;
+use App\Models\PlatformOrder;
 use App\Models\User;
 use App\Services\Catalog\CatalogRegionService;
 use App\Services\Catalog\EndCompanyCatalogSettings;
 use App\Services\Catalog\EndCompanyDistributorOfferService;
+use App\Services\Discount\DistributorDiscountEngine;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -31,6 +33,8 @@ class CartService
 
     public function __construct(
         private readonly CatalogRegionService $regionService,
+        private readonly CartSplitService $splitService,
+        private readonly DistributorDiscountEngine $discountEngine,
     ) {}
 
     public function getOrCreateCart(EndCompanyProfile $profile): Cart
@@ -42,16 +46,15 @@ class CartService
 
     public function resolveProfile(User $user): EndCompanyProfile
     {
-        $profile = $user->endCompanyProfile ?? $user->getOrCreateEndCompanyProfile();
-
-        return $profile;
+        return $user->currentEndCompanyProfile() ?? $user->getOrCreateEndCompanyProfile();
     }
 
     /**
      * @return array{
      *     cart: Cart,
      *     groups: Collection<int, array<string, mixed>>,
-     *     totals: array{groups_count: int, items_count: int, total_amount: float},
+     *     blocked_items: Collection<int, array<string, mixed>>,
+     *     totals: array{groups_count: int, items_count: int, blocked_items_count: int, total_amount: float, discount_amount: float},
      *     has_blocking_warnings: bool
      * }
      */
@@ -64,6 +67,8 @@ class CartService
 
         $items = $cart->items()
             ->with([
+                'region',
+                'warehouse',
                 'distributorProduct.profile',
                 'distributorProduct.manufacturerProfile',
                 'distributorProduct.sourceProduct.manufacturerProfile',
@@ -74,45 +79,32 @@ class CartService
             ->orderBy('id')
             ->get();
 
+        $items->each(fn (CartItem $item) => $this->backfillFulfillmentSnapshot($item, $offerService, $regionId));
+
         $enriched = $items->map(fn (CartItem $item): array => $this->enrichItem($item, $offerService, $regionId));
-
-        $groups = $enriched
-            ->groupBy(fn (array $row): int => (int) $row['distributor_profile_id'])
-            ->map(function (Collection $groupItems, int $distributorProfileId): array {
-                $first = $groupItems->first();
-
-                return [
-                    'distributor_profile_id' => $distributorProfileId,
-                    'distributor_name' => $first['distributor_name'] ?? 'Поставщик',
-                    'items' => $groupItems->values(),
-                    'items_count' => $groupItems->count(),
-                    'subtotal' => round($groupItems->sum(fn (array $row): float => (float) $row['line_total']), 2),
-                    'discount_amount' => round($groupItems->sum(fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
-                    'has_blocking_warnings' => $groupItems->contains(
-                        fn (array $row): bool => collect($row['warnings'])->contains(fn (array $w): bool => $w['blocking'])
-                    ),
-                ];
-            })
-            ->values();
-
-        $hasBlocking = $groups->contains(fn (array $group): bool => $group['has_blocking_warnings']);
+        $enriched = $this->applyDistributorDiscounts($profile, $enriched);
+        $split = $this->splitService->build($enriched);
+        $groups = $split['groups'];
+        $blockedItems = $split['blocked_items'];
 
         return [
             'cart' => $cart,
             'groups' => $groups,
+            'blocked_items' => $blockedItems,
             'totals' => [
                 'groups_count' => $groups->count(),
                 'items_count' => $enriched->count(),
+                'blocked_items_count' => $blockedItems->count(),
                 'total_amount' => round($enriched->sum(fn (array $row): float => (float) $row['line_total']), 2),
                 'discount_amount' => round($enriched->sum(fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
             ],
-            'has_blocking_warnings' => $hasBlocking,
+            'has_blocking_warnings' => $blockedItems->isNotEmpty(),
         ];
     }
 
     public function itemsCount(User $user): int
     {
-        $profile = $user->endCompanyProfile;
+        $profile = $user->currentEndCompanyProfile();
         if ($profile === null) {
             return 0;
         }
@@ -147,9 +139,7 @@ class CartService
 
         $listPrice = $this->resolveListUnitPrice($offer, $offerService);
 
-        $existing = $cart->items()
-            ->where('distributor_product_id', $offer->id)
-            ->first();
+        $existing = $this->findExistingItem($cart, $offer->id, $regionId);
 
         $resultingQuantity = $existing
             ? ((int) $existing->quantity + $quantity)
@@ -157,17 +147,27 @@ class CartService
 
         $this->assertQuantityConstraints($offer, $resultingQuantity);
 
+        $warehouseId = $offerService->resolveFulfillmentWarehouseId(
+            $offer,
+            $resultingQuantity,
+            $existing?->distributor_warehouse_id !== null ? (int) $existing->distributor_warehouse_id : null,
+        );
+
         if ($existing) {
             $existing->quantity = $resultingQuantity;
             $existing->unit_price = $price;
             $existing->list_unit_price = $listPrice;
+            $existing->region_id = $regionId;
+            $existing->distributor_warehouse_id = $warehouseId;
             $existing->save();
 
-            return $existing->fresh('distributorProduct');
+            return $existing->fresh(['distributorProduct', 'region', 'warehouse']);
         }
 
         return $cart->items()->create([
             'distributor_product_id' => $offer->id,
+            'region_id' => $regionId,
+            'distributor_warehouse_id' => $warehouseId,
             'quantity' => $quantity,
             'unit_price' => $price,
             'list_unit_price' => $listPrice,
@@ -184,7 +184,7 @@ class CartService
      *     distributor_name: ?string
      * }
      */
-    public function repeatFromOrder(User $user, \App\Models\PlatformOrder $order): array
+    public function repeatFromOrder(User $user, PlatformOrder $order): array
     {
         $order->loadMissing(['items', 'distributorProfile']);
 
@@ -234,21 +234,31 @@ class CartService
             ]);
         }
 
-        $regionId = $this->regionService->resolveRegionId($user);
+        $catalogRegionId = $this->regionService->resolveRegionId($user);
+        $regionId = $item->region_id !== null ? (int) $item->region_id : $catalogRegionId;
         $offerService = new EndCompanyDistributorOfferService($regionId);
         $offer = $this->loadOffer($item->distributor_product_id);
         $this->assertQuantityConstraints($offer, $quantity);
         $price = $offerService->effectiveRetailPrice($offer);
         $listPrice = $this->resolveListUnitPrice($offer, $offerService);
+        $warehouseId = $offerService->resolveFulfillmentWarehouseId(
+            $offer,
+            $quantity,
+            $item->distributor_warehouse_id !== null ? (int) $item->distributor_warehouse_id : null,
+        );
 
         $item->quantity = $quantity;
         if ($price !== null && $price > 0) {
             $item->unit_price = $price;
         }
         $item->list_unit_price = $listPrice;
+        if ($item->region_id === null && $regionId !== null) {
+            $item->region_id = $regionId;
+        }
+        $item->distributor_warehouse_id = $warehouseId;
         $item->save();
 
-        return $item->fresh('distributorProduct');
+        return $item->fresh(['distributorProduct', 'region', 'warehouse']);
     }
 
     public function remove(User $user, CartItem $item): void
@@ -260,7 +270,8 @@ class CartService
     /**
      * @return array{
      *     groups: Collection<int, array<string, mixed>>,
-     *     totals: array{groups_count: int, items_count: int, total_amount: float, discount_amount: float},
+     *     blocked_items: Collection<int, array<string, mixed>>,
+     *     totals: array{groups_count: int, items_count: int, blocked_items_count: int, total_amount: float, discount_amount: float},
      *     has_blocking_warnings: bool,
      *     refreshed_at: string
      * }
@@ -271,10 +282,32 @@ class CartService
 
         return [
             'groups' => $view['groups'],
+            'blocked_items' => $view['blocked_items'],
             'totals' => $view['totals'],
             'has_blocking_warnings' => $view['has_blocking_warnings'],
             'refreshed_at' => now()->format('d.m.Y H:i:s'),
         ];
+    }
+
+    /**
+     * @param  list<int|string>  $cartItemIds
+     */
+    public function clearItems(User $user, array $cartItemIds): void
+    {
+        $ids = collect($cartItemIds)
+            ->filter()
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        $profile = $this->resolveProfile($user);
+        $cart = $this->getOrCreateCart($profile);
+
+        $cart->items()->whereIn('id', $ids)->delete();
     }
 
     public function clearGroup(User $user, int $distributorProfileId): void
@@ -288,6 +321,75 @@ class CartService
     }
 
     /**
+     * @param  Collection<int, array<string, mixed>>  $enriched
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function applyDistributorDiscounts(EndCompanyProfile $company, Collection $enriched): Collection
+    {
+        $applied = collect();
+
+        foreach ($enriched->groupBy(fn (array $row): int => (int) ($row['distributor_profile_id'] ?? 0)) as $distributorId => $rows) {
+            if ((int) $distributorId <= 0) {
+                $applied = $applied->concat($rows);
+
+                continue;
+            }
+
+            $payload = $rows->values()->map(fn (array $row): array => [
+                'distributor_product_id' => (int) ($row['distributor_product_id'] ?? 0),
+                'category_id' => isset($row['product_category_id']) ? (int) $row['product_category_id'] : null,
+                'brand' => $row['brand'] ?? null,
+                'quantity' => (int) $row['quantity'],
+                'list_unit_price' => (float) $row['unit_price'],
+                'warehouse_id' => $row['distributor_warehouse_id'] ?? null,
+                'status' => DistributorProduct::STATUS_ACTIVE,
+            ])->all();
+
+            $quoted = $this->discountEngine->quote(
+                (int) $distributorId,
+                $company,
+                $payload,
+                isset($rows->first()['region_id']) ? (int) $rows->first()['region_id'] : null,
+            );
+
+            $applied = $applied->concat($rows->values()->map(function (array $row, int $index) use ($quoted): array {
+                $quote = $quoted['items'][$index] ?? null;
+                if ($quote === null || empty($quote['has_discount'])) {
+                    return $row;
+                }
+
+                $unit = (float) $quote['unit_price'];
+                $previous = (float) $row['unit_price'];
+                if ($unit >= $previous - 0.009) {
+                    return $row;
+                }
+
+                $list = (float) ($row['list_unit_price'] ?? $previous);
+                if ($list <= $unit + 0.009) {
+                    $list = $previous;
+                }
+                $qty = (int) $row['quantity'];
+
+                $row['unit_price'] = $unit;
+                $row['list_unit_price'] = $list;
+                $row['has_discount'] = true;
+                $row['discount_amount'] = round(($list - $unit) * $qty, 2);
+                $row['line_total'] = round($unit * $qty, 2);
+                $row['unit_price_formatted'] = number_format($unit, 2, ',', ' ').' ₽';
+                $row['list_unit_price_formatted'] = number_format($list, 2, ',', ' ').' ₽';
+                $row['line_total_formatted'] = number_format($row['line_total'], 2, ',', ' ').' ₽';
+                $row['discount_set_id'] = $quote['discount_set_id'] ?? null;
+                $row['distributor_discount_set_id'] = $quote['discount_set_id'] ?? null;
+                $row['discount_label'] = $quote['discount_label'] ?? null;
+
+                return $row;
+            }));
+        }
+
+        return $applied->values();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function enrichItem(
@@ -296,23 +398,41 @@ class CartService
         ?int $regionId,
     ): array {
         $offer = $item->distributorProduct;
-        $warnings = $this->buildWarnings($item, $offer, $offerService, $regionId);
-        $currentPrice = $offer ? $offerService->effectiveRetailPrice($offer) : null;
+        $itemRegionId = $item->region_id !== null ? (int) $item->region_id : $regionId;
+        $itemOfferService = $itemRegionId === $regionId
+            ? $offerService
+            : new EndCompanyDistributorOfferService($itemRegionId);
+        $warnings = $this->buildWarnings($item, $offer, $itemOfferService, $itemRegionId);
+        $currentPrice = $offer ? $itemOfferService->effectiveRetailPrice($offer) : null;
         $displayPrice = $currentPrice ?? (float) $item->unit_price;
-        $listPrice = $this->resolveListUnitPriceFromStored($item, $offer, $offerService, $displayPrice);
+        $listPrice = $this->resolveListUnitPriceFromStored($item, $offer, $itemOfferService, $displayPrice);
         $hasDiscount = $listPrice !== null && $listPrice > $displayPrice + 0.009;
         $discountAmount = $hasDiscount
             ? round(($listPrice - $displayPrice) * $item->quantity, 2)
             : 0.0;
-        $availableStock = $offer ? $offerService->availableStockForOffer($offer) : 0;
+        $availableStock = $offer ? $itemOfferService->availableStockForOffer($offer) : 0;
+        $priceScope = $this->splitService->resolvePriceScope($offer, $itemRegionId);
 
         return [
             'id' => $item->id,
             'distributor_product_id' => $item->distributor_product_id,
+            'region_id' => $item->region_id !== null ? (int) $item->region_id : $itemRegionId,
+            'region_name' => $item->region?->name,
+            'distributor_warehouse_id' => $item->distributor_warehouse_id !== null
+                ? (int) $item->distributor_warehouse_id
+                : null,
+            'warehouse_name' => $item->warehouse?->name,
+            'price_scope' => $priceScope,
+            'price_scope_label' => $this->splitService->priceScopeLabel($priceScope),
             'distributor_profile_id' => (int) ($offer?->distributor_profile_id ?? 0),
             'distributor_name' => $offer?->profile?->displayName() ?? 'Поставщик',
             'manufacturer_profile_id' => $offer?->manufacturer_profile_id,
+            'product_category_id' => $offer?->product_category_id ? (int) $offer->product_category_id : null,
+            'brand' => $offer?->brand,
             'product_id' => $offer?->source_product_id,
+            'discount_set_id' => null,
+            'distributor_discount_set_id' => null,
+            'discount_label' => null,
             'name' => $offer?->name ?? 'Товар недоступен',
             'sku' => $offer?->manufacturer_sku ?: $offer?->internal_sku ?: $offer?->sourceProduct?->sku,
             'manufacturer_name' => $offer?->manufacturerName() ?? '—',
@@ -491,6 +611,69 @@ class CartService
             throw ValidationException::withMessages([
                 'distributor_product_id' => 'Выбранный поставщик недоступен в вашем регионе.',
             ]);
+        }
+    }
+
+    private function findExistingItem(Cart $cart, int $distributorProductId, ?int $regionId): ?CartItem
+    {
+        $query = $cart->items()->where('distributor_product_id', $distributorProductId);
+
+        if ($regionId !== null) {
+            $query->where(function ($inner) use ($regionId): void {
+                $inner->where('region_id', $regionId)->orWhereNull('region_id');
+            });
+        }
+
+        return $query
+            ->orderByRaw('case when region_id is null then 1 else 0 end')
+            ->first();
+    }
+
+    /**
+     * Для старых позиций без региона/склада дописывает снимок, не пересчитывая уже зафиксированные значения.
+     */
+    private function backfillFulfillmentSnapshot(
+        CartItem $item,
+        EndCompanyDistributorOfferService $catalogOfferService,
+        ?int $catalogRegionId,
+    ): void {
+        $dirty = false;
+
+        if ($item->region_id === null && $catalogRegionId !== null) {
+            $item->region_id = $catalogRegionId;
+            $dirty = true;
+        }
+
+        if ($item->distributor_warehouse_id !== null) {
+            if ($dirty) {
+                $item->save();
+            }
+
+            return;
+        }
+
+        $regionId = $item->region_id !== null ? (int) $item->region_id : $catalogRegionId;
+        $offer = $item->distributorProduct;
+        if ($offer === null || $regionId === null) {
+            if ($dirty) {
+                $item->save();
+            }
+
+            return;
+        }
+
+        $offerService = $regionId === $catalogRegionId
+            ? $catalogOfferService
+            : new EndCompanyDistributorOfferService($regionId);
+
+        $warehouseId = $offerService->resolveFulfillmentWarehouseId($offer, (int) $item->quantity);
+        if ($warehouseId !== null) {
+            $item->distributor_warehouse_id = $warehouseId;
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $item->save();
         }
     }
 

@@ -6,9 +6,11 @@ use App\Models\DistributorProfile;
 use App\Models\DistributorPurchaseCart;
 use App\Models\DistributorPurchaseCartItem;
 use App\Models\ManufacturerDistributorPartnership;
+use App\Models\PlatformOrder;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Catalog\CatalogRegionService;
+use App\Services\Discount\DiscountEngine;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -26,6 +28,7 @@ class DistributorPurchaseCartService
 
     public function __construct(
         private readonly CatalogRegionService $regionService,
+        private readonly DiscountEngine $discountEngine,
     ) {}
 
     public function resolveProfile(User $user): DistributorProfile
@@ -62,7 +65,7 @@ class DistributorPurchaseCartService
         $regionId = $this->regionService->resolveRegionId($user);
 
         $items = $cart->items()
-            ->with(['product.manufacturerProfile', 'product.stocks.warehouse'])
+            ->with(['product.manufacturerProfile', 'product.stocks.warehouse', 'product.category'])
             ->orderBy('id')
             ->get();
 
@@ -70,17 +73,20 @@ class DistributorPurchaseCartService
 
         $groups = $enriched
             ->groupBy(fn (array $row): int => (int) $row['manufacturer_profile_id'])
-            ->map(function (Collection $groupItems, int $manufacturerProfileId): array {
-                $first = $groupItems->first();
+            ->map(function (Collection $groupItems, int $manufacturerProfileId) use ($profile, $user, $regionId, $cart): array {
+                $quotedItems = $this->applyGroupDiscounts($profile, $user, $manufacturerProfileId, $groupItems->values(), $regionId, $cart);
+                $first = $quotedItems->first();
 
                 return [
                     'manufacturer_profile_id' => $manufacturerProfileId,
                     'manufacturer_name' => $first['manufacturer_name'] ?? 'Производитель',
                     'manufacturer_logo_url' => $first['manufacturer_logo_url'] ?? null,
-                    'items' => $groupItems->values(),
-                    'items_count' => $groupItems->count(),
-                    'subtotal' => round($groupItems->sum(fn (array $row): float => (float) $row['line_total']), 2),
-                    'has_blocking_warnings' => $groupItems->contains(
+                    'items' => $quotedItems,
+                    'items_count' => $quotedItems->count(),
+                    'subtotal' => round($quotedItems->sum(fn (array $row): float => (float) $row['line_total']), 2),
+                    'discount_amount' => round($quotedItems->sum(fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
+                    'discount_labels' => $quotedItems->pluck('discount_label')->filter()->unique()->values()->all(),
+                    'has_blocking_warnings' => $quotedItems->contains(
                         fn (array $row): bool => collect($row['warnings'])->contains(fn (array $w): bool => $w['blocking'])
                     ),
                 ];
@@ -92,8 +98,9 @@ class DistributorPurchaseCartService
             'groups' => $groups,
             'totals' => [
                 'groups_count' => $groups->count(),
-                'items_count' => $enriched->count(),
-                'total_amount' => round($enriched->sum(fn (array $row): float => (float) $row['line_total']), 2),
+                'items_count' => $groups->sum(fn (array $g): int => (int) $g['items_count']),
+                'total_amount' => round($groups->sum(fn (array $g): float => (float) $g['subtotal']), 2),
+                'discount_amount' => round($groups->sum(fn (array $g): float => (float) ($g['discount_amount'] ?? 0)), 2),
             ],
             'has_blocking_warnings' => $groups->contains(fn (array $g): bool => $g['has_blocking_warnings']),
         ];
@@ -189,7 +196,7 @@ class DistributorPurchaseCartService
     /**
      * @return array{added: int, skipped: list<string>}
      */
-    public function repeatFromOrder(User $user, \App\Models\PlatformOrder $order): array
+    public function repeatFromOrder(User $user, PlatformOrder $order): array
     {
         $profile = $this->resolveProfile($user);
         if ((int) $order->distributor_profile_id !== (int) $profile->id || ! $order->isDistributorPurchase()) {
@@ -267,7 +274,12 @@ class DistributorPurchaseCartService
             'manufacturer_logo_url' => $manufacturer?->logo_url,
             'quantity' => (int) $item->quantity,
             'unit_price' => $unitPrice,
+            'list_unit_price' => $unitPrice,
             'line_total' => round($unitPrice * (int) $item->quantity, 2),
+            'discount_amount' => 0.0,
+            'discount_label' => null,
+            'has_discount' => false,
+            'product_model' => $product,
             'available_stock' => $stock,
             'min_order_quantity' => $minQty,
             'pack_quantity' => $product?->attributeValueBySlug('kolichestvo-v-upakovke'),
@@ -322,5 +334,84 @@ class DistributorPurchaseCartService
         if ((int) $item->cart?->distributor_profile_id !== (int) $profile->id) {
             abort(403);
         }
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $groupItems
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function applyGroupDiscounts(
+        DistributorProfile $profile,
+        User $user,
+        int $manufacturerProfileId,
+        Collection $groupItems,
+        ?int $regionId,
+        DistributorPurchaseCart $cart,
+    ): Collection {
+        $quoteItems = [];
+        foreach ($groupItems as $row) {
+            $product = $row['product_model'] ?? null;
+            if (! $product instanceof Product) {
+                continue;
+            }
+            $quoteItems[] = [
+                'product_id' => (int) $product->id,
+                'category_id' => $product->category_id ? (int) $product->category_id : null,
+                'quantity' => (int) $row['quantity'],
+                'list_unit_price' => (float) $row['list_unit_price'],
+                'status' => (string) $product->status,
+                'cart_item_id' => $row['cart_item_id'],
+            ];
+        }
+
+        if ($quoteItems === []) {
+            return $groupItems->map(function (array $row): array {
+                unset($row['product_model']);
+
+                return $row;
+            })->values();
+        }
+
+        $promoCodes = is_array($cart->promo_codes) ? $cart->promo_codes : [];
+        $promo = $promoCodes[(string) $manufacturerProfileId]
+            ?? $promoCodes[$manufacturerProfileId]
+            ?? session('purchase_promo.'.$manufacturerProfileId);
+
+        $quoted = $this->discountEngine->quote(
+            $manufacturerProfileId,
+            $profile,
+            $quoteItems,
+            $regionId,
+            is_string($promo) && $promo !== '' ? $promo : null,
+            $user,
+        );
+
+        $byProduct = [];
+        foreach ($quoted['items'] as $index => $quotedRow) {
+            $cartItemId = $quoteItems[$index]['cart_item_id'] ?? null;
+            if ($cartItemId !== null) {
+                $byProduct[$cartItemId] = $quotedRow;
+            }
+        }
+
+        return $groupItems->map(function (array $row) use ($byProduct): array {
+            $quotedRow = $byProduct[$row['cart_item_id']] ?? null;
+            unset($row['product_model']);
+            if (! is_array($quotedRow)) {
+                return $row;
+            }
+
+            $row['list_unit_price'] = (float) $quotedRow['list_unit_price'];
+            $row['unit_price'] = (float) $quotedRow['unit_price'];
+            $row['line_total'] = (float) $quotedRow['line_total'];
+            $row['discount_amount'] = (float) $quotedRow['discount_amount'];
+            $row['discount_label'] = $quotedRow['discount_label'];
+            $row['discount_set_id'] = $quotedRow['discount_set_id'];
+            $row['promo_code_id'] = $quotedRow['promo_code_id'];
+            $row['has_discount'] = (bool) ($quotedRow['has_discount'] ?? false);
+            $row['discount_explanation'] = $quotedRow['explanation'] ?? null;
+
+            return $row;
+        })->values();
     }
 }

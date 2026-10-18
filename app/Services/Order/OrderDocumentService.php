@@ -62,6 +62,14 @@ class OrderDocumentService
                 ],
             );
 
+            if ($document->type === PlatformOrderDocument::TYPE_TTN) {
+                try {
+                    app(OrderCorrespondenceService::class)->postTtnDocument($order, $document->name);
+                } catch (\Throwable) {
+                    // Системное сообщение не блокирует загрузку документа.
+                }
+            }
+
             return $document;
         });
     }

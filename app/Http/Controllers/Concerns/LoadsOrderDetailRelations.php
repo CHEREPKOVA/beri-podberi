@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\PlatformOrder;
-use App\Models\PlatformOrderDocument;
 use App\Services\Order\OrderDocumentService;
 use App\Services\Order\OrderStatusWorkflowService;
 use Illuminate\Http\Request;
@@ -25,6 +24,7 @@ trait LoadsOrderDetailRelations
             'distributorProfile.regions',
             'distributorProfile.warehouses',
             'distributorProfile.user',
+            'manufacturerProfile.user',
             'endCompanyProfile.contacts',
             'endCompanyProfile.user',
             'deliveryMethod',

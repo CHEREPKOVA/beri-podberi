@@ -6,13 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\DistributorProduct;
 use App\Models\DistributorProductDocument;
 use App\Models\DistributorProductPriceHistory;
-use App\Models\DistributorProductStock;
 use App\Models\DistributorProductRegionalPrice;
+use App\Models\DistributorProductStock;
 use App\Models\DistributorProfile;
+use App\Models\DistributorWarehouse;
 use App\Models\ProductCategory;
 use App\Models\UnitType;
 use App\Services\CsvImportReader;
 use App\Services\DistributorProductLogger;
+use App\Services\DistributorStaffAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -132,7 +134,7 @@ class ProductController extends Controller
         $profile = $request->user()->getOrCreateDistributorProfile();
         $categories = $profile->productCategories()->orderBy('name')->get();
         $unitTypes = UnitType::query()->active()->orderBy('name')->get();
-        $warehouses = $profile->warehouses()->with('region')->orderBy('name')->get();
+        $warehouses = app(DistributorStaffAccess::class)->visibleWarehouses($request->user());
         $regions = $profile->regions()->orderBy('name')->get();
         $tab = $request->get('tab', 'info');
         $managedBy1c = $profile->integration_import_1c_stocks || $product->managed_by_1c;
@@ -305,6 +307,9 @@ class ProductController extends Controller
                 if (! $profile->warehouses()->whereKey($warehouseId)->exists()) {
                     continue;
                 }
+                if (! app(DistributorStaffAccess::class)->canAccessWarehouse($request->user(), $warehouseId)) {
+                    continue;
+                }
 
                 $stock = DistributorProductStock::query()->firstOrNew([
                     'distributor_product_id' => $product->id,
@@ -449,7 +454,7 @@ class ProductController extends Controller
      * @param  array<string, int|string|array<mixed>>  $stats
      * @return array<string, int|string|array<mixed>>
      */
-    private function importCsv(string $path, DistributorProfile $profile, string $importType, ?\App\Models\DistributorWarehouse $warehouse, $user): array
+    private function importCsv(string $path, DistributorProfile $profile, string $importType, ?DistributorWarehouse $warehouse, $user): array
     {
         $handle = CsvImportReader::open($path);
         ['header' => $header, 'delimiter' => $delimiter] = CsvImportReader::readHeader($handle);
@@ -653,7 +658,7 @@ class ProductController extends Controller
         return $stats;
     }
 
-    private function importXml(string $path, DistributorProfile $profile, string $importType, ?\App\Models\DistributorWarehouse $warehouse, $user): array
+    private function importXml(string $path, DistributorProfile $profile, string $importType, ?DistributorWarehouse $warehouse, $user): array
     {
         $xml = simplexml_load_file($path);
         $shop = $xml?->shop ?? null;

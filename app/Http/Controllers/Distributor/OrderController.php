@@ -3,16 +3,19 @@
 namespace App\Http\Controllers\Distributor;
 
 use App\Http\Controllers\Concerns\LoadsOrderDetailRelations;
+use App\Http\Controllers\Concerns\ManagesOrderCorrespondence;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Distributor\StoreOrderDocumentRequest;
+use App\Http\Requests\StoreOrderMessageRequest;
 use App\Models\DistributorContact;
 use App\Models\DistributorProduct;
-use App\Models\DistributorWarehouse;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderDocument;
+use App\Models\PlatformOrderMessage;
+use App\Models\PlatformOrderMessageAttachment;
 use App\Models\PlatformOrderStatusLog;
-use App\Models\Role;
 use App\Models\TransportCompany;
+use App\Services\DistributorStaffAccess;
 use App\Services\Order\DistributorOrderListService;
 use App\Services\Order\OrderDocumentService;
 use App\Services\Order\OrderStatusWorkflowService;
@@ -26,6 +29,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class OrderController extends Controller
 {
     use LoadsOrderDetailRelations;
+    use ManagesOrderCorrespondence;
 
     public function __construct(
         private readonly OrderStatusWorkflowService $workflow,
@@ -114,12 +118,14 @@ class OrderController extends Controller
         ]));
 
         $profile = $request->user()->distributorProfile;
+        abort_unless($profile !== null, 403);
 
-        $warehouses = DistributorWarehouse::query()
-            ->where('distributor_profile_id', $profile->id)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        $staffAccess = app(DistributorStaffAccess::class);
+        if ($order->distributor_warehouse_id && ! $staffAccess->canAccessWarehouse($request->user(), (int) $order->distributor_warehouse_id)) {
+            abort(403);
+        }
+
+        $warehouses = $staffAccess->visibleWarehouses($request->user())->where('is_active', true)->values();
 
         $catalogProducts = DistributorProduct::query()
             ->with('category:id,name')
@@ -148,6 +154,9 @@ class OrderController extends Controller
             'viewer' => 'supplier',
             'warehouses' => $warehouses,
             'catalogProducts' => $catalogProducts,
+            'analogOptions' => $this->workflow->analogOptionsByItem($order),
+            'can_change_order_price' => $staffAccess->canAccessSection($request->user(), 'products.prices'),
+            'rejectionReasons' => PlatformOrder::supplierRejectionReasons(),
             'managers' => $managers,
             'sourceLabels' => PlatformOrder::sourceLabels(),
         ], $this->documentUiContext(
@@ -159,6 +168,13 @@ class OrderController extends Controller
             'distributor.orders.documents.store',
             'distributor.orders.documents.destroy',
             'distributor.orders.documents.preview',
+        ), $this->correspondenceUiContext(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_SUPPLIER,
+            'distributor.orders.messages.store',
+            'distributor.orders.messages.attachments.download',
+            'distributor.orders.messages.attachments.preview',
         )));
     }
 
@@ -247,6 +263,41 @@ class OrderController extends Controller
             ->with('success', 'Документ загружен.');
     }
 
+    public function storeMessage(StoreOrderMessageRequest $request, PlatformOrder $order): RedirectResponse
+    {
+        $this->ensureDistributorAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->storeCorrespondenceMessage(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_SUPPLIER,
+            'distributor.orders.show',
+        );
+    }
+
+    public function downloadMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureDistributorAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->downloadCorrespondenceAttachment($order, $attachment);
+    }
+
+    public function previewMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureDistributorAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->previewCorrespondenceAttachment($order, $attachment);
+    }
+
     public function downloadDocument(
         Request $request,
         PlatformOrder $order,
@@ -301,13 +352,20 @@ class OrderController extends Controller
     public function reject(Request $request, PlatformOrder $order): RedirectResponse
     {
         $request->validate([
-            'rejection_reason' => ['required', 'string', 'max:2000'],
+            'rejection_code' => ['required', 'string', Rule::in(array_keys(PlatformOrder::supplierRejectionReasons()))],
+            'rejection_comment' => ['required', 'string', 'max:2000'],
         ], [
-            'rejection_reason.required' => 'Укажите причину отклонения.',
+            'rejection_code.required' => 'Выберите причину отклонения.',
+            'rejection_comment.required' => 'Укажите комментарий к отклонению.',
         ]);
 
         return $this->runAction($request, $order, function () use ($request, $order) {
-            $this->workflow->reject($order, $request->user(), $request->input('rejection_reason'));
+            $this->workflow->reject(
+                $order,
+                $request->user(),
+                (string) $request->input('rejection_code'),
+                (string) $request->input('rejection_comment'),
+            );
         }, 'Заказ отклонён.');
     }
 
@@ -322,15 +380,20 @@ class OrderController extends Controller
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.delete' => ['nullable', 'boolean'],
             'items.*.reason' => ['nullable', 'string', 'max:500'],
+            'items.*.replace_with_distributor_product_id' => ['nullable', 'integer'],
             'comment' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        return $this->runAction($request, $order, function () use ($request, $order, $validated) {
+        $canChangePrice = app(DistributorStaffAccess::class)
+            ->canAccessSection($request->user(), 'products.prices');
+
+        return $this->runAction($request, $order, function () use ($request, $order, $validated, $canChangePrice) {
             $this->workflow->sendForApproval(
                 $order,
                 $request->user(),
                 $validated['items'],
                 $validated['comment'] ?? null,
+                $canChangePrice,
             );
         }, 'Изменения отправлены покупателю на согласование.');
     }
@@ -395,13 +458,12 @@ class OrderController extends Controller
 
     private function ensureDistributorAccess(Request $request): void
     {
-        $role = $request->user()?->getCurrentRole();
-        abort_unless($role?->slug === Role::SLUG_DISTRIBUTOR, 403);
+        abort_unless($request->user()?->isDistributorStaff(), 403);
     }
 
     private function ensureOwnsOrder(Request $request, PlatformOrder $order): void
     {
-        $profileId = $request->user()->distributorProfile?->id;
+        $profileId = $request->user()->currentDistributorProfile()?->id;
         abort_unless(
             $profileId !== null
             && (int) $order->distributor_profile_id === (int) $profileId

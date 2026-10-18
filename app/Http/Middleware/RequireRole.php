@@ -28,7 +28,7 @@ class RequireRole
 
         $current = $user->getCurrentRole();
         if ($current !== null && ! in_array($current->slug, $roles, true)) {
-            abort(403, 'Выберите подходящий профиль для доступа к этому разделу.');
+            abort(403, 'Этот раздел недоступен для вашего профиля.');
         }
 
         return $next($request);

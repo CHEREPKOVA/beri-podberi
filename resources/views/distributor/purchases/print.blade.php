@@ -34,7 +34,7 @@
             <p><span class="muted">Склад поставки:</span> {{ $order->distributorWarehouse->name }}</p>
         @endif
         @if($order->responsibleContact)
-            <p><span class="muted">Ответственный:</span> {{ $order->responsibleContact->full_name }}</p>
+            <p><span class="muted">Ответственный:</span> {{ $order->responsibleContact->displayName() }}</p>
         @endif
     </div>
     <h2>Состав заказа</h2>

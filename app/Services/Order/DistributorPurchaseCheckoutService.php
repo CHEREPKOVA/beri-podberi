@@ -6,12 +6,15 @@ use App\Models\DeliveryMethod;
 use App\Models\DistributorProfile;
 use App\Models\DistributorWarehouse;
 use App\Models\ManufacturerProfile;
+use App\Models\ManufacturerPromoCode;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderItem;
 use App\Models\PlatformOrderStatusLog;
 use App\Models\TransportCompany;
 use App\Models\User;
 use App\Services\Cart\DistributorPurchaseCartService;
+use App\Services\Discount\ManufacturerPromoCodeService;
+use App\Services\DistributorStaffAccess;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -21,6 +24,8 @@ class DistributorPurchaseCheckoutService
 {
     public function __construct(
         private readonly DistributorPurchaseCartService $cartService,
+        private readonly DistributorStaffAccess $staffAccess,
+        private readonly ManufacturerPromoCodeService $promoCodes,
     ) {}
 
     /**
@@ -30,6 +35,7 @@ class DistributorPurchaseCheckoutService
      *     delivery_methods: Collection<int, DeliveryMethod>,
      *     transport_companies: Collection<int, TransportCompany>,
      *     warehouses: Collection<int, DistributorWarehouse>,
+     *     default_warehouse_id: ?int,
      *     delivery_notes: ?string,
      *     item_warnings: list<array{name: string, warnings: list<array<string, mixed>>}>
      * }
@@ -45,14 +51,15 @@ class DistributorPurchaseCheckoutService
         }
 
         $manufacturer = ManufacturerProfile::query()->findOrFail($manufacturerProfileId);
-        $profile = $this->cartService->resolveProfile($user);
+        $warehouses = $this->staffAccess->visibleWarehouses($user)->where('is_active', true)->values();
 
         return [
             'group' => $group,
             'manufacturer' => $manufacturer,
             'delivery_methods' => $this->availableDeliveryMethods($manufacturer),
             'transport_companies' => $this->availableTransportCompanies($manufacturer),
-            'warehouses' => $profile->warehouses()->with('region')->orderBy('name')->get(),
+            'warehouses' => $warehouses,
+            'default_warehouse_id' => $warehouses->count() === 1 ? $warehouses->first()?->id : null,
             'delivery_notes' => $manufacturer->delivery_notes ?? null,
             'item_warnings' => $this->itemWarnings($group),
         ];
@@ -65,7 +72,7 @@ class DistributorPurchaseCheckoutService
      *     transport_company_id?: ?int,
      *     buyer_comment?: ?string,
      *     delivery_date?: ?string,
-     *     responsible_contact_id?: ?int
+     *     promo_code?: ?string
      * }  $data
      */
     public function place(User $user, int $manufacturerProfileId, array $data): PlatformOrder
@@ -76,7 +83,7 @@ class DistributorPurchaseCheckoutService
         $profile = $this->cartService->resolveProfile($user);
 
         $deliveryMethod = $this->resolveDeliveryMethod($prepared['delivery_methods'], (int) $data['delivery_method_id']);
-        $warehouse = $this->resolveWarehouse($profile, $data['distributor_warehouse_id'] ?? null);
+        $warehouse = $this->resolveWarehouse($profile, $user, $data['distributor_warehouse_id'] ?? null);
         $transportCompany = $this->resolveTransportCompany(
             $prepared['transport_companies'],
             $deliveryMethod,
@@ -107,6 +114,22 @@ class DistributorPurchaseCheckoutService
             $responsibleId,
             $manufacturerProfileId,
         ): PlatformOrder {
+            $promoCode = filled($data['promo_code'] ?? null) ? mb_strtoupper(trim((string) $data['promo_code'])) : null;
+            if ($promoCode) {
+                $cart = $this->cartService->getOrCreateCart($profile);
+                $codes = $cart->promo_codes ?? [];
+                $codes[(string) $manufacturerProfileId] = $promoCode;
+                $cart->promo_codes = $codes;
+                $cart->save();
+                session(['purchase_promo.'.$manufacturerProfileId => $promoCode]);
+                $group = $this->requireGroup($user, $manufacturerProfileId);
+            }
+
+            $discountAmount = (float) ($group['discount_amount'] ?? 0);
+            $discountLabels = $group['discount_labels'] ?? [];
+            $promoId = collect($group['items'])->pluck('promo_code_id')->filter()->first();
+            $setId = collect($group['items'])->pluck('discount_set_id')->filter()->first();
+
             $order = PlatformOrder::query()->create([
                 'order_number' => $this->generateOrderNumber(),
                 'source' => PlatformOrder::SOURCE_LK,
@@ -121,6 +144,11 @@ class DistributorPurchaseCheckoutService
                 'buyer_comment' => filled($data['buyer_comment'] ?? null) ? trim((string) $data['buyer_comment']) : null,
                 'delivery_date' => filled($data['delivery_date'] ?? null) ? $data['delivery_date'] : null,
                 'total_amount' => $group['subtotal'],
+                'discount_amount' => $discountAmount,
+                'discount_label' => $discountLabels !== [] ? implode(', ', $discountLabels) : null,
+                'discount_set_id' => $setId,
+                'promo_code_id' => $promoId,
+                'promo_code' => $promoCode,
                 'status' => PlatformOrder::STATUS_NEW,
                 'ordered_at' => now(),
             ]);
@@ -137,9 +165,24 @@ class DistributorPurchaseCheckoutService
                     'pack_quantity' => $item['pack_quantity'] ?? null,
                     'min_order_quantity' => $item['min_order_quantity'] ?? null,
                     'unit_price' => $item['unit_price'],
-                    'list_unit_price' => $item['unit_price'],
+                    'list_unit_price' => $item['list_unit_price'] ?? $item['unit_price'],
                     'line_total' => $item['line_total'],
+                    'discount_set_id' => $item['discount_set_id'] ?? null,
+                    'discount_label' => $item['discount_label'] ?? null,
                 ]);
+            }
+
+            if ($promoId) {
+                $promo = ManufacturerPromoCode::query()->find($promoId);
+                if ($promo) {
+                    $this->promoCodes->recordUsage($promo, $user, $order, $discountAmount);
+                }
+                session()->forget('purchase_promo.'.$manufacturerProfileId);
+                $cart = $this->cartService->getOrCreateCart($profile);
+                $codes = $cart->promo_codes ?? [];
+                unset($codes[(string) $manufacturerProfileId], $codes[$manufacturerProfileId]);
+                $cart->promo_codes = $codes;
+                $cart->save();
             }
 
             PlatformOrderStatusLog::query()->create([
@@ -154,6 +197,12 @@ class DistributorPurchaseCheckoutService
                     'channel' => PlatformOrder::CHANNEL_DISTRIBUTOR_MANUFACTURER,
                 ],
             ]);
+
+            try {
+                app(OrderCorrespondenceService::class)->postOrderCreated($order);
+            } catch (\Throwable) {
+                // Переписка не должна блокировать оформление.
+            }
 
             $this->cartService->clearGroup($user, $manufacturerProfileId);
 
@@ -242,16 +291,30 @@ class DistributorPurchaseCheckoutService
         return $method;
     }
 
-    private function resolveWarehouse(DistributorProfile $profile, mixed $warehouseId): ?DistributorWarehouse
+    private function resolveWarehouse(DistributorProfile $profile, User $user, mixed $warehouseId): ?DistributorWarehouse
     {
+        $allowed = $this->staffAccess->visibleWarehouses($user)->where('is_active', true)->values();
+
         if ($warehouseId === null || $warehouseId === '') {
-            return $profile->warehouses()->where('is_active', true)->orderBy('name')->first();
+            if ($allowed->count() === 1) {
+                return $allowed->first();
+            }
+
+            if ($allowed->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'distributor_warehouse_id' => 'Нет доступного склада для оформления заказа.',
+                ]);
+            }
+
+            throw ValidationException::withMessages([
+                'distributor_warehouse_id' => 'Выберите филиал / склад поставки.',
+            ]);
         }
 
-        $warehouse = $profile->warehouses()->whereKey((int) $warehouseId)->first();
+        $warehouse = $allowed->firstWhere('id', (int) $warehouseId);
         if ($warehouse === null) {
             throw ValidationException::withMessages([
-                'distributor_warehouse_id' => 'Выберите склад из списка ваших складов.',
+                'distributor_warehouse_id' => 'Этот склад недоступен для вашего профиля.',
             ]);
         }
 

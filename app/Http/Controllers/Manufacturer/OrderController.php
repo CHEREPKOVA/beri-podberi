@@ -3,18 +3,22 @@
 namespace App\Http\Controllers\Manufacturer;
 
 use App\Http\Controllers\Concerns\LoadsOrderDetailRelations;
+use App\Http\Controllers\Concerns\ManagesOrderCorrespondence;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Manufacturer\StoreOrderDocumentRequest;
+use App\Http\Requests\StoreOrderMessageRequest;
 use App\Models\ClaimStatus;
 use App\Models\DistributorProduct;
 use App\Models\ManufacturerContact;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderClaim;
 use App\Models\PlatformOrderDocument;
+use App\Models\PlatformOrderMessage;
+use App\Models\PlatformOrderMessageAttachment;
 use App\Models\PlatformOrderStatusLog;
-use App\Models\Role;
 use App\Models\TransportCompany;
-use App\Models\Warehouse;
+use App\Services\ManufacturerCompanyContext;
+use App\Services\ManufacturerStaffAccess;
 use App\Services\Order\ManufacturerOrderListService;
 use App\Services\Order\OrderDocumentService;
 use App\Services\Order\OrderStatusWorkflowService;
@@ -28,11 +32,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class OrderController extends Controller
 {
     use LoadsOrderDetailRelations;
+    use ManagesOrderCorrespondence;
 
     public function __construct(
         private readonly OrderStatusWorkflowService $workflow,
         private readonly OrderDocumentService $documents,
         private readonly ManufacturerOrderListService $listService,
+        private readonly ManufacturerStaffAccess $staffAccess,
+        private readonly ManufacturerCompanyContext $companyContext,
     ) {}
 
     public function index(Request $request): View
@@ -121,11 +128,10 @@ class OrderController extends Controller
 
         $profile = $request->user()->manufacturerProfile;
 
-        $warehouses = Warehouse::query()
-            ->where('manufacturer_profile_id', $profile->id)
+        $warehouses = $this->staffAccess
+            ->visibleWarehouses($request->user())
             ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+            ->values();
 
         $catalogProducts = DistributorProduct::query()
             ->with('category:id,name')
@@ -155,6 +161,10 @@ class OrderController extends Controller
             'viewer' => 'supplier',
             'warehouses' => $warehouses,
             'catalogProducts' => $catalogProducts,
+            'analogOptions' => $this->workflow->analogOptionsByItem($order),
+            'can_change_order_price' => app(ManufacturerStaffAccess::class)
+                ->canAccessSection($request->user(), 'products.manage'),
+            'rejectionReasons' => PlatformOrder::supplierRejectionReasons(),
             'managers' => $managers,
             'claimReasons' => PlatformOrderClaim::reasonLabels(),
             'claimStatuses' => ClaimStatus::labelsMap(),
@@ -167,6 +177,13 @@ class OrderController extends Controller
             'manufacturer.orders.documents.store',
             'manufacturer.orders.documents.destroy',
             'manufacturer.orders.documents.preview',
+        ), $this->correspondenceUiContext(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_SUPPLIER,
+            'manufacturer.orders.messages.store',
+            'manufacturer.orders.messages.attachments.download',
+            'manufacturer.orders.messages.attachments.preview',
         )));
     }
 
@@ -342,6 +359,41 @@ class OrderController extends Controller
             ->with('success', 'Документ загружен.');
     }
 
+    public function storeMessage(StoreOrderMessageRequest $request, PlatformOrder $order): RedirectResponse
+    {
+        $this->ensureManufacturerAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->storeCorrespondenceMessage(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_SUPPLIER,
+            'manufacturer.orders.show',
+        );
+    }
+
+    public function downloadMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureManufacturerAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->downloadCorrespondenceAttachment($order, $attachment);
+    }
+
+    public function previewMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureManufacturerAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->previewCorrespondenceAttachment($order, $attachment);
+    }
+
     public function downloadDocument(
         Request $request,
         PlatformOrder $order,
@@ -396,13 +448,20 @@ class OrderController extends Controller
     public function reject(Request $request, PlatformOrder $order): RedirectResponse
     {
         $request->validate([
-            'rejection_reason' => ['required', 'string', 'max:2000'],
+            'rejection_code' => ['required', 'string', Rule::in(array_keys(PlatformOrder::supplierRejectionReasons()))],
+            'rejection_comment' => ['required', 'string', 'max:2000'],
         ], [
-            'rejection_reason.required' => 'Укажите причину отклонения.',
+            'rejection_code.required' => 'Выберите причину отклонения.',
+            'rejection_comment.required' => 'Укажите комментарий к отклонению.',
         ]);
 
         return $this->runAction($request, $order, function () use ($request, $order) {
-            $this->workflow->reject($order, $request->user(), $request->input('rejection_reason'));
+            $this->workflow->reject(
+                $order,
+                $request->user(),
+                (string) $request->input('rejection_code'),
+                (string) $request->input('rejection_comment'),
+            );
         }, 'Заказ отклонён.');
     }
 
@@ -417,15 +476,20 @@ class OrderController extends Controller
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.delete' => ['nullable', 'boolean'],
             'items.*.reason' => ['nullable', 'string', 'max:500'],
+            'items.*.replace_with_distributor_product_id' => ['nullable', 'integer'],
             'comment' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        return $this->runAction($request, $order, function () use ($request, $order, $validated) {
+        $canChangePrice = app(ManufacturerStaffAccess::class)
+            ->canAccessSection($request->user(), 'products.manage');
+
+        return $this->runAction($request, $order, function () use ($request, $order, $validated, $canChangePrice) {
             $this->workflow->sendForApproval(
                 $order,
                 $request->user(),
                 $validated['items'],
                 $validated['comment'] ?? null,
+                $canChangePrice,
             );
         }, 'Изменения отправлены покупателю на согласование.');
     }
@@ -454,6 +518,15 @@ class OrderController extends Controller
         ], [
             'tracking_number.required' => 'Укажите номер ТТН / трек-номер.',
         ]);
+
+        $fromWarehouse = trim((string) ($validated['shipping_from_warehouse'] ?? ''));
+        if ($fromWarehouse !== '') {
+            $allowedNames = $this->staffAccess
+                ->visibleWarehouses($request->user())
+                ->pluck('name')
+                ->all();
+            abort_unless(in_array($fromWarehouse, $allowedNames, true), 403);
+        }
 
         return $this->runAction($request, $order, function () use ($request, $order, $validated) {
             $this->workflow->markShipped($order, $request->user(), $validated);
@@ -490,8 +563,12 @@ class OrderController extends Controller
 
     private function ensureManufacturerAccess(Request $request): void
     {
-        $role = $request->user()?->getCurrentRole();
-        abort_unless($role?->slug === Role::SLUG_MANUFACTURER, 403);
+        $user = $request->user();
+        abort_unless($user && $this->staffAccess->canAccessCabinet($user), 403);
+
+        $profile = $user->manufacturerProfile ?? $this->companyContext->profile($user);
+        abort_unless($profile !== null, 403);
+        $user->setRelation('manufacturerProfile', $profile);
     }
 
     private function ensureOwnsOrder(Request $request, PlatformOrder $order): void

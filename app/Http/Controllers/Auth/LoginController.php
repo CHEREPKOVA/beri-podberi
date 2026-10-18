@@ -101,6 +101,14 @@ class LoginController extends Controller
             ->map(fn ($status) => strtolower((string) $status))
             ->all();
 
+        if (in_array(CompanyStatus::BLOCKED, $statuses, true)) {
+            return __('auth.company_blocked', [], 'ru');
+        }
+
+        if (in_array(CompanyStatus::AWAITING_CONFIRMATION, $statuses, true)) {
+            return __('auth.invitation_pending', [], 'ru');
+        }
+
         if (in_array(CompanyStatus::PENDING, $statuses, true)) {
             return __('auth.pending_moderation', [], 'ru');
         }

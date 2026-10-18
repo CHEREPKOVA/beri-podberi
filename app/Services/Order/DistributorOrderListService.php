@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Models\DistributorContact;
 use App\Models\DistributorProfile;
 use App\Models\PlatformOrder;
+use App\Services\DistributorStaffAccess;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -119,6 +120,11 @@ class DistributorOrderListService
                 PlatformOrder::STATUS_NEW,
                 PlatformOrder::STATUS_AWAITING_CONFIRMATION,
             ]);
+        }
+
+        $user = $request->user();
+        if ($user) {
+            app(DistributorStaffAccess::class)->constrainOrdersToWarehouses($user, $query);
         }
     }
 }

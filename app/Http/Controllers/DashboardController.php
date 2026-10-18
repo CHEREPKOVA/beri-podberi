@@ -25,14 +25,17 @@ class DashboardController extends Controller
         $companyName = $rolePivot?->pivot?->company_name ?? null;
         $roleDisplay = $currentRole ? $currentRole->labelWithCompany($companyName) : '—';
 
-        $profileCompletion = match ($currentRole?->slug) {
-            Role::SLUG_DISTRIBUTOR => $this->distributorCompletion->summary(
+        $profileCompletion = match (true) {
+            $currentRole?->slug === Role::SLUG_DISTRIBUTOR,
+            $user->isDistributorStaff() => $this->distributorCompletion->summary(
                 $user->getOrCreateDistributorProfile()
             ),
-            Role::SLUG_MANUFACTURER => $this->manufacturerCompletion->summary(
+            $currentRole?->slug === Role::SLUG_MANUFACTURER,
+            $user->isManufacturerStaff() => $this->manufacturerCompletion->summary(
                 $user->getOrCreateManufacturerProfile()
             ),
-            Role::SLUG_END_COMPANY => $this->endCompanyCompletion->summary(
+            $currentRole?->slug === Role::SLUG_END_COMPANY,
+            $user->isEndCompanyStaff() => $this->endCompanyCompletion->summary(
                 $user->getOrCreateEndCompanyProfile()
             ),
             default => null,

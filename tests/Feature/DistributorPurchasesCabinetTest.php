@@ -13,6 +13,7 @@ use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Notifications\OrderCreatedNotification;
 use App\Services\CurrentRoleService;
 use Database\Seeders\DeliveryMethodSeeder;
 use Database\Seeders\PermissionSeeder;
@@ -81,6 +82,70 @@ class DistributorPurchasesCabinetTest extends TestCase
         $this->assertSame(PlatformOrder::STATUS_AWAITING_CONFIRMATION, $order->fresh()->status);
     }
 
+    public function test_checkout_requires_warehouse_when_several_are_available(): void
+    {
+        Notification::fake();
+        [$distUser, $product, $manufacturerId] = $this->seedPartnerCatalog();
+        $this->actAsDistributor($distUser);
+        $profile = $distUser->fresh()->distributorProfile;
+        $regionId = $profile->warehouses()->first()?->region_id;
+        DistributorWarehouse::query()->create([
+            'distributor_profile_id' => $profile->id,
+            'name' => 'Склад СПб',
+            'address' => 'Санкт-Петербург',
+            'region_id' => $regionId,
+            'type' => DistributorWarehouse::TYPE_REGIONAL,
+            'is_active' => true,
+        ]);
+
+        $method = DeliveryMethod::query()->where('slug', DeliveryMethod::SLUG_SELF_PICKUP)->firstOrFail();
+        $this->actingAs($distUser)
+            ->post(route('distributor.purchases.cart.items.store'), [
+                'product_id' => $product->id,
+                'quantity' => 1,
+            ]);
+        $this->actingAs($distUser)
+            ->post(route('distributor.purchases.checkout.store', $manufacturerId), [
+                'delivery_method_id' => $method->id,
+            ])
+            ->assertSessionHasErrors('distributor_warehouse_id');
+    }
+
+    public function test_checkout_uses_selected_warehouse_when_several_are_available(): void
+    {
+        Notification::fake();
+        [$distUser, $product, $manufacturerId] = $this->seedPartnerCatalog();
+        $this->actAsDistributor($distUser);
+        $profile = $distUser->fresh()->distributorProfile;
+        $warehouse = $profile->warehouses()->first();
+        DistributorWarehouse::query()->create([
+            'distributor_profile_id' => $profile->id,
+            'name' => 'Склад СПб',
+            'address' => 'Санкт-Петербург',
+            'region_id' => $warehouse?->region_id,
+            'type' => DistributorWarehouse::TYPE_REGIONAL,
+            'is_active' => true,
+        ]);
+
+        $method = DeliveryMethod::query()->where('slug', DeliveryMethod::SLUG_SELF_PICKUP)->firstOrFail();
+        $this->actingAs($distUser)
+            ->post(route('distributor.purchases.cart.items.store'), [
+                'product_id' => $product->id,
+                'quantity' => 1,
+            ]);
+        $this->actingAs($distUser)
+            ->post(route('distributor.purchases.checkout.store', $manufacturerId), [
+                'delivery_method_id' => $method->id,
+                'distributor_warehouse_id' => $warehouse->id,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('platform_orders', [
+            'order_channel' => PlatformOrder::CHANNEL_DISTRIBUTOR_MANUFACTURER,
+            'distributor_warehouse_id' => $warehouse->id,
+        ]);
+    }
+
     public function test_sales_orders_list_excludes_purchases(): void
     {
         Notification::fake();
@@ -126,6 +191,8 @@ class DistributorPurchasesCabinetTest extends TestCase
 
         $order = PlatformOrder::query()->where('order_channel', PlatformOrder::CHANNEL_DISTRIBUTOR_MANUFACTURER)->firstOrFail();
 
+        Notification::assertNotSentTo($mfrUser, OrderCreatedNotification::class);
+
         app(CurrentRoleService::class)->set($mfrUser, $mfrUser->roles->first()->id);
         $this->actingAs($mfrUser)
             ->get(route('manufacturer.orders.index'))
@@ -140,6 +207,18 @@ class DistributorPurchasesCabinetTest extends TestCase
             ->get(route('manufacturer.orders.index'))
             ->assertOk()
             ->assertSee($order->order_number);
+
+        Notification::assertSentTo(
+            $mfrUser,
+            OrderCreatedNotification::class,
+            function (OrderCreatedNotification $notification) use ($order, $mfrUser): bool {
+                $data = $notification->toArray($mfrUser);
+
+                return (int) $data['order_id'] === (int) $order->id
+                    && $data['url'] === route('manufacturer.orders.show', $order)
+                    && str_contains((string) $data['message'], 'Новый заказ №'.$order->order_number);
+            }
+        );
     }
 
     public function test_buyer_can_edit_items_before_confirm(): void

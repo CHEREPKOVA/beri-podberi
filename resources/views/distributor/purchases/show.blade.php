@@ -90,13 +90,32 @@
                                 <th class="text-left py-2 pr-3">Товар</th>
                                 <th class="text-left py-2 pr-3">Кол-во</th>
                                 <th class="text-left py-2 pr-3">Цена</th>
+                                <th class="text-left py-2 pr-3">Склад</th>
                                 <th class="text-left py-2">Сумма</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($approvalProposal['changes'] as $change)
-                                <tr class="border-b border-gray-100 dark:border-gray-700/60">
-                                    <td class="py-3 pr-3">{{ $change['name'] ?? '—' }}</td>
+                                <tr class="border-b border-gray-100 dark:border-gray-700/60 align-top {{ (($change['old_quantity'] ?? null) != ($change['new_quantity'] ?? null) || abs((float) ($change['old_unit_price'] ?? 0) - (float) ($change['new_unit_price'] ?? 0)) > 0.009 || ($change['action'] ?? '') === 'replaced' || (string) ($change['old_warehouse_id'] ?? '') !== (string) ($change['new_warehouse_id'] ?? '')) ? 'bg-red-50/40 dark:bg-red-900/10' : '' }}">
+                                    <td class="py-3 pr-3">
+                                        @if(($change['action'] ?? '') === 'replaced' && !empty($change['old_name']))
+                                            <p class="font-medium text-gray-900 dark:text-white">
+                                                <span class="line-through text-gray-400">{{ $change['old_name'] }}</span>
+                                                <span class="ml-1">{{ $change['name'] ?? 'Товар' }}</span>
+                                            </p>
+                                            <p class="text-xs text-gray-500">
+                                                <span class="line-through">{{ $change['old_sku'] ?: '—' }}</span>
+                                                <span class="ml-1">{{ $change['sku'] ?: '—' }}</span>
+                                            </p>
+                                            <p class="text-xs text-[#c3242a] mt-1">Замена на аналог</p>
+                                        @else
+                                            <p class="font-medium text-gray-900 dark:text-white">{{ $change['name'] ?? 'Товар' }}</p>
+                                            <p class="text-xs text-gray-500">{{ $change['sku'] ?: '—' }}</p>
+                                        @endif
+                                        @if(!empty($change['reason']))
+                                            <p class="text-xs text-[#c3242a] mt-1">Причина: {{ $change['reason'] }}</p>
+                                        @endif
+                                    </td>
                                     <td class="py-3 pr-3">
                                         @if(($change['old_quantity'] ?? null) !== ($change['new_quantity'] ?? null))
                                             <span class="line-through text-gray-400">{{ $change['old_quantity'] }}</span>
@@ -111,6 +130,14 @@
                                             <span class="ml-1 font-medium text-[#c3242a]">{{ number_format((float) $change['new_unit_price'], 2, ',', ' ') }} ₽</span>
                                         @else
                                             {{ number_format((float) $change['new_unit_price'], 2, ',', ' ') }} ₽
+                                        @endif
+                                    </td>
+                                    <td class="py-3 pr-3 whitespace-nowrap">
+                                        @if((string) ($change['old_warehouse_id'] ?? '') !== (string) ($change['new_warehouse_id'] ?? '') && (($change['old_warehouse_name'] ?? null) || ($change['new_warehouse_name'] ?? null) || array_key_exists('old_warehouse_id', $change)))
+                                            <span class="line-through text-gray-400">{{ $change['old_warehouse_name'] ?: '—' }}</span>
+                                            <span class="ml-1 font-medium text-[#c3242a]">{{ $change['new_warehouse_name'] ?: '—' }}</span>
+                                        @else
+                                            {{ $change['new_warehouse_name'] ?? $change['old_warehouse_name'] ?? '—' }}
                                         @endif
                                     </td>
                                     <td class="py-3 whitespace-nowrap">
@@ -236,6 +263,7 @@
         <div class="xl:col-span-2 space-y-6">
             @include('orders._items', ['order' => $order, 'show_product_links' => true])
             @include('orders._documents')
+            @include('orders._correspondence')
             @include('orders._history', ['hide_service' => true])
         </div>
         <div class="space-y-6">

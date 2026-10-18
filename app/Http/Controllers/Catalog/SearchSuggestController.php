@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesCatalogContext;
 use App\Http\Controllers\Controller;
 use App\Models\ProductCategory;
 use App\Models\Role;
+use App\Models\User;
 use App\Services\Catalog\CatalogListingParams;
 use App\Services\Catalog\CatalogSearchSuggestService;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +26,7 @@ class SearchSuggestController extends Controller
             $searchScope = CatalogListingParams::SEARCH_SCOPE_CATEGORY;
         }
 
-        [$showRoute, $indexRoute] = $this->routesForRole($catalogRole?->slug);
+        [$showRoute, $indexRoute] = $this->routesForRole($catalogRole?->slug, $request->user());
 
         $catalog = $this->makeCatalogQueryService($request);
         $suggest = new CatalogSearchSuggestService($catalog, $request->user());
@@ -59,9 +60,9 @@ class SearchSuggestController extends Controller
     /**
      * @return array{0: string, 1: string}
      */
-    private function routesForRole(?string $roleSlug): array
+    private function routesForRole(?string $roleSlug, User $user): array
     {
-        if ($roleSlug === Role::SLUG_MANUFACTURER) {
+        if ($user->isManufacturerStaff() || $roleSlug === Role::SLUG_MANUFACTURER) {
             return ['manufacturer.catalog.show', 'manufacturer.catalog.index'];
         }
 

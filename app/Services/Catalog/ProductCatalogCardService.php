@@ -8,6 +8,8 @@ use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Discount\DiscountEngine;
+use App\Services\EndCompanyStaffAccess;
 use Illuminate\Support\Collection;
 
 /**
@@ -58,7 +60,8 @@ class ProductCatalogCardService
         $isPurchasable = (bool) ($offerSummary['is_purchasable'] ?? false);
         $canAddToOrder = $role === 'end_company'
             && $isPurchasable
-            && ! ($offerSummary['unavailable_in_region'] ?? false);
+            && ! ($offerSummary['unavailable_in_region'] ?? false)
+            && $this->canAddToBuyerCart();
 
         $canAddToPurchase = false;
         $purchasePrice = null;
@@ -72,6 +75,19 @@ class ProductCatalogCardService
                 $purchaseStock = $product->getAvailableStockInRegion($regionId);
                 $purchaseMinQty = max(1, (int) ($product->min_order_quantity ?? 1));
                 $canAddToPurchase = $purchasePrice > 0;
+                $distributor = $this->user->distributorProfile;
+                if ($canAddToPurchase && $distributor) {
+                    $quoted = app(DiscountEngine::class)->quoteSingleProduct(
+                        (int) $product->manufacturer_profile_id,
+                        $distributor,
+                        $product,
+                        $purchaseMinQty,
+                        $regionId,
+                    );
+                    if (! empty($quoted['has_discount'])) {
+                        $purchasePrice = (float) $quoted['unit_price'];
+                    }
+                }
             }
         }
 
@@ -479,5 +495,18 @@ class ProductCatalogCardService
         }
 
         return $rows->sortByDesc('available_quantity')->values();
+    }
+
+    private function canAddToBuyerCart(): bool
+    {
+        if ($this->user->isManufacturerStaff() || $this->user->isDistributorStaff()) {
+            return false;
+        }
+
+        if ($this->user->isEndCompanyStaff()) {
+            return app(EndCompanyStaffAccess::class)->canAccessSection($this->user, 'cart');
+        }
+
+        return $this->cardRole() === 'end_company';
     }
 }

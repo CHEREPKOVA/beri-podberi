@@ -1,0 +1,137 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\EndCompanyProfile;
+use App\Models\Role;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+class EndCompanyCompanyContext
+{
+    public function isCompanyAdmin(User $user): bool
+    {
+        $role = $user->getCurrentRole();
+        if ($role?->slug === Role::SLUG_END_COMPANY) {
+            return true;
+        }
+
+        return $user->roles->contains('slug', Role::SLUG_END_COMPANY)
+            && $role === null;
+    }
+
+    public function isEndCompanyEmployee(User $user): bool
+    {
+        $employeeRole = $user->roles->firstWhere('slug', Role::SLUG_COMPANY_EMPLOYEE);
+        if (! $employeeRole) {
+            return false;
+        }
+
+        $params = $this->decodeParams($employeeRole->pivot->company_params ?? null);
+        $kind = (string) ($params['kind'] ?? '');
+        if ($kind !== '' && $kind !== config('end_company_staff.params_kind')) {
+            return false;
+        }
+        if ($kind === config('end_company_staff.params_kind')) {
+            return true;
+        }
+
+        $companyName = trim((string) ($employeeRole->pivot->company_name ?? ''));
+
+        return $companyName !== '' && $this->ownerUserIdForCompany($companyName) !== null;
+    }
+
+    public function isEndCompanyStaff(User $user): bool
+    {
+        return $this->isCompanyAdmin($user) || $this->isEndCompanyEmployee($user);
+    }
+
+    public function companyName(User $user): ?string
+    {
+        $current = $user->getCurrentRole();
+        if ($current) {
+            $name = trim((string) ($user->roles->firstWhere('id', $current->id)?->pivot?->company_name ?? ''));
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        foreach ([Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE] as $slug) {
+            $name = trim((string) ($user->roles->firstWhere('slug', $slug)?->pivot?->company_name ?? ''));
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        $profileName = trim((string) ($user->endCompanyProfile()->value('full_name') ?? ''));
+
+        return $profileName !== '' ? $profileName : null;
+    }
+
+    public function profile(User $user): ?EndCompanyProfile
+    {
+        $own = $user->endCompanyProfile()->first();
+        if ($own) {
+            return $own;
+        }
+
+        return $this->employerProfile($user);
+    }
+
+    public function employerProfile(User $user): ?EndCompanyProfile
+    {
+        $companyName = $this->companyName($user);
+        if ($companyName === null) {
+            return null;
+        }
+
+        $ownerId = $this->ownerUserIdForCompany($companyName);
+        if ($ownerId === null) {
+            return null;
+        }
+
+        return EndCompanyProfile::query()->where('user_id', $ownerId)->first();
+    }
+
+    public function ownerUserIdForCompany(string $companyName): ?int
+    {
+        $ownerId = DB::table('role_user')
+            ->join('roles', 'roles.id', '=', 'role_user.role_id')
+            ->where('roles.slug', Role::SLUG_END_COMPANY)
+            ->where('role_user.company_name', $companyName)
+            ->value('role_user.user_id');
+
+        return $ownerId !== null ? (int) $ownerId : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function employeeParams(User $user): array
+    {
+        $employeeRole = $user->roles->firstWhere('slug', Role::SLUG_COMPANY_EMPLOYEE);
+        if (! $employeeRole) {
+            return [];
+        }
+
+        return $this->decodeParams($employeeRole->pivot->company_params ?? null);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function decodeParams(mixed $raw): array
+    {
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+}

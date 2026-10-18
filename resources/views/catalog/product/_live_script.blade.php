@@ -14,7 +14,12 @@ document.addEventListener('alpine:init', () => {
             if (!this.url || this.intervalSeconds <= 0) {
                 return;
             }
+            if (this.timer) clearInterval(this.timer);
             this.timer = setInterval(() => this.refresh(), this.intervalSeconds * 1000);
+            this.$cleanup(() => {
+                clearInterval(this.timer);
+                this.timer = null;
+            });
         },
 
         async refresh() {

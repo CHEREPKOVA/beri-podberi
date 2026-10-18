@@ -48,6 +48,14 @@ class PlatformOrder extends Model
     /** Закупка дистрибьютора у производителя. */
     public const CHANNEL_DISTRIBUTOR_MANUFACTURER = 'distributor_manufacturer';
 
+    public const REJECTION_OUT_OF_STOCK = 'out_of_stock';
+
+    public const REJECTION_DELIVERY_REGION = 'delivery_region';
+
+    public const REJECTION_TECHNICAL_ERROR = 'technical_error';
+
+    public const REJECTION_DISCONTINUED = 'discontinued';
+
     /**
      * Основная линия прогресса (happy path).
      *
@@ -75,6 +83,7 @@ class PlatformOrder extends Model
         'manufacturer_responsible_contact_id',
         'manufacturer_profile_id',
         'end_company_profile_id',
+        'created_by_user_id',
         'delivery_method_id',
         'transport_company_id',
         'end_company_delivery_address_id',
@@ -98,6 +107,12 @@ class PlatformOrder extends Model
         'delivery_time_to',
         'delivery_vehicle_type',
         'total_amount',
+        'discount_amount',
+        'discount_label',
+        'discount_set_id',
+        'distributor_discount_set_id',
+        'promo_code_id',
+        'promo_code',
         'status',
         'ordered_at',
     ];
@@ -106,6 +121,7 @@ class PlatformOrder extends Model
     {
         return [
             'total_amount' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
             'ordered_at' => 'datetime',
             'delivery_date' => 'date',
             'shipped_at' => 'datetime',
@@ -141,7 +157,7 @@ class PlatformOrder extends Model
             self::STATUS_AWAITING_CONFIRMATION => 'Ожидает подтверждения',
             self::STATUS_CONFIRMED => 'Подтверждён',
             self::STATUS_IN_WORK => 'В работе',
-            self::STATUS_NEEDS_APPROVAL => 'Ожидает подтверждения',
+            self::STATUS_NEEDS_APPROVAL => 'Требует согласования',
             self::STATUS_REJECTED => 'Отклонён',
             self::STATUS_READY_TO_SHIP => 'Готов к отгрузке',
             self::STATUS_SHIPPED => 'Отгружен',
@@ -159,11 +175,24 @@ class PlatformOrder extends Model
             self::STATUS_AWAITING_CONFIRMATION => 'Поставщик проверяет заказ.',
             self::STATUS_CONFIRMED => 'Заказ принят поставщиком и готовится к сборке.',
             self::STATUS_IN_WORK => 'Заказ передан на комплектование склада.',
-            self::STATUS_NEEDS_APPROVAL => 'Ожидается подтверждение изменений покупателем.',
+            self::STATUS_NEEDS_APPROVAL => 'Поставщик изменил заказ, требуется согласие покупателя.',
             self::STATUS_REJECTED => 'Заказ отклонён или отменён.',
             self::STATUS_READY_TO_SHIP => 'Заказ собран и готов к отгрузке.',
             self::STATUS_SHIPPED => 'Заказ отгружен, ожидается получение.',
             self::STATUS_COMPLETED => 'Заказ полностью выполнен.',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function supplierRejectionReasons(): array
+    {
+        return [
+            self::REJECTION_OUT_OF_STOCK => 'Отсутствие товара',
+            self::REJECTION_DELIVERY_REGION => 'Невозможность доставки в регион',
+            self::REJECTION_TECHNICAL_ERROR => 'Техническая ошибка в заказе',
+            self::REJECTION_DISCONTINUED => 'Завершение поставок по данной модели',
         ];
     }
 
@@ -448,6 +477,11 @@ class PlatformOrder extends Model
         return $this->belongsTo(EndCompanyProfile::class);
     }
 
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
     public function deliveryMethod(): BelongsTo
     {
         return $this->belongsTo(DeliveryMethod::class);
@@ -520,5 +554,39 @@ class PlatformOrder extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(PlatformOrderDocument::class)->orderByDesc('id');
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(PlatformOrderMessage::class)->orderBy('id');
+    }
+
+    public function cabinetShowUrlFor(User $user, bool $withCorrespondenceAnchor = true): string
+    {
+        if ($this->isDistributorPurchase()) {
+            if ($user->manufacturerProfile && (int) $user->manufacturerProfile->id === (int) $this->manufacturer_profile_id) {
+                $url = route('manufacturer.orders.show', $this);
+            } elseif ($user->hasPermission('orders.manage') && $user->distributorProfile === null) {
+                $url = route('admin.orders.show', $this);
+            } else {
+                $url = route('distributor.purchases.show', $this);
+            }
+        } else {
+            $distributorId = $user->currentDistributorProfile()?->id ?? $user->distributorProfile?->id;
+            if ($distributorId && (int) $this->distributor_profile_id === (int) $distributorId) {
+                $url = route('distributor.orders.show', $this);
+            } else {
+                $endCompanyId = $user->endCompanyProfile?->id;
+                if ($endCompanyId && (int) $this->end_company_profile_id === (int) $endCompanyId) {
+                    $url = route('buyer.orders.show', $this);
+                } elseif ($user->hasPermission('orders.manage')) {
+                    $url = route('admin.orders.show', $this);
+                } else {
+                    $url = route('buyer.orders.show', $this);
+                }
+            }
+        }
+
+        return $withCorrespondenceAnchor ? $url.'#order-correspondence' : $url;
     }
 }

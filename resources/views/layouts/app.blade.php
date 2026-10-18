@@ -65,18 +65,24 @@
             color: #991b1b !important;
         }
     </style>
+    <!--cabinet-styles:start-->
     @stack('styles')
+    <!--cabinet-styles:end-->
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200"
+<body data-cabinet-root data-cabinet-home="{{ route('dashboard') }}" class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200"
       x-data="{
           sidebarOpen: true,
           cartItemsCount: {{ (int) ($sidebarCartItemsCount ?? $buyerCartItemsCount ?? 0) }},
           toast: null,
           toastOk: true,
+          toastTitle: null,
           toastTimer: null,
-          showToast(message, ok = true) {
+          showToast(message, ok = true, title) {
               this.toast = message;
               this.toastOk = ok !== false;
+              this.toastTitle = title !== undefined
+                  ? title
+                  : (this.toastOk ? 'Добавлено в корзину' : 'Не удалось добавить');
               clearTimeout(this.toastTimer);
               this.toastTimer = setTimeout(() => { this.toast = null; }, 4500);
           },
@@ -84,7 +90,8 @@
               this.cartItemsCount = Number(count) || 0;
           }
       }"
-      @cart-updated.window="if ($event.detail.count != null) setCartCount($event.detail.count); if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false)">
+      @cart-updated.window="if ($event.detail.count != null) setCartCount($event.detail.count); if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false)"
+      @app-toast.window="if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false, $event.detail.title)">
     @include('partials.page-preloader')
     @php
         $authUser = auth()->user();
@@ -104,7 +111,7 @@
     @endphp
     <div class="flex min-h-screen">
         {{-- Sidebar --}}
-        <aside :class="sidebarOpen ? 'w-64' : 'w-20'" class="fixed left-0 top-0 z-40 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300">
+        <aside data-cabinet-sidebar data-cart-count="{{ (int) ($sidebarCartItemsCount ?? $buyerCartItemsCount ?? 0) }}" :class="sidebarOpen ? 'w-64' : 'w-20'" class="fixed left-0 top-0 z-40 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300">
             <div class="flex h-16 items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700">
                 <a href="{{ url('/dashboard') }}" class="flex items-center gap-2">
                     <img src="{{ asset('images/logo-beri.jpg') }}" alt="Бери-Подбери" class="h-8 w-auto object-contain" />
@@ -117,16 +124,19 @@
                 @php
                     $currentRoute = request()->route()?->getName();
                     $currentRole = auth()->user()?->getCurrentRole();
-                    $sidebarCart = match ($currentRole?->slug) {
-                        'end_company', 'company_employee' => [
-                            'url' => route('buyer.cart.index'),
-                            'active' => str_starts_with($currentRoute ?? '', 'buyer.cart')
-                                || str_starts_with($currentRoute ?? '', 'buyer.checkout'),
-                        ],
-                        'distributor' => [
+                    $dstStaff = $distributorStaffAccess ?? [];
+                    $endStaff = $endCompanyStaffAccess ?? [];
+                    $sidebarCart = match (true) {
+                        ($manufacturerStaffAccess['is_staff'] ?? false) => null,
+                        ($dstStaff['is_staff'] ?? false) && ($dstStaff['can_purchases'] ?? false) => [
                             'url' => route('distributor.purchases.cart.index'),
                             'active' => str_starts_with($currentRoute ?? '', 'distributor.purchases.cart')
                                 || str_starts_with($currentRoute ?? '', 'distributor.purchases.checkout'),
+                        ],
+                        ($endStaff['can_cart'] ?? false) => [
+                            'url' => route('buyer.cart.index'),
+                            'active' => str_starts_with($currentRoute ?? '', 'buyer.cart')
+                                || str_starts_with($currentRoute ?? '', 'buyer.checkout'),
                         ],
                         default => null,
                     };
@@ -263,12 +273,14 @@
                 @endif
 
                 {{-- Раздел для Производителя --}}
-                @if($currentRole?->slug === 'manufacturer')
+                @if($currentRole?->slug === 'manufacturer' || ($manufacturerStaffAccess['is_staff'] ?? false))
                 @php
                     $manufacturerCatalogActive = str_starts_with($currentRoute ?? '', 'manufacturer.catalog');
                     $manufacturerPartnersActive = str_starts_with($currentRoute ?? '', 'manufacturer.partners');
+                    $staff = $manufacturerStaffAccess ?? [];
                 @endphp
                 <div class="pt-4 space-y-1">
+                    @if($staff['can_profile'] ?? false)
                     <a href="{{ route('manufacturer.profile') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'manufacturer.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -277,7 +289,20 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Профиль</span>
                     </a>
+                    @endif
 
+                    @if($staff['can_employees'] ?? false)
+                    <a href="{{ route('manufacturer.employees.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.employees') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Сотрудники</span>
+                    </a>
+                    @endif
+
+                    @if($staff['can_warehouses'] ?? false)
                     <a href="{{ route('manufacturer.warehouses.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'manufacturer.warehouses') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -286,7 +311,9 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Склады</span>
                     </a>
+                    @endif
 
+                    @if($staff['can_products'] ?? false)
                     <a href="{{ route('manufacturer.products.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'manufacturer.products') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -295,6 +322,8 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Номенклатура</span>
                     </a>
+                    @endif
+                    @if($staff['can_orders'] ?? false)
                     <a href="{{ route('manufacturer.orders.index') }}"
                        class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'manufacturer.orders') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -310,9 +339,21 @@
                         </span>
                         <span x-show="sidebarOpen" x-transition>Заказы</span>
                     </a>
+                    @endif
+                    @if($staff['can_discounts'] ?? false)
+                    <a href="{{ route('manufacturer.discounts.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'manufacturer.discounts') || str_starts_with($currentRoute ?? '', 'manufacturer.promo-codes') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Скидки и промокоды</span>
+                    </a>
+                    @endif
                 </div>
 
                 <div class="pt-4 mt-2 border-t border-gray-200 dark:border-gray-700 space-y-1">
+                    @if($staff['can_catalog'] ?? false)
                     <a href="{{ route('manufacturer.catalog.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ $manufacturerCatalogActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -321,7 +362,9 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Каталог товаров</span>
                     </a>
+                    @endif
 
+                    @if($staff['can_partners'] ?? false)
                     <a href="{{ route('manufacturer.partners.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ $manufacturerPartnersActive ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -330,11 +373,14 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Компании</span>
                     </a>
+                    @endif
                 </div>
                 @endif
 
-                @if($currentRole?->slug === 'distributor')
-                <div class="pt-4">
+                @if($distributorStaffAccess['is_staff'] ?? false)
+                @php $dstStaff = $distributorStaffAccess ?? []; @endphp
+                <div class="pt-4 space-y-1">
+                    @if($dstStaff['can_profile'] ?? false)
                     <a href="{{ route('distributor.profile') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'distributor.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -343,6 +389,18 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Профиль</span>
                     </a>
+                    @endif
+                    @if($dstStaff['can_employees'] ?? false)
+                    <a href="{{ route('distributor.employees.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.employees') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Сотрудники</span>
+                    </a>
+                    @endif
+                    @if($dstStaff['can_warehouses'] ?? false)
                     <a href="{{ route('distributor.warehouses.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'distributor.warehouses') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -351,6 +409,8 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Склады</span>
                     </a>
+                    @endif
+                    @if($dstStaff['can_products'] ?? false)
                     <a href="{{ route('distributor.products.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'distributor.products') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -359,6 +419,18 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Номенклатура</span>
                     </a>
+                    @endif
+                    @if($dstStaff['can_discounts'] ?? false)
+                    <a href="{{ route('distributor.discounts.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'distributor.discounts') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Наборы скидок</span>
+                    </a>
+                    @endif
+                    @if($dstStaff['can_orders'] ?? false)
                     <a href="{{ route('distributor.orders.index') }}"
                        class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'distributor.orders') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -374,6 +446,8 @@
                         </span>
                         <span x-show="sidebarOpen" x-transition>Заказы</span>
                     </a>
+                    @endif
+                    @if($dstStaff['can_purchases'] ?? false)
                     <a href="{{ route('distributor.purchases.index') }}"
                        class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'distributor.purchases') && ! str_starts_with($currentRoute ?? '', 'distributor.purchases.cart') && ! str_starts_with($currentRoute ?? '', 'distributor.purchases.checkout') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -389,11 +463,14 @@
                         </span>
                         <span x-show="sidebarOpen" x-transition>Мои покупки</span>
                     </a>
+                    @endif
                 </div>
                 @endif
 
-                @if($currentRole?->slug === 'end_company')
-                <div class="pt-4">
+                @if($endCompanyStaffAccess['is_staff'] ?? false)
+                @php $endStaff = $endCompanyStaffAccess ?? []; @endphp
+                <div class="pt-4 space-y-1">
+                    @if($endStaff['can_profile'] ?? false)
                     <a href="{{ route('end_company.profile') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                            {{ str_starts_with($currentRoute ?? '', 'end_company.profile') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
@@ -402,10 +479,21 @@
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Профиль</span>
                     </a>
+                    @endif
+                    @if($endStaff['can_employees'] ?? false)
+                    <a href="{{ route('end_company.employees.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'end_company.employees') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Сотрудники</span>
+                    </a>
+                    @endif
                 </div>
                 @endif
 
-                @if(in_array($currentRole?->slug, ['distributor', 'end_company', 'company_employee'], true))
+                @if(($distributorStaffAccess['can_catalog'] ?? false) || ($endCompanyStaffAccess['can_catalog'] ?? false))
                 <div class="pt-4">
                     <a href="{{ route('buyer.catalog.index') }}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
@@ -418,7 +506,7 @@
                 </div>
                 @endif
 
-                @if(in_array($currentRole?->slug, ['end_company', 'company_employee'], true))
+                @if($endCompanyStaffAccess['can_orders'] ?? false)
                 <div class="pt-4">
                     <a href="{{ route('buyer.orders.index') }}"
                        class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
@@ -441,44 +529,12 @@
         </aside>
         {{-- Main --}}
         <div :class="sidebarOpen ? 'ml-64' : 'ml-20'" class="flex-1 transition-all duration-300">
-            <header class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6">
+            <div data-cabinet-progress hidden class="fixed top-0 left-0 right-0 z-[60] h-1 bg-[#c3242a] animate-pulse"></div>
+            <header data-cabinet-header class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6">
                 <h1 class="min-w-0 flex flex-wrap items-center gap-2.5 text-lg font-semibold">@yield('heading', 'Главная')</h1>
                 <div class="flex items-center gap-4">
                     @auth
-                    {{-- Уведомления в шапке — на следующем этапе
-                    @php
-                        $unreadNotifications = auth()->user()->unreadNotifications()->latest()->limit(8)->get();
-                        $unreadCount = auth()->user()->unreadNotifications()->count();
-                    @endphp
-                    <div class="relative" x-data="{ open: false }">
-                        <button type="button" @click="open = !open" class="relative rounded-lg border border-gray-300 dark:border-gray-600 p-2 text-gray-600 dark:text-gray-300 hover:border-[#c3242a] hover:text-[#c3242a]">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V4a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-                            @if($unreadCount > 0)
-                                <span class="absolute -top-1 -right-1 min-w-[1.1rem] h-4 px-1 rounded-full bg-[#c3242a] text-white text-[10px] leading-4 text-center">{{ $unreadCount > 9 ? '9+' : $unreadCount }}</span>
-                            @endif
-                        </button>
-                        <div x-show="open" @click.outside="open = false" x-cloak
-                             class="absolute right-0 mt-2 w-80 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg z-50">
-                            <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-900 dark:text-white">Уведомления</div>
-                            <ul class="max-h-80 overflow-y-auto">
-                                @forelse($unreadNotifications as $notification)
-                                    <li class="px-3 py-2 text-sm border-b border-gray-100 dark:border-gray-700/60">
-                                        <p class="text-gray-900 dark:text-white">{{ $notification->data['message'] ?? 'Уведомление' }}</p>
-                                        <p class="text-[10px] text-gray-400 mt-1">{{ $notification->created_at?->format('d.m.Y H:i') }}</p>
-                                    </li>
-                                @empty
-                                    <li class="px-3 py-4 text-sm text-gray-500">Нет новых уведомлений</li>
-                                @endforelse
-                            </ul>
-                            @if($unreadCount > 0)
-                                <form method="POST" action="{{ route('notifications.read_all') }}" class="p-2 border-t border-gray-200 dark:border-gray-700">
-                                    @csrf
-                                    <button type="submit" class="w-full text-xs text-[#c3242a] hover:underline">Отметить все прочитанными</button>
-                                </form>
-                            @endif
-                        </div>
-                    </div>
-                    --}}
+                    {{-- Иконка уведомлений скрыта, пока колокольчик не должен быть виден никому. --}}
                     <span class="text-sm text-gray-500">Вы вошли как: {{ $currentRoleLabel }}</span>
                     @if($canSwitchRole)
                     <button type="button"
@@ -494,7 +550,7 @@
                     @endauth
                 </div>
             </header>
-            <main class="p-6">
+            <main data-cabinet-main class="p-6">
                 @yield('content')
             </main>
         </div>
@@ -502,14 +558,15 @@
 
     @auth
     @if($canSwitchRole && !auth()->user()->needsRoleSelection())
-    <div id="role-switch-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog" aria-labelledby="role-switch-title">
+    <div id="role-switch-modal" data-cabinet-role-modal class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog" aria-labelledby="role-switch-title">
         <div class="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 shadow-xl p-6">
             <div class="mb-6 flex items-start justify-between gap-3">
                 <h2 id="role-switch-title" class="text-lg font-semibold text-gray-900 dark:text-white">Выберите новую активную роль</h2>
                 <button type="button" onclick="document.getElementById('role-switch-modal')?.classList.add('hidden')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
             </div>
-            <form method="POST" action="{{ route('role.switch') }}">
+            <form method="POST" action="{{ route('role.switch') }}" data-role-switch>
                 @csrf
+                <p data-role-switch-error class="mb-3 hidden text-sm text-red-600"></p>
                 <div class="space-y-3 mb-6">
                     @foreach($activeRoles as $role)
                         @php
@@ -536,7 +593,7 @@
     <div x-show="toast"
          x-cloak
          x-transition.opacity.duration.200ms
-         class="fixed bottom-6 right-6 z-[80] max-w-sm rounded-xl border bg-white dark:bg-gray-800 shadow-xl px-4 py-3"
+         class="fixed bottom-6 right-6 z-[80] max-w-md rounded-xl border bg-white dark:bg-gray-800 shadow-xl px-4 py-3"
          :class="toastOk ? 'border-[#c3242a]/30' : 'border-amber-300'">
         <div class="flex items-start gap-3">
             <span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white"
@@ -545,8 +602,8 @@
                 <svg x-show="!toastOk" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 5a7 7 0 100 14 7 7 0 000-14z"/></svg>
             </span>
             <div>
-                <p class="text-sm font-semibold text-gray-900 dark:text-white" x-text="toastOk ? 'Добавлено в корзину' : 'Не удалось добавить'"></p>
-                <p class="text-sm text-gray-600 dark:text-gray-300 mt-0.5" x-text="toast"></p>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white" x-show="toastTitle" x-text="toastTitle"></p>
+                <p class="text-sm text-gray-600 dark:text-gray-300" :class="toastTitle ? 'mt-0.5' : 'font-medium text-gray-900 dark:text-white'" x-text="toast"></p>
             </div>
             <button type="button" class="ml-auto text-gray-400 hover:text-gray-600" @click="toast = null">✕</button>
         </div>
@@ -697,6 +754,9 @@
         });
     })();
     </script>
+    <!--cabinet-scripts:start-->
     @stack('scripts')
+    <!--cabinet-scripts:end-->
+    @include('partials.cabinet-nav')
 </body>
 </html>

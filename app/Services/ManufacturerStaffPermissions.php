@@ -7,18 +7,19 @@ use App\Models\User;
 
 class ManufacturerStaffPermissions
 {
+    public function __construct(
+        private readonly ManufacturerStaffAccess $access,
+        private readonly ManufacturerCompanyContext $context,
+    ) {}
+
     public function staffType(User $user): string
     {
-        $role = $user->getCurrentRole();
-        if (! $role) {
-            return 'warehouse';
-        }
-
-        if ($role->slug === Role::SLUG_MANUFACTURER) {
+        if ($this->context->isCompanyAdmin($user)) {
             return 'admin';
         }
 
-        if ($role->slug === Role::SLUG_COMPANY_EMPLOYEE) {
+        $role = $user->getCurrentRole();
+        if ($role?->slug === Role::SLUG_COMPANY_EMPLOYEE) {
             $pivot = $user->roles->firstWhere('id', $role->id)?->pivot;
             $type = strtolower((string) ($pivot?->company_type ?? ''));
 
@@ -32,10 +33,23 @@ class ManufacturerStaffPermissions
 
     public function can(User $user, string $ability): bool
     {
-        $type = $this->staffType($user);
-        $abilities = config("manufacturer_staff.partner_catalog.{$type}", []);
+        if ($this->context->isCompanyAdmin($user)) {
+            return true;
+        }
 
-        return in_array($ability, $abilities, true);
+        if (! $this->context->isManufacturerEmployee($user)) {
+            $type = $this->staffType($user);
+            $abilities = config("manufacturer_staff.partner_catalog.{$type}", []);
+
+            return in_array($ability, $abilities, true);
+        }
+
+        return match ($ability) {
+            'view' => $this->access->canAccessSection($user, 'partners') || $this->access->canAccessSection($user, 'orders'),
+            'add', 'remove', 'exclusive' => $this->access->canAccessSection($user, 'partners'),
+            'orders' => $this->access->canAccessSection($user, 'orders'),
+            default => false,
+        };
     }
 
     public function canViewPartnerCatalog(User $user): bool

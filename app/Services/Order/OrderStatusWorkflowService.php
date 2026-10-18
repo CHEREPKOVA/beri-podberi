@@ -4,6 +4,7 @@ namespace App\Services\Order;
 
 use App\Mail\OrderStatusChangedMail;
 use App\Models\DistributorProduct;
+use App\Models\DistributorWarehouse;
 use App\Models\ManufacturerProfile;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderItem;
@@ -12,6 +13,7 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use App\Notifications\OrderStatusChangedNotification;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
@@ -98,6 +100,8 @@ class OrderStatusWorkflowService
             OrderDocumentService::ACTION_UPLOAD_DOCUMENT => 'Загрузка документа',
             OrderDocumentService::ACTION_REPLACE_DOCUMENT => 'Обновление документа',
             OrderDocumentService::ACTION_DELETE_DOCUMENT => 'Удаление документа',
+            OrderCorrespondenceService::ACTION_MESSAGE => 'Сообщение в переписке',
+            OrderCorrespondenceService::ACTION_MESSAGE_DELETED => 'Удаление сообщения',
         ];
     }
 
@@ -259,24 +263,36 @@ class OrderStatusWorkflowService
         );
     }
 
-    public function reject(PlatformOrder $order, User $user, string $reason): PlatformOrder
+    public function reject(PlatformOrder $order, User $user, string $code, string $comment): PlatformOrder
     {
         $this->assertCan($order, self::ACTOR_SUPPLIER, self::ACTION_REJECT);
-        $reason = trim($reason);
-        if ($reason === '') {
+
+        $reasons = PlatformOrder::supplierRejectionReasons();
+        if (! isset($reasons[$code])) {
             throw ValidationException::withMessages([
-                'rejection_reason' => 'Укажите причину отклонения заказа.',
+                'rejection_code' => 'Выберите причину отклонения.',
             ]);
         }
 
-        $order->rejection_reason = $reason;
+        $comment = trim($comment);
+        if ($comment === '') {
+            throw ValidationException::withMessages([
+                'rejection_comment' => 'Укажите комментарий к отклонению.',
+            ]);
+        }
+
+        $order->rejection_reason = $reasons[$code].'. '.$comment;
 
         return $this->transition(
             $order,
             PlatformOrder::STATUS_REJECTED,
             $user,
             self::ACTION_REJECT,
-            $reason,
+            $order->rejection_reason,
+            [
+                'rejection_code' => $code,
+                'rejection_comment' => $comment,
+            ],
         );
     }
 
@@ -284,6 +300,7 @@ class OrderStatusWorkflowService
      * @param  list<array{
      *     id?: ?int,
      *     distributor_product_id?: ?int,
+     *     replace_with_distributor_product_id?: ?int,
      *     quantity?: int,
      *     unit_price?: float|int|string,
      *     distributor_warehouse_id?: ?int,
@@ -291,8 +308,13 @@ class OrderStatusWorkflowService
      *     delete?: bool|int|string
      * }>  $items
      */
-    public function sendForApproval(PlatformOrder $order, User $user, array $items, ?string $comment = null): PlatformOrder
-    {
+    public function sendForApproval(
+        PlatformOrder $order,
+        User $user,
+        array $items,
+        ?string $comment = null,
+        bool $canChangePrice = true,
+    ): PlatformOrder {
         $this->assertCan($order, self::ACTOR_SUPPLIER, self::ACTION_SEND_FOR_APPROVAL);
 
         if ($items === []) {
@@ -302,15 +324,19 @@ class OrderStatusWorkflowService
         }
 
         $previousTotal = round((float) $order->total_amount, 2);
+        $order->load('items');
+        $snapshot = $this->snapshotItems($order);
+        $analogOptions = $this->analogOptionsByItem($order);
         $changes = [];
         $newTotal = 0.0;
 
-        DB::transaction(function () use ($order, $items, &$changes, &$newTotal): void {
-            $remainingIds = [];
+        DB::transaction(function () use ($order, $items, $canChangePrice, $analogOptions, &$changes, &$newTotal): void {
+            $warehouseNames = $this->warehouseNamesForOrder($order);
 
             foreach ($items as $row) {
                 $delete = filter_var($row['delete'] ?? false, FILTER_VALIDATE_BOOLEAN);
                 $itemId = isset($row['id']) ? (int) $row['id'] : 0;
+                $replaceOfferId = (int) ($row['replace_with_distributor_product_id'] ?? 0);
 
                 if ($itemId > 0) {
                     $item = $order->items()->whereKey($itemId)->first();
@@ -339,11 +365,28 @@ class OrderStatusWorkflowService
                         continue;
                     }
 
+                    if ($replaceOfferId > 0) {
+                        $allowedAnalogIds = array_map(
+                            static fn (array $option): int => (int) $option['id'],
+                            $analogOptions[(int) $item->id] ?? [],
+                        );
+                        if (! in_array($replaceOfferId, $allowedAnalogIds, true)) {
+                            throw ValidationException::withMessages([
+                                'items' => 'Выбранный аналог недоступен для этой позиции.',
+                            ]);
+                        }
+                        $changes[] = $this->replaceItemWithAnalog($order, $item, $row, $replaceOfferId, $canChangePrice, $warehouseNames);
+
+                        continue;
+                    }
+
                     $oldQty = (int) $item->quantity;
                     $oldPrice = round((float) $item->unit_price, 2);
                     $oldWarehouse = $item->distributor_warehouse_id;
                     $qty = (int) ($row['quantity'] ?? $oldQty);
-                    $price = round((float) ($row['unit_price'] ?? $oldPrice), 2);
+                    $price = $canChangePrice && array_key_exists('unit_price', $row) && $row['unit_price'] !== null && $row['unit_price'] !== ''
+                        ? round((float) $row['unit_price'], 2)
+                        : $oldPrice;
                     $warehouseId = array_key_exists('distributor_warehouse_id', $row)
                         ? ($row['distributor_warehouse_id'] !== null && $row['distributor_warehouse_id'] !== ''
                             ? (int) $row['distributor_warehouse_id']
@@ -368,8 +411,6 @@ class OrderStatusWorkflowService
                         'line_total' => $lineTotal,
                         'distributor_warehouse_id' => $warehouseId,
                     ]);
-                    $newTotal += $lineTotal;
-                    $remainingIds[] = $item->id;
 
                     if ($oldQty !== $qty || abs($oldPrice - $price) > 0.009 || (int) $oldWarehouse !== (int) $warehouseId) {
                         $changes[] = [
@@ -382,6 +423,10 @@ class OrderStatusWorkflowService
                             'new_unit_price' => $price,
                             'old_line_total' => round($oldQty * $oldPrice, 2),
                             'new_line_total' => $lineTotal,
+                            'old_warehouse_id' => $oldWarehouse,
+                            'new_warehouse_id' => $warehouseId,
+                            'old_warehouse_name' => $oldWarehouse ? ($warehouseNames[(int) $oldWarehouse] ?? null) : null,
+                            'new_warehouse_name' => $warehouseId ? ($warehouseNames[$warehouseId] ?? null) : null,
                             'reason' => filled($row['reason'] ?? null) ? trim((string) $row['reason']) : null,
                             'action' => 'updated',
                         ];
@@ -390,7 +435,6 @@ class OrderStatusWorkflowService
                     continue;
                 }
 
-                // Новая позиция
                 $offerId = (int) ($row['distributor_product_id'] ?? 0);
                 if ($offerId < 1) {
                     throw ValidationException::withMessages([
@@ -398,19 +442,11 @@ class OrderStatusWorkflowService
                     ]);
                 }
 
-                $offer = DistributorProduct::query()
-                    ->whereKey($offerId)
-                    ->where('distributor_profile_id', $order->distributor_profile_id)
-                    ->first();
-
-                if ($offer === null) {
-                    throw ValidationException::withMessages([
-                        'items' => 'Товар не найден в каталоге поставщика.',
-                    ]);
-                }
-
+                $offer = $this->supplierOffer($order, $offerId);
                 $qty = (int) ($row['quantity'] ?? 1);
-                $price = round((float) ($row['unit_price'] ?? $offer->retail_price ?? 0), 2);
+                $price = $canChangePrice && array_key_exists('unit_price', $row) && $row['unit_price'] !== null && $row['unit_price'] !== ''
+                    ? round((float) $row['unit_price'], 2)
+                    : round((float) ($offer->retail_price ?? 0), 2);
                 if ($qty < 1 || $price < 0) {
                     throw ValidationException::withMessages([
                         'items' => 'Некорректные количество или цена новой позиции.',
@@ -436,8 +472,6 @@ class OrderStatusWorkflowService
                     'line_total' => $lineTotal,
                 ]);
 
-                $newTotal += $lineTotal;
-                $remainingIds[] = $created->id;
                 $changes[] = [
                     'id' => $created->id,
                     'name' => $created->name,
@@ -459,7 +493,6 @@ class OrderStatusWorkflowService
                 ]);
             }
 
-            // Пересчёт итого на случай, если в форму не попали все строки
             $newTotal = round((float) $order->items()->sum('line_total'), 2);
             $order->total_amount = $newTotal;
             $order->save();
@@ -476,6 +509,7 @@ class OrderStatusWorkflowService
             $supplierComment ?: 'Поставщик отправил изменения на согласование',
             [
                 'changes' => $changes,
+                'items_snapshot' => $snapshot,
                 'previous_total' => $previousTotal,
                 'new_total' => round((float) $order->total_amount, 2),
                 'supplier_comment' => $supplierComment,
@@ -492,7 +526,7 @@ class OrderStatusWorkflowService
      *     changes: list<array<string, mixed>>,
      *     previous_total: ?float,
      *     new_total: ?float,
-     *     created_at: ?\Illuminate\Support\Carbon
+     *     created_at: ?Carbon
      * }|null
      */
     public function latestApprovalProposal(PlatformOrder $order): ?array
@@ -548,6 +582,18 @@ class OrderStatusWorkflowService
             ? $reason
             : 'Покупатель отклонил предложенные изменения';
 
+        $proposalLog = $order->statusLogs()
+            ->where('action', self::ACTION_SEND_FOR_APPROVAL)
+            ->orderByDesc('id')
+            ->first();
+        $meta = is_array($proposalLog?->meta) ? $proposalLog->meta : [];
+        $snapshot = $meta['items_snapshot'] ?? null;
+        $previousTotal = $meta['previous_total'] ?? null;
+
+        if (is_array($snapshot) && $snapshot !== []) {
+            $this->restoreItems($order, $snapshot, $previousTotal);
+        }
+
         // Не завершаем заказ: возвращаем поставщику на доработку / повторное согласование.
         return $this->transition(
             $order,
@@ -565,7 +611,7 @@ class OrderStatusWorkflowService
     /**
      * Последнее отклонение изменений покупателем (для экрана поставщика).
      *
-     * @return array{reason: ?string, comment: ?string, created_at: ?\Illuminate\Support\Carbon}|null
+     * @return array{reason: ?string, comment: ?string, created_at: ?Carbon}|null
      */
     public function latestBuyerChangesRejection(PlatformOrder $order): ?array
     {
@@ -637,13 +683,17 @@ class OrderStatusWorkflowService
     {
         $this->assertCan($order, self::ACTOR_BUYER, self::ACTION_SUBMIT);
 
-        return $this->transition(
+        $updated = $this->transition(
             $order,
             PlatformOrder::STATUS_AWAITING_CONFIRMATION,
             $user,
             self::ACTION_SUBMIT,
             'Заказ отправлен производителю на подтверждение',
         );
+
+        app(OrderCreatedNotifier::class)->notifySupplier($updated, $user);
+
+        return $updated;
     }
 
     public function markReady(PlatformOrder $order, User $user): PlatformOrder
@@ -942,6 +992,246 @@ class OrderStatusWorkflowService
     }
 
     /**
+     * @return array<int, list<array{id: int, name: string, sku: string, price: float}>>
+     */
+    public function analogOptionsByItem(PlatformOrder $order): array
+    {
+        $order->loadMissing('items');
+
+        $productIds = $order->items
+            ->pluck('product_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($productIds === []) {
+            return [];
+        }
+
+        $forward = DB::table('product_analogs')
+            ->whereIn('product_id', $productIds)
+            ->get(['product_id', 'analog_product_id']);
+        $reverse = DB::table('product_analogs')
+            ->whereIn('analog_product_id', $productIds)
+            ->get(['product_id', 'analog_product_id']);
+
+        $analogIdsByProduct = [];
+        $allAnalogIds = [];
+        foreach ($forward as $row) {
+            $pid = (int) $row->product_id;
+            $aid = (int) $row->analog_product_id;
+            $analogIdsByProduct[$pid][] = $aid;
+            $allAnalogIds[] = $aid;
+        }
+        foreach ($reverse as $row) {
+            $pid = (int) $row->analog_product_id;
+            $aid = (int) $row->product_id;
+            $analogIdsByProduct[$pid][] = $aid;
+            $allAnalogIds[] = $aid;
+        }
+
+        $allAnalogIds = array_values(array_unique($allAnalogIds));
+        if ($allAnalogIds === []) {
+            return [];
+        }
+
+        $offersQuery = DistributorProduct::query()
+            ->where('distributor_profile_id', $order->distributor_profile_id)
+            ->where('status', DistributorProduct::STATUS_ACTIVE)
+            ->whereIn('source_product_id', $allAnalogIds);
+
+        if ($order->isDistributorPurchase() && $order->manufacturer_profile_id) {
+            $offersQuery->where('manufacturer_profile_id', $order->manufacturer_profile_id);
+        }
+
+        $offersBySource = $offersQuery->get()->groupBy('source_product_id');
+        $result = [];
+
+        foreach ($order->items as $item) {
+            $options = [];
+            foreach (array_unique($analogIdsByProduct[(int) $item->product_id] ?? []) as $analogProductId) {
+                foreach ($offersBySource->get($analogProductId, collect()) as $offer) {
+                    if ((int) $offer->id === (int) $item->distributor_product_id) {
+                        continue;
+                    }
+                    $options[] = [
+                        'id' => (int) $offer->id,
+                        'name' => $offer->name,
+                        'sku' => (string) ($offer->manufacturer_sku ?: $offer->internal_sku ?: ''),
+                        'price' => round((float) $offer->retail_price, 2),
+                    ];
+                }
+            }
+            $result[(int) $item->id] = $options;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function snapshotItems(PlatformOrder $order): array
+    {
+        return $order->items()->get()->map(function (PlatformOrderItem $item): array {
+            return [
+                'id' => $item->id,
+                'platform_order_id' => $item->platform_order_id,
+                'distributor_product_id' => $item->distributor_product_id,
+                'product_id' => $item->product_id,
+                'distributor_warehouse_id' => $item->distributor_warehouse_id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'manufacturer_name' => $item->manufacturer_name,
+                'quantity' => $item->quantity,
+                'pack_quantity' => $item->pack_quantity,
+                'min_order_quantity' => $item->min_order_quantity,
+                'unit_price' => $item->unit_price,
+                'list_unit_price' => $item->list_unit_price,
+                'line_total' => $item->line_total,
+                'discount_set_id' => $item->discount_set_id,
+                'distributor_discount_set_id' => $item->distributor_discount_set_id,
+                'discount_label' => $item->discount_label,
+            ];
+        })->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $snapshot
+     */
+    private function restoreItems(PlatformOrder $order, array $snapshot, mixed $previousTotal): void
+    {
+        DB::transaction(function () use ($order, $snapshot, $previousTotal): void {
+            $order->items()->delete();
+            foreach ($snapshot as $row) {
+                $item = new PlatformOrderItem;
+                $item->forceFill(collect($row)->except('id')->all());
+                if (! empty($row['id'])) {
+                    $item->id = (int) $row['id'];
+                }
+                $item->save();
+            }
+
+            if ($previousTotal !== null) {
+                $order->total_amount = round((float) $previousTotal, 2);
+                $order->save();
+            }
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int, string>  $warehouseNames
+     * @return array<string, mixed>
+     */
+    private function replaceItemWithAnalog(
+        PlatformOrder $order,
+        PlatformOrderItem $item,
+        array $row,
+        int $replaceOfferId,
+        bool $canChangePrice,
+        array $warehouseNames,
+    ): array {
+        $offer = $this->supplierOffer($order, $replaceOfferId);
+        $oldQty = (int) $item->quantity;
+        $oldPrice = round((float) $item->unit_price, 2);
+        $qty = (int) ($row['quantity'] ?? $oldQty);
+        $price = $canChangePrice && array_key_exists('unit_price', $row) && $row['unit_price'] !== null && $row['unit_price'] !== ''
+            ? round((float) $row['unit_price'], 2)
+            : round((float) ($offer->retail_price ?? 0), 2);
+
+        if ($qty < 1 || $price < 0) {
+            throw ValidationException::withMessages([
+                'items' => 'Некорректные количество или цена при замене на аналог.',
+            ]);
+        }
+
+        $warehouseId = array_key_exists('distributor_warehouse_id', $row)
+            ? ($row['distributor_warehouse_id'] !== null && $row['distributor_warehouse_id'] !== ''
+                ? (int) $row['distributor_warehouse_id']
+                : null)
+            : $item->distributor_warehouse_id;
+
+        $lineTotal = round($qty * $price, 2);
+        $oldName = $item->name;
+        $oldSku = $item->sku;
+        $oldWarehouse = $item->distributor_warehouse_id;
+
+        $item->update([
+            'distributor_product_id' => $offer->id,
+            'product_id' => $offer->source_product_id,
+            'distributor_warehouse_id' => $warehouseId,
+            'name' => $offer->name,
+            'sku' => $offer->manufacturer_sku ?: $offer->internal_sku,
+            'manufacturer_name' => $offer->manufacturerName(),
+            'quantity' => $qty,
+            'pack_quantity' => $offer->pack_quantity,
+            'min_order_quantity' => $offer->min_order_quantity,
+            'unit_price' => $price,
+            'list_unit_price' => null,
+            'line_total' => $lineTotal,
+        ]);
+
+        return [
+            'id' => $item->id,
+            'name' => $offer->name,
+            'sku' => $offer->manufacturer_sku ?: $offer->internal_sku,
+            'old_name' => $oldName,
+            'old_sku' => $oldSku,
+            'old_quantity' => $oldQty,
+            'new_quantity' => $qty,
+            'old_unit_price' => $oldPrice,
+            'new_unit_price' => $price,
+            'old_line_total' => round($oldQty * $oldPrice, 2),
+            'new_line_total' => $lineTotal,
+            'old_warehouse_id' => $oldWarehouse,
+            'new_warehouse_id' => $warehouseId,
+            'old_warehouse_name' => $oldWarehouse ? ($warehouseNames[(int) $oldWarehouse] ?? null) : null,
+            'new_warehouse_name' => $warehouseId ? ($warehouseNames[$warehouseId] ?? null) : null,
+            'reason' => filled($row['reason'] ?? null) ? trim((string) $row['reason']) : 'Замена на аналог',
+            'action' => 'replaced',
+        ];
+    }
+
+    private function supplierOffer(PlatformOrder $order, int $offerId): DistributorProduct
+    {
+        $query = DistributorProduct::query()
+            ->whereKey($offerId)
+            ->where('distributor_profile_id', $order->distributor_profile_id);
+
+        if ($order->isDistributorPurchase() && $order->manufacturer_profile_id) {
+            $query->where('manufacturer_profile_id', $order->manufacturer_profile_id);
+        }
+
+        $offer = $query->first();
+        if ($offer === null) {
+            throw ValidationException::withMessages([
+                'items' => 'Товар не найден в каталоге поставщика.',
+            ]);
+        }
+
+        return $offer;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function warehouseNamesForOrder(PlatformOrder $order): array
+    {
+        if (! $order->distributor_profile_id) {
+            return [];
+        }
+
+        return DistributorWarehouse::query()
+            ->where('distributor_profile_id', $order->distributor_profile_id)
+            ->pluck('name', 'id')
+            ->map(fn ($name): string => (string) $name)
+            ->all();
+    }
+
+    /**
      * @param  array<string, mixed>  $meta
      */
     private function transition(
@@ -973,11 +1263,26 @@ class OrderStatusWorkflowService
             'meta' => $meta ?: null,
         ]);
 
-        $this->notifyParties($order->fresh([
+        $fresh = $order->fresh([
             'distributorProfile.user',
             'endCompanyProfile.user',
+            'manufacturerProfile.user',
             'transportCompany',
-        ]), $from, $toStatus, $comment);
+        ]);
+
+        $this->notifyParties($fresh, $from, $toStatus, $comment);
+
+        try {
+            app(OrderCorrespondenceService::class)->postFromWorkflow(
+                $fresh,
+                $action,
+                $from,
+                $toStatus,
+                $comment,
+            );
+        } catch (\Throwable) {
+            // Переписка не должна блокировать смену статуса.
+        }
 
         return $order->fresh(['items', 'statusLogs', 'transportCompany', 'distributorProfile', 'endCompanyProfile']);
     }

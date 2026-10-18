@@ -1,7 +1,7 @@
 @php
     $name = $name ?? 'field';
     $placeholder = $placeholder ?? 'Выберите...';
-    $inputId = $inputId ?? ('flat-picker-' . md5($name));
+    $inputId = $inputId ?? ('flat-picker-' . md5($name) . '-' . uniqid());
     $allowClear = $allowClear ?? false;
     $clearLabel = $clearLabel ?? 'Сбросить выбор';
     $required = $required ?? false;
@@ -15,8 +15,8 @@
     };
 
     $dropdownClass = $dropdownClass ?? match ($size) {
-        'sm' => 'absolute z-40 left-0 mt-1 min-w-full w-max max-w-[min(calc(100vw-2rem),24rem)] max-h-56 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1',
-        default => 'absolute z-40 left-0 mt-1 min-w-full w-max max-w-[min(calc(100vw-2rem),36rem)] max-h-72 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1',
+        'sm' => 'absolute z-50 left-0 right-0 mt-1 min-w-full w-max max-w-[min(calc(100vw-2rem),24rem)] max-h-56 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1',
+        default => 'absolute z-50 left-0 right-0 mt-1 min-w-full w-max max-w-[min(calc(100vw-2rem),36rem)] max-h-72 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1',
     };
 
     $chevronClass = match ($size) {
@@ -51,10 +51,7 @@
 @endphp
 
 @once
-@push('scripts')
 <script>
-window.__flatPickerConfigs = window.__flatPickerConfigs || {};
-
 function flatPickerState(config) {
     return {
         pickerOpen: false,
@@ -88,25 +85,15 @@ function flatPickerState(config) {
         },
     };
 }
-
-function flatPickerById(pickerId) {
-    return flatPickerState(window.__flatPickerConfigs[pickerId] || {});
-}
 </script>
-@endpush
 @endonce
 
-@push('scripts')
-<script>
-window.__flatPickerConfigs = window.__flatPickerConfigs || {};
-window.__flatPickerConfigs[@json($inputId)] = @json($pickerConfig);
-</script>
-@endpush
-
 <div
-    x-data="flatPickerById(@js($inputId))"
+    x-data="flatPickerState(@js($pickerConfig))"
     class="relative {{ $wrapperClass }}"
+    :class="pickerOpen ? 'z-50' : 'z-0'"
     @keydown.escape.window="pickerOpen = false"
+    @click.outside="pickerOpen = false"
 >
     <input
         type="hidden"
@@ -118,7 +105,7 @@ window.__flatPickerConfigs[@json($inputId)] = @json($pickerConfig);
     <button
         type="button"
         id="{{ $inputId }}"
-        @click="if (!disabled) pickerOpen = !pickerOpen"
+        @click.stop="if (!disabled) pickerOpen = !pickerOpen"
         :disabled="disabled"
         class="{{ $buttonClass }}"
         :class="[
@@ -135,14 +122,12 @@ window.__flatPickerConfigs[@json($inputId)] = @json($pickerConfig);
     <div
         x-show="pickerOpen && !disabled"
         x-cloak
-        x-transition
-        @click.outside="pickerOpen = false"
         class="{{ $dropdownClass }}"
     >
         @if($allowClear)
         <button
             type="button"
-            @click="clearSelection()"
+            @click.stop="clearSelection()"
             class="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 border-b border-gray-100 dark:border-gray-700"
             :class="!hasSelection() ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400 font-medium' : 'text-gray-600 dark:text-gray-400'"
         >
@@ -156,7 +141,7 @@ window.__flatPickerConfigs[@json($inputId)] = @json($pickerConfig);
             @foreach($normalizedOptions as $option)
             <button
                 type="button"
-                @click="select(@js($option['value']))"
+                @click.stop="select(@js($option['value']))"
                 class="w-full flex items-start gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
                 :class="isSelected(@js($option['value'])) ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400 font-medium' : 'text-gray-700 dark:text-gray-300'"
             >

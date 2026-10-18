@@ -9,7 +9,7 @@ class DistributorContactPolicy
 {
     public function manage(User $user, DistributorContact $contact): bool
     {
-        return (int) $contact->distributor_profile_id === (int) $user->distributorProfile?->id;
+        return (int) $contact->distributor_profile_id === (int) $user->currentDistributorProfile()?->id;
     }
 
     public function update(User $user, DistributorContact $contact): bool

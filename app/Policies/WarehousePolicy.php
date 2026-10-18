@@ -4,12 +4,14 @@ namespace App\Policies;
 
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\ManufacturerStaffAccess;
 
 class WarehousePolicy
 {
     public function manage(User $user, Warehouse $warehouse): bool
     {
-        return (int) $warehouse->manufacturer_profile_id === (int) $user->manufacturerProfile?->id;
+        return (int) $warehouse->manufacturer_profile_id === (int) $user->currentManufacturerProfile()?->id
+            && app(ManufacturerStaffAccess::class)->canAccessWarehouse($user, (int) $warehouse->id);
     }
 
     public function update(User $user, Warehouse $warehouse): bool

@@ -8,6 +8,7 @@ use App\Models\DistributorProfile;
 use App\Models\ManufacturerDistributorPartnership;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
@@ -63,9 +64,9 @@ class EndCompanyDistributorOfferService
                         });
                 })
                 // Новое поведение: позволяем дистрибьютору помечать нулевые остатки как «под заказ».
-                ->orWhereHas('profile', function (Builder $profileQuery): void {
-                    $profileQuery->where('zero_stock_behavior', DistributorProfile::ZERO_STOCK_ON_ORDER);
-                });
+                    ->orWhereHas('profile', function (Builder $profileQuery): void {
+                        $profileQuery->where('zero_stock_behavior', DistributorProfile::ZERO_STOCK_ON_ORDER);
+                    });
             });
         }
 
@@ -401,6 +402,49 @@ class EndCompanyDistributorOfferService
         );
     }
 
+    /**
+     * Склад отгрузки в текущем регионе: сначала тот, что уже выбран и закрывает количество,
+     * иначе склад с достаточным остатком (больший остаток предпочтительнее).
+     */
+    public function resolveFulfillmentWarehouseId(
+        DistributorProduct $offer,
+        int $quantity,
+        ?int $preferredWarehouseId = null,
+    ): ?int {
+        $stocks = $this->stocksInRegion($offer)
+            ->filter(static fn (DistributorProductStock $stock): bool => $stock->warehouse !== null)
+            ->values();
+
+        if ($stocks->isEmpty()) {
+            return null;
+        }
+
+        if ($preferredWarehouseId !== null) {
+            $preferred = $stocks->first(
+                static fn (DistributorProductStock $stock): bool => (int) $stock->distributor_warehouse_id === $preferredWarehouseId
+            );
+
+            if ($preferred !== null && $preferred->available_quantity >= $quantity) {
+                return $preferredWarehouseId;
+            }
+        }
+
+        $covering = $stocks
+            ->filter(static fn (DistributorProductStock $stock): bool => $stock->available_quantity >= $quantity)
+            ->sortByDesc(static fn (DistributorProductStock $stock): int => $stock->available_quantity)
+            ->values();
+
+        if ($covering->isNotEmpty()) {
+            return (int) $covering->first()->distributor_warehouse_id;
+        }
+
+        $best = $stocks
+            ->sortByDesc(static fn (DistributorProductStock $stock): int => $stock->available_quantity)
+            ->first();
+
+        return $best !== null ? (int) $best->distributor_warehouse_id : null;
+    }
+
     public function effectiveRetailPrice(DistributorProduct $offer): ?float
     {
         return $offer->retailPriceForRegion($this->regionId);
@@ -481,7 +525,7 @@ class EndCompanyDistributorOfferService
      *     warehouse_name: string,
      *     region_name: ?string,
      *     available_quantity: int,
-     *     stock_updated_at: ?\Illuminate\Support\Carbon,
+     *     stock_updated_at: ?Carbon,
      *     shipping_conditions: ?string,
      *     retail_price: ?string
      * }>

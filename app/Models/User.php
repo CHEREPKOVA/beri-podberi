@@ -4,13 +4,17 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Services\CurrentRoleService;
+use App\Services\DistributorCompanyContext;
+use App\Services\EndCompanyCompanyContext;
+use App\Services\EndCompanyStaffAccess;
+use App\Services\ManufacturerCompanyContext;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Collection;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 
 class User extends Authenticatable
 {
@@ -100,6 +104,17 @@ class User extends Authenticatable
             return $this->manufacturerProfile;
         }
 
+        $fromContext = app(ManufacturerCompanyContext::class)->profile($this);
+        if ($fromContext) {
+            $this->setRelation('manufacturerProfile', $fromContext);
+
+            return $fromContext;
+        }
+
+        if ($this->hasRole(Role::SLUG_COMPANY_EMPLOYEE) && ! $this->hasRole(Role::SLUG_MANUFACTURER)) {
+            throw new \InvalidArgumentException('Профиль производителя недоступен.');
+        }
+
         $profile = $this->manufacturerProfile()->create([
             'full_name' => $this->roles()
                 ->where('slug', Role::SLUG_MANUFACTURER)
@@ -118,6 +133,17 @@ class User extends Authenticatable
             return $this->distributorProfile;
         }
 
+        if ($this->hasRole(Role::SLUG_COMPANY_EMPLOYEE) && ! $this->hasRole(Role::SLUG_DISTRIBUTOR)) {
+            $fromContext = app(DistributorCompanyContext::class)->employerProfile($this);
+            if ($fromContext) {
+                $this->setRelation('distributorProfile', $fromContext);
+
+                return $fromContext;
+            }
+
+            throw new \InvalidArgumentException('Профиль дистрибьютора недоступен.');
+        }
+
         $profile = $this->distributorProfile()->create([
             'full_name' => $this->roles()
                 ->where('slug', Role::SLUG_DISTRIBUTOR)
@@ -134,6 +160,17 @@ class User extends Authenticatable
     {
         if ($this->endCompanyProfile) {
             return $this->endCompanyProfile;
+        }
+
+        if ($this->hasRole(Role::SLUG_COMPANY_EMPLOYEE) && ! $this->hasRole(Role::SLUG_END_COMPANY)) {
+            $fromContext = app(EndCompanyCompanyContext::class)->employerProfile($this);
+            if ($fromContext) {
+                $this->setRelation('endCompanyProfile', $fromContext);
+
+                return $fromContext;
+            }
+
+            throw new \InvalidArgumentException('Профиль конечной компании недоступен.');
         }
 
         $profile = $this->endCompanyProfile()->create([
@@ -252,12 +289,74 @@ class User extends Authenticatable
             }
         }
 
-        if (in_array($role->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)) {
-            $regionId = $this->endCompanyProfile?->defaultDeliveryAddress()?->region_id;
+        if ($this->isDistributorStaff()) {
+            $regionId = $this->currentDistributorProfile()?->primaryRegion()?->id;
+
+            return $regionId !== null ? (int) $regionId : null;
+        }
+
+        if (in_array($role->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)
+            && ! $this->isManufacturerStaff()
+            && ! $this->isDistributorStaff()
+        ) {
+            $access = app(EndCompanyStaffAccess::class);
+            $addresses = $access->visibleAddresses($this);
+            $default = $addresses->firstWhere('is_default', true) ?? $addresses->first();
+            $regionId = $default?->region_id;
 
             return $regionId !== null ? (int) $regionId : null;
         }
 
         return null;
+    }
+
+    public function isManufacturerCompanyAdmin(): bool
+    {
+        return app(ManufacturerCompanyContext::class)->isCompanyAdmin($this);
+    }
+
+    public function isManufacturerCompanyEmployee(): bool
+    {
+        return app(ManufacturerCompanyContext::class)->isManufacturerEmployee($this);
+    }
+
+    public function isManufacturerStaff(): bool
+    {
+        return app(ManufacturerCompanyContext::class)->isManufacturerStaff($this);
+    }
+
+    public function currentManufacturerProfile(): ?ManufacturerProfile
+    {
+        return app(ManufacturerCompanyContext::class)->profile($this);
+    }
+
+    public function isDistributorCompanyAdmin(): bool
+    {
+        return app(DistributorCompanyContext::class)->isCompanyAdmin($this);
+    }
+
+    public function isDistributorStaff(): bool
+    {
+        return app(DistributorCompanyContext::class)->isDistributorStaff($this);
+    }
+
+    public function currentDistributorProfile(): ?DistributorProfile
+    {
+        return app(DistributorCompanyContext::class)->profile($this);
+    }
+
+    public function isEndCompanyAdmin(): bool
+    {
+        return app(EndCompanyCompanyContext::class)->isCompanyAdmin($this);
+    }
+
+    public function isEndCompanyStaff(): bool
+    {
+        return app(EndCompanyCompanyContext::class)->isEndCompanyStaff($this);
+    }
+
+    public function currentEndCompanyProfile(): ?EndCompanyProfile
+    {
+        return app(EndCompanyCompanyContext::class)->profile($this);
     }
 }

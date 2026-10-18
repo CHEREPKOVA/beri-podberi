@@ -19,6 +19,7 @@ use App\Services\Catalog\CatalogQueryService;
 use App\Services\Catalog\CatalogSearchSettings;
 use App\Services\CsvImportReader;
 use App\Services\CurrentRoleService;
+use App\Services\ManufacturerStaffAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -104,7 +105,7 @@ class ProductController extends Controller
         $categoryTree = ProductCategory::assignableTree();
         $categories = ProductCategory::active()->assignableForProducts()->orderBy('sort_order')->get();
         $unitTypes = UnitType::active()->orderBy('name')->get();
-        $warehouses = $profile->warehouses()->active()->get();
+        $warehouses = $this->visibleWarehouses($request);
         $regions = $profile->regions()
             ->active()
             ->orderBy('name')
@@ -182,7 +183,7 @@ class ProductController extends Controller
         $categoryTree = ProductCategory::assignableTree();
         $categories = ProductCategory::active()->assignableForProducts()->orderBy('sort_order')->get();
         $unitTypes = UnitType::active()->orderBy('name')->get();
-        $warehouses = $profile->warehouses()->active()->get();
+        $warehouses = $this->visibleWarehouses($request);
         $regions = $profile->regions()
             ->active()
             ->orderBy('name')
@@ -452,6 +453,13 @@ class ProductController extends Controller
                     break;
 
                 case 'update_stock':
+                    abort_unless(
+                        app(ManufacturerStaffAccess::class)->canAccessWarehouse(
+                            $request->user(),
+                            (int) $validated['warehouse_id']
+                        ),
+                        403
+                    );
                     foreach ($products as $product) {
                         ProductStock::updateOrCreate(
                             [
@@ -708,7 +716,11 @@ class ProductController extends Controller
     private function handleStocks(Request $request, Product $product): void
     {
         if ($request->has('stocks')) {
+            $access = app(ManufacturerStaffAccess::class);
             foreach ($request->stocks as $warehouseId => $data) {
+                if (! $access->canAccessWarehouse($request->user(), (int) $warehouseId)) {
+                    continue;
+                }
                 if (! empty($data['quantity']) || $data['quantity'] === '0' || $data['quantity'] === 0) {
                     ProductStock::updateOrCreate(
                         [
@@ -977,7 +989,7 @@ class ProductController extends Controller
             throw new \Exception('Файл должен содержать колонки «Артикул» и «Наименование» (или SKU / Name)');
         }
 
-        $warehouse = $profile->warehouses()->active()->first();
+        $warehouse = $this->firstAccessibleWarehouse();
         if ($warehouse === null) {
             $stats['errors'][] = 'Нет активного склада — остатки из файла не будут загружены.';
         }
@@ -1158,7 +1170,7 @@ class ProductController extends Controller
 
             $stockQty = $this->extractYmlOfferStock($offer);
             if ($stockQty !== null) {
-                $warehouse = $profile->warehouses()->active()->first();
+                $warehouse = $this->firstAccessibleWarehouse();
                 if ($warehouse) {
                     ProductStock::updateOrCreate(
                         [
@@ -1530,5 +1542,25 @@ class ProductController extends Controller
             ),
             default => $query->orderBy($sortField, $sortDir),
         };
+    }
+
+    private function visibleWarehouses(Request $request)
+    {
+        return app(ManufacturerStaffAccess::class)
+            ->visibleWarehouses($request->user())
+            ->where('is_active', true)
+            ->values();
+    }
+
+    private function firstAccessibleWarehouse()
+    {
+        $user = request()->user();
+        if (! $user) {
+            return null;
+        }
+
+        return app(ManufacturerStaffAccess::class)
+            ->visibleWarehouses($user)
+            ->firstWhere('is_active', true);
     }
 }

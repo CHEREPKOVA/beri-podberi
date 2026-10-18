@@ -10,8 +10,8 @@ use App\Models\ProductCategory;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class CatalogQueryService
 {
@@ -30,18 +30,49 @@ class CatalogQueryService
         return $this->catalogRegionId ?? $this->user->currentCompanyRegionId();
     }
 
+    public function isManufacturerCatalog(): bool
+    {
+        $role = $this->catalogRole();
+        if ($role?->slug === Role::SLUG_MANUFACTURER) {
+            return true;
+        }
+
+        return $role?->slug === Role::SLUG_COMPANY_EMPLOYEE
+            && $this->user->isManufacturerStaff();
+    }
+
+    public function isDistributorCatalog(): bool
+    {
+        $role = $this->catalogRole();
+        if ($role?->slug === Role::SLUG_DISTRIBUTOR) {
+            return true;
+        }
+
+        return $role?->slug === Role::SLUG_COMPANY_EMPLOYEE
+            && $this->user->isDistributorStaff();
+    }
+
     public function isEndCompanyCatalog(): bool
     {
+        if ($this->isManufacturerCatalog() || $this->isDistributorCatalog()) {
+            return false;
+        }
+
         return in_array($this->catalogRole()?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true);
     }
 
     public function isBuyerSideCatalog(): bool
     {
-        return in_array($this->catalogRole()?->slug, [
-            Role::SLUG_END_COMPANY,
-            Role::SLUG_COMPANY_EMPLOYEE,
-            Role::SLUG_DISTRIBUTOR,
-        ], true);
+        if ($this->isManufacturerCatalog()) {
+            return false;
+        }
+
+        return $this->isDistributorCatalog()
+            || in_array($this->catalogRole()?->slug, [
+                Role::SLUG_END_COMPANY,
+                Role::SLUG_COMPANY_EMPLOYEE,
+                Role::SLUG_DISTRIBUTOR,
+            ], true);
     }
 
     public function distributorOffers(): EndCompanyDistributorOfferService
@@ -68,10 +99,8 @@ class CatalogQueryService
     /** Базовый запрос видимых в каталоге товаров с учётом роли. */
     public function visibleProductsQuery(): Builder
     {
-        $role = $this->catalogRole();
-
-        if ($role?->slug === Role::SLUG_MANUFACTURER) {
-            $profileId = $this->user->manufacturerProfile?->id;
+        if ($this->isManufacturerCatalog()) {
+            $profileId = $this->user->currentManufacturerProfile()?->id;
             if ($profileId === null) {
                 return Product::query()->whereRaw('1 = 0');
             }
@@ -81,7 +110,7 @@ class CatalogQueryService
                 ->forManufacturer($profileId);
         }
 
-        if ($role?->slug === Role::SLUG_DISTRIBUTOR) {
+        if ($this->isDistributorCatalog()) {
             $partnerManufacturerIds = $this->activePartnerManufacturerIds();
             if ($partnerManufacturerIds === []) {
                 return Product::query()->whereRaw('1 = 0');
@@ -93,7 +122,7 @@ class CatalogQueryService
                 ->whereIn('manufacturer_profile_id', $partnerManufacturerIds);
         }
 
-        if (in_array($role?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)) {
+        if ($this->isEndCompanyCatalog()) {
             return $this->endCompanyVisibleProductsQuery();
         }
 
@@ -107,13 +136,11 @@ class CatalogQueryService
      */
     public function activePartnerManufacturerIds(): array
     {
-        if ($this->catalogRole()?->slug !== Role::SLUG_DISTRIBUTOR) {
+        if (! $this->isDistributorCatalog()) {
             return [];
         }
 
-        $distributorProfileId = DistributorProfile::query()
-            ->where('user_id', $this->user->id)
-            ->value('id');
+        $distributorProfileId = $this->user->currentDistributorProfile()?->id;
 
         if ($distributorProfileId === null) {
             return [];
@@ -129,8 +156,8 @@ class CatalogQueryService
 
     public function manufacturerProfileIdForFilters(): ?int
     {
-        if ($this->catalogRole()?->slug === Role::SLUG_MANUFACTURER) {
-            return $this->user->manufacturerProfile?->id;
+        if ($this->isManufacturerCatalog()) {
+            return $this->user->currentManufacturerProfile()?->id;
         }
 
         return null;

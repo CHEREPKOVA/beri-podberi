@@ -33,6 +33,9 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ $manufacturer->displayName() }}</h2>
         <p class="text-sm text-gray-500 mt-1">{{ $group['items_count'] }} поз. · {{ number_format($group['subtotal'], 2, ',', ' ') }} ₽</p>
+        @if(($group['discount_amount'] ?? 0) > 0)
+            <p class="mt-1 text-sm text-green-700">Скидка: −{{ number_format($group['discount_amount'], 2, ',', ' ') }} ₽@if(!empty($group['discount_labels'])) · {{ implode(', ', $group['discount_labels']) }}@endif</p>
+        @endif
         @if($deliveryNotes)
             <p class="mt-3 text-sm text-gray-600 dark:text-gray-300 whitespace-pre-line">{{ $deliveryNotes }}</p>
         @endif
@@ -78,21 +81,33 @@
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Склад поставки</label>
-                    <div class="relative">
-                        <select name="distributor_warehouse_id" class="{{ $select }}">
-                            <option value="">Автоматически</option>
-                            @foreach($warehouses as $warehouse)
-                                <option value="{{ $warehouse->id }}" @selected((string) old('distributor_warehouse_id') === (string) $warehouse->id)>
-                                    {{ $warehouse->name }}@if($warehouse->region) · {{ $warehouse->region->name }}@endif
-                                </option>
-                            @endforeach
-                        </select>
-                        <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                            </svg>
-                        </span>
-                    </div>
+                    @if($warehouses->isEmpty())
+                        <p class="text-sm text-amber-700">Нет доступного склада для оформления заказа.</p>
+                    @elseif($warehouses->count() === 1)
+                        <input type="hidden" name="distributor_warehouse_id" value="{{ $warehouses->first()->id }}">
+                        <p class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                            {{ $warehouses->first()->name }}@if($warehouses->first()->region) · {{ $warehouses->first()->region->name }}@endif
+                        </p>
+                    @else
+                        <div class="relative">
+                            <select name="distributor_warehouse_id" required class="{{ $select }}">
+                                <option value="">Выберите склад</option>
+                                @foreach($warehouses as $warehouse)
+                                    <option value="{{ $warehouse->id }}" @selected((string) old('distributor_warehouse_id', $defaultWarehouseId) === (string) $warehouse->id)>
+                                        {{ $warehouse->name }}@if($warehouse->region) · {{ $warehouse->region->name }}@endif
+                                    </option>
+                                @endforeach
+                            </select>
+                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </span>
+                        </div>
+                        @error('distributor_warehouse_id')
+                            <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                        @enderror
+                    @endif
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Желаемая дата</label>
@@ -128,6 +143,11 @@
                 </div>
             </div>
             <div>
+                <label class="block text-xs text-gray-500 mb-1">Промокод</label>
+                <input type="text" name="promo_code" value="{{ old('promo_code') }}" maxlength="64" placeholder="Если есть"
+                       class="{{ $input }} uppercase">
+            </div>
+            <div>
                 <label class="block text-xs text-gray-500 mb-1">Комментарий</label>
                 <textarea name="buyer_comment" rows="3" class="{{ $input }}">{{ old('buyer_comment') }}</textarea>
             </div>
@@ -150,7 +170,17 @@
                     @foreach($group['items'] as $item)
                         <tr class="border-b border-gray-100 dark:border-gray-700/60">
                             <td class="py-3 px-5">{{ $item['name'] }} <span class="text-xs text-gray-500">{{ $item['sku'] }}</span></td>
-                            <td class="py-3 px-3 whitespace-nowrap">{{ number_format($item['unit_price'], 2, ',', ' ') }} ₽</td>
+                            <td class="py-3 px-3 whitespace-nowrap">
+                                @if(!empty($item['has_discount']))
+                                    <p class="text-xs text-gray-400 line-through">{{ number_format($item['list_unit_price'], 2, ',', ' ') }} ₽</p>
+                                    {{ number_format($item['unit_price'], 2, ',', ' ') }} ₽
+                                    @if(!empty($item['discount_label']))
+                                        <p class="text-xs text-green-700">{{ $item['discount_label'] }}</p>
+                                    @endif
+                                @else
+                                    {{ number_format($item['unit_price'], 2, ',', ' ') }} ₽
+                                @endif
+                            </td>
                             <td class="py-3 px-3">{{ $item['quantity'] }}</td>
                             <td class="py-3 px-5 font-medium whitespace-nowrap">{{ number_format($item['line_total'], 2, ',', ' ') }} ₽</td>
                         </tr>

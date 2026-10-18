@@ -9,7 +9,7 @@ class DistributorDocumentPolicy
 {
     public function manage(User $user, DistributorDocument $document): bool
     {
-        return (int) $document->distributor_profile_id === (int) $user->distributorProfile?->id;
+        return (int) $document->distributor_profile_id === (int) $user->currentDistributorProfile()?->id;
     }
 
     public function delete(User $user, DistributorDocument $document): bool

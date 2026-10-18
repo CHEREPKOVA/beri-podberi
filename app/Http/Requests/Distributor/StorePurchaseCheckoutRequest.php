@@ -23,6 +23,7 @@ class StorePurchaseCheckoutRequest extends FormRequest
             'responsible_contact_id' => ['nullable', 'integer', 'exists:distributor_contacts,id'],
             'buyer_comment' => ['nullable', 'string', 'max:2000'],
             'delivery_date' => ['nullable', 'date', 'after_or_equal:today'],
+            'promo_code' => ['nullable', 'string', 'max:64'],
         ];
     }
 }

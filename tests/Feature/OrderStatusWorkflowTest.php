@@ -10,7 +10,6 @@ use App\Models\EndCompanyDeliveryAddress;
 use App\Models\ManufacturerDistributorPartnership;
 use App\Models\ManufacturerProfile;
 use App\Models\PlatformOrder;
-use App\Models\PlatformOrderItem;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Region;
@@ -18,10 +17,12 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\Cart\CartService;
 use App\Services\CurrentRoleService;
+use App\Services\Order\OrderStatusWorkflowService;
 use Database\Seeders\DeliveryMethodSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
@@ -107,17 +108,27 @@ class OrderStatusWorkflowTest extends TestCase
             ->from(route('distributor.orders.show', $order))
             ->post(route('distributor.orders.reject', $order), [])
             ->assertRedirect()
-            ->assertSessionHasErrors('rejection_reason');
+            ->assertSessionHasErrors(['rejection_code', 'rejection_comment']);
+
+        $this->actingAs($distUser)
+            ->from(route('distributor.orders.show', $order))
+            ->post(route('distributor.orders.reject', $order), [
+                'rejection_code' => 'not_a_reason',
+                'rejection_comment' => 'Нет товара на складе',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('rejection_code');
 
         $this->actingAs($distUser)
             ->post(route('distributor.orders.reject', $order), [
-                'rejection_reason' => 'Нет товара на складе',
+                'rejection_code' => PlatformOrder::REJECTION_OUT_OF_STOCK,
+                'rejection_comment' => 'Нет товара на складе',
             ])
             ->assertRedirect();
 
         $order->refresh();
         $this->assertSame(PlatformOrder::STATUS_REJECTED, $order->status);
-        $this->assertSame('Нет товара на складе', $order->rejection_reason);
+        $this->assertSame('Отсутствие товара. Нет товара на складе', $order->rejection_reason);
     }
 
     public function test_needs_approval_flow(): void
@@ -144,12 +155,12 @@ class OrderStatusWorkflowTest extends TestCase
         $this->assertSame(PlatformOrder::STATUS_NEEDS_APPROVAL, $order->status);
         $this->assertSame(2000.0, (float) $order->items()->first()->unit_price);
 
-        $workflow = app(\App\Services\Order\OrderStatusWorkflowService::class);
+        $workflow = app(OrderStatusWorkflowService::class);
         $this->assertSame(
             array_search(PlatformOrder::STATUS_AWAITING_CONFIRMATION, PlatformOrder::progressStatuses(), true),
             $workflow->progressIndex($order),
         );
-        $this->assertSame('Ожидает подтверждения', $order->statusLabel());
+        $this->assertSame('Требует согласования', $order->statusLabel());
 
         $proposal = $workflow->latestApprovalProposal($order);
         $this->assertNotNull($proposal);
@@ -180,6 +191,9 @@ class OrderStatusWorkflowTest extends TestCase
 
         app(CurrentRoleService::class)->set($distUser, $distRole->id);
         $item = $order->items()->firstOrFail();
+        $originalPrice = (float) $item->unit_price;
+        $originalQty = (int) $item->quantity;
+        $originalName = $item->name;
 
         $this->actingAs($distUser)
             ->post(route('distributor.orders.send_for_approval', $order), [
@@ -190,6 +204,8 @@ class OrderStatusWorkflowTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->assertSame(2000.0, (float) $order->fresh()->items()->first()->unit_price);
+
         app(CurrentRoleService::class)->set($buyer, $buyerRole->id);
         $this->actingAs($buyer)
             ->post(route('buyer.orders.reject_changes', $order), [
@@ -198,8 +214,12 @@ class OrderStatusWorkflowTest extends TestCase
             ->assertRedirect();
 
         $order->refresh();
+        $restored = $order->items()->firstOrFail();
         $this->assertSame(PlatformOrder::STATUS_AWAITING_CONFIRMATION, $order->status);
         $this->assertNull($order->rejection_reason);
+        $this->assertSame($originalQty, (int) $restored->quantity);
+        $this->assertEqualsWithDelta($originalPrice, (float) $restored->unit_price, 0.009);
+        $this->assertSame($originalName, $restored->name);
 
         app(CurrentRoleService::class)->set($distUser, $distRole->id);
         $this->actingAs($distUser)
@@ -228,11 +248,115 @@ class OrderStatusWorkflowTest extends TestCase
     {
         $this->assertDatabaseHas('order_statuses', ['slug' => 'awaiting_confirmation', 'is_active' => 1]);
         $this->assertDatabaseHas('order_statuses', ['slug' => 'confirmed', 'is_active' => 1]);
-        $this->assertDatabaseHas('order_statuses', ['slug' => 'needs_approval', 'is_active' => 1]);
+        $this->assertDatabaseHas('order_statuses', [
+            'slug' => 'needs_approval',
+            'name' => 'Требует согласования',
+            'is_active' => 1,
+        ]);
         $this->assertDatabaseHas('order_statuses', ['slug' => 'rejected', 'is_active' => 1]);
         $this->assertDatabaseHas('order_statuses', ['slug' => 'ready_to_ship', 'is_active' => 1]);
         $this->assertDatabaseHas('order_statuses', ['slug' => 'shipped', 'is_active' => 1]);
         $this->assertDatabaseHas('order_statuses', ['slug' => 'completed', 'name' => 'Завершён']);
+    }
+
+    public function test_supplier_can_replace_item_with_analog(): void
+    {
+        [$buyer, $distUser, $order] = $this->seedOrder();
+        $buyerRole = Role::query()->where('slug', Role::SLUG_END_COMPANY)->firstOrFail();
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+        app(CurrentRoleService::class)->set($distUser, $distRole->id);
+
+        $item = $order->items()->firstOrFail();
+        $original = $item->product;
+        $this->assertNotNull($original);
+
+        $analogProduct = Product::factory()->create([
+            'manufacturer_profile_id' => $original->manufacturer_profile_id,
+            'category_id' => $original->category_id,
+            'show_in_catalog' => true,
+            'status' => Product::STATUS_ACTIVE,
+            'name' => 'Аналог товара',
+        ]);
+
+        DB::table('product_analogs')->insert([
+            'product_id' => $original->id,
+            'analog_product_id' => $analogProduct->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $analogOffer = DistributorProduct::query()->create([
+            'distributor_profile_id' => $order->distributor_profile_id,
+            'source_product_id' => $analogProduct->id,
+            'manufacturer_profile_id' => $analogProduct->manufacturer_profile_id,
+            'product_category_id' => $analogProduct->category_id,
+            'name' => 'Аналог товара',
+            'internal_sku' => 'SKU-A',
+            'retail_price' => 1800,
+            'status' => DistributorProduct::STATUS_ACTIVE,
+            'sync_source' => DistributorProduct::SYNC_MANUFACTURER,
+            'min_order_quantity' => 1,
+        ]);
+
+        $this->actingAs($distUser)
+            ->get(route('distributor.orders.show', $order))
+            ->assertOk()
+            ->assertSee('Заменить на аналог')
+            ->assertSee('Аналог товара')
+            ->assertSee('Подтвердить заказ');
+
+        $this->actingAs($distUser)
+            ->post(route('distributor.orders.send_for_approval', $order), [
+                'items' => [
+                    [
+                        'id' => $item->id,
+                        'quantity' => $item->quantity,
+                        'replace_with_distributor_product_id' => $analogOffer->id,
+                    ],
+                ],
+                'comment' => 'Заменили на аналог',
+            ])
+            ->assertRedirect();
+
+        $item->refresh();
+        $this->assertSame('Аналог товара', $item->name);
+        $this->assertSame($analogOffer->id, (int) $item->distributor_product_id);
+        $this->assertSame($analogProduct->id, (int) $item->product_id);
+
+        app(CurrentRoleService::class)->set($buyer, $buyerRole->id);
+        $this->actingAs($buyer)
+            ->get(route('buyer.orders.show', $order))
+            ->assertOk()
+            ->assertSee('Замена на аналог')
+            ->assertSee('Аналог товара')
+            ->assertSee('Товар статуса');
+    }
+
+    public function test_send_for_approval_ignores_price_without_permission(): void
+    {
+        [, $distUser, $order] = $this->seedOrder();
+        $item = $order->items()->firstOrFail();
+        $originalPrice = (float) $item->unit_price;
+
+        $workflow = app(OrderStatusWorkflowService::class);
+        $workflow->sendForApproval(
+            $order,
+            $distUser,
+            [
+                [
+                    'id' => $item->id,
+                    'quantity' => 1,
+                    'unit_price' => 9999,
+                ],
+            ],
+            'Цена без права',
+            false,
+        );
+
+        $updated = $order->fresh()->items()->firstOrFail();
+        $this->assertSame(PlatformOrder::STATUS_NEEDS_APPROVAL, $order->fresh()->status);
+        $this->assertSame(1, (int) $updated->quantity);
+        $this->assertEqualsWithDelta($originalPrice, (float) $updated->unit_price, 0.009);
     }
 
     /**

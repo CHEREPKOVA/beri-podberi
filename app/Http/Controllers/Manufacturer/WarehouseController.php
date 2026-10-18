@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\Region;
+use App\Services\ManufacturerStaffAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -15,13 +16,15 @@ class WarehouseController extends Controller
     public function index(Request $request): View
     {
         $profile = $request->user()->getOrCreateManufacturerProfile();
-        $profile->load(['warehouses.region', 'contacts']);
+        $warehouses = app(ManufacturerStaffAccess::class)->visibleWarehouses($request->user());
+        $profile->setRelation('warehouses', $warehouses);
+        $profile->load(['contacts']);
 
         $regions = Region::active()->orderBy('name')->get();
-        $warehouseIds = $profile->warehouses->pluck('id')->all();
+        $warehouseIds = $warehouses->pluck('id')->all();
         $selectedWarehouseId = (int) $request->integer('stock_warehouse_id');
         if (! in_array($selectedWarehouseId, $warehouseIds, true)) {
-            $selectedWarehouseId = (int) ($profile->warehouses->first()?->id ?? 0);
+            $selectedWarehouseId = (int) ($warehouses->first()?->id ?? 0);
         }
 
         $stockQuery = ProductStock::query()

@@ -11,11 +11,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class DistributorProfile extends Model
 {
     public const ZERO_STOCK_HIDE = 'hide';
+
     public const ZERO_STOCK_ON_ORDER = 'on_order';
+
     public const LEGAL_FORM_OOO = 'ooo';
+
     public const LEGAL_FORM_IP = 'ip';
+
     public const LEGAL_FORM_PAO = 'pao';
+
     public const LEGAL_FORM_AO = 'ao';
+
     public const LEGAL_FORM_GOS = 'gos';
 
     protected $fillable = [
@@ -100,6 +106,11 @@ class DistributorProfile extends Model
         return $this->hasMany(DistributorWarehouse::class);
     }
 
+    public function employeeRoles(): HasMany
+    {
+        return $this->hasMany(DistributorEmployeeRole::class)->orderBy('sort_order')->orderBy('name');
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(DistributorDocument::class);
@@ -125,18 +136,18 @@ class DistributorProfile extends Model
             ->withTimestamps();
     }
 
-    public function manufacturerPartnerships(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function manufacturerPartnerships(): HasMany
     {
         return $this->hasMany(ManufacturerDistributorPartnership::class);
     }
 
-    public function exclusiveRegionsForManufacturer(int $manufacturerProfileId): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function exclusiveRegionsForManufacturer(int $manufacturerProfileId): HasMany
     {
         return $this->hasMany(ManufacturerDistributorExclusiveRegion::class)
             ->where('manufacturer_profile_id', $manufacturerProfileId);
     }
 
-    public function platformOrders(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function platformOrders(): HasMany
     {
         return $this->hasMany(PlatformOrder::class);
     }

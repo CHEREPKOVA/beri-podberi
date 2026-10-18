@@ -112,7 +112,7 @@ class CatalogListingService
             'listingParams' => $params,
             'manufacturerProfileId' => $this->catalog->manufacturerProfileIdForFilters(),
             'searchQuery' => $params->search ?? '',
-            'searchTerms' => (new CatalogSearchHighlightService())->searchTerms($params->search),
+            'searchTerms' => (new CatalogSearchHighlightService)->searchTerms($params->search),
             'filterDistributors' => Cache::remember(
                 $cacheKeyBase.':distributors',
                 $cacheTtl,
@@ -144,12 +144,10 @@ class CatalogListingService
      */
     public function visibleStructuralFilters(): array
     {
-        $role = $this->catalog->catalogRole()?->slug;
-
-        return match ($role) {
-            Role::SLUG_MANUFACTURER => ['stock', 'price'],
-            Role::SLUG_DISTRIBUTOR => ['manufacturer', 'stock', 'price'],
-            Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE => ['distributor', 'manufacturer', 'stock', 'price'],
+        return match (true) {
+            $this->catalog->isManufacturerCatalog() => ['stock', 'price'],
+            $this->catalog->isDistributorCatalog() => ['manufacturer', 'stock', 'price'],
+            $this->catalog->isEndCompanyCatalog() => ['distributor', 'manufacturer', 'stock', 'price'],
             default => [],
         };
     }

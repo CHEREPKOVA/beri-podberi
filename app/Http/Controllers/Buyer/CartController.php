@@ -27,6 +27,7 @@ class CartController extends Controller
 
         return view('buyer.cart.index', [
             'groups' => $view['groups'],
+            'blockedItems' => $view['blocked_items'],
             'totals' => $view['totals'],
             'hasBlockingWarnings' => $view['has_blocking_warnings'],
             'cartLiveUrl' => route('buyer.cart.live'),

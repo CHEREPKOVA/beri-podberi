@@ -149,6 +149,7 @@
         <div class="xl:col-span-2 space-y-6">
             @include('orders._items', ['order' => $order, 'show_product_links' => false])
             @include('orders._documents')
+            @include('orders._correspondence')
             @include('orders._history', [
                 'hide_service' => false,
                 'title' => 'Полная история действий',

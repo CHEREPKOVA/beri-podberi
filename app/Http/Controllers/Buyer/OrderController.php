@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\Buyer;
 
 use App\Http\Controllers\Concerns\LoadsOrderDetailRelations;
+use App\Http\Controllers\Concerns\ManagesOrderCorrespondence;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Buyer\StoreOrderDocumentRequest;
+use App\Http\Requests\StoreOrderMessageRequest;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderDocument;
+use App\Models\PlatformOrderMessage;
+use App\Models\PlatformOrderMessageAttachment;
 use App\Models\Role;
 use App\Services\Cart\CartService;
+use App\Services\EndCompanyStaffAccess;
 use App\Services\Order\OrderDocumentService;
 use App\Services\Order\OrderStatusWorkflowService;
 use Illuminate\Http\RedirectResponse;
@@ -20,18 +25,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class OrderController extends Controller
 {
     use LoadsOrderDetailRelations;
+    use ManagesOrderCorrespondence;
 
     public function __construct(
         private readonly OrderStatusWorkflowService $workflow,
         private readonly OrderDocumentService $documents,
         private readonly CartService $cart,
+        private readonly EndCompanyStaffAccess $staffAccess,
     ) {}
 
     public function index(Request $request): View
     {
         $this->ensureBuyerAccess($request);
 
-        $profile = $request->user()->endCompanyProfile
+        $profile = $request->user()->currentEndCompanyProfile()
             ?? $request->user()->getOrCreateEndCompanyProfile();
 
         $orders = PlatformOrder::query()
@@ -39,8 +46,11 @@ class OrderController extends Controller
             ->with(['distributorProfile', 'deliveryMethod'])
             ->withCount('items')
             ->orderByDesc('ordered_at')
-            ->orderByDesc('id')
-            ->paginate(20);
+            ->orderByDesc('id');
+
+        $this->staffAccess->constrainOrders($request->user(), $orders);
+
+        $orders = $orders->paginate(20);
 
         return view('buyer.orders.index', [
             'orders' => $orders,
@@ -71,6 +81,13 @@ class OrderController extends Controller
             'buyer.orders.documents.store',
             'buyer.orders.documents.destroy',
             'buyer.orders.documents.preview',
+        ), $this->correspondenceUiContext(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_BUYER,
+            'buyer.orders.messages.store',
+            'buyer.orders.messages.attachments.download',
+            'buyer.orders.messages.attachments.preview',
         )));
     }
 
@@ -117,6 +134,41 @@ class OrderController extends Controller
         return redirect()
             ->route('buyer.orders.show', $order)
             ->with('success', 'Документ загружен.');
+    }
+
+    public function storeMessage(StoreOrderMessageRequest $request, PlatformOrder $order): RedirectResponse
+    {
+        $this->ensureBuyerAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->storeCorrespondenceMessage(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_BUYER,
+            'buyer.orders.show',
+        );
+    }
+
+    public function downloadMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureBuyerAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->downloadCorrespondenceAttachment($order, $attachment);
+    }
+
+    public function previewMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureBuyerAccess($request);
+        $this->ensureOwnsOrder($request, $order);
+
+        return $this->previewCorrespondenceAttachment($order, $attachment);
     }
 
     public function downloadDocument(
@@ -233,10 +285,7 @@ class OrderController extends Controller
 
     private function ensureOwnsOrder(Request $request, PlatformOrder $order): void
     {
-        $profile = $request->user()->endCompanyProfile
-            ?? $request->user()->getOrCreateEndCompanyProfile();
-
-        abort_unless((int) $order->end_company_profile_id === (int) $profile->id, 403);
+        abort_unless($this->staffAccess->canViewOrder($request->user(), $order), 403);
     }
 
     private function ensureDocumentBelongsToOrder(PlatformOrder $order, PlatformOrderDocument $document): void

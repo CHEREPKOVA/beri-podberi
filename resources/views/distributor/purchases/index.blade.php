@@ -134,7 +134,7 @@
                                 <td class="py-3 px-3">
                                     <span class="px-2 py-1 rounded-md text-xs font-medium {{ $order->statusBadgeClass() }}">{{ $order->statusLabel() }}</span>
                                 </td>
-                                <td class="py-3 px-5 text-gray-600 dark:text-gray-300">{{ $order->responsibleContact?->full_name ?? '—' }}</td>
+                                <td class="py-3 px-5 text-gray-600 dark:text-gray-300">{{ $order->responsibleContact?->displayName() ?? '—' }}</td>
                             </tr>
                         @endforeach
                     </tbody>

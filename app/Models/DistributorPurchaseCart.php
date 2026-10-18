@@ -10,7 +10,15 @@ class DistributorPurchaseCart extends Model
 {
     protected $fillable = [
         'distributor_profile_id',
+        'promo_codes',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'promo_codes' => 'array',
+        ];
+    }
 
     public function distributorProfile(): BelongsTo
     {

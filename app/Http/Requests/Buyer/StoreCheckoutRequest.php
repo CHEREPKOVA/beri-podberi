@@ -25,6 +25,7 @@ class StoreCheckoutRequest extends FormRequest
             'delivery_time_from' => ['nullable', 'date_format:H:i'],
             'delivery_time_to' => ['nullable', 'date_format:H:i'],
             'delivery_vehicle_type' => ['nullable', 'string', 'max:64'],
+            'group_key' => ['nullable', 'string', 'max:80'],
         ];
     }
 

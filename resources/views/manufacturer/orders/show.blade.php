@@ -163,7 +163,7 @@
                 @if(in_array(OrderStatusWorkflowService::ACTION_CONFIRM, $actions, true))
                     <form method="POST" action="{{ route('manufacturer.orders.confirm', $order) }}">
                         @csrf
-                        <button type="submit" class="{{ $btnPrimary }}">Подтвердить</button>
+                        <button type="submit" class="{{ $btnPrimary }}">Подтвердить заказ</button>
                     </form>
                 @endif
 
@@ -199,10 +199,28 @@
             <div x-show="rejectOpen" x-cloak class="border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 dark:bg-red-900/10">
                 <form method="POST" action="{{ route('manufacturer.orders.reject', $order) }}" class="space-y-3">
                     @csrf
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Причина отклонения *</label>
-                    <textarea name="rejection_reason" rows="3" required maxlength="2000"
-                              class="{{ $inputBrand }}"
-                              placeholder="Нет товара / ошибка в цене / невозможна отгрузка...">{{ old('rejection_reason') }}</textarea>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Причина отклонения *</label>
+                        <div class="relative">
+                            <select name="rejection_code" required class="{{ $selectBrand }}">
+                                <option value="">— выберите —</option>
+                                @foreach(($rejectionReasons ?? []) as $code => $label)
+                                    <option value="{{ $code }}" @selected(old('rejection_code') === $code)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Комментарий *</label>
+                        <textarea name="rejection_comment" rows="3" required maxlength="2000"
+                                  class="{{ $inputBrand }}"
+                                  placeholder="Поясните причину для покупателя">{{ old('rejection_comment') }}</textarea>
+                    </div>
                     <div class="flex gap-2">
                         <button type="submit" class="{{ $btnPrimary }}">Отклонить заказ</button>
                         <button type="button" @click="rejectOpen = false" class="{{ $btnGhost }}">Отмена</button>
@@ -229,7 +247,7 @@
                             <select name="shipping_from_warehouse" class="{{ $selectBrand }}">
                                 <option value="">— не указан —</option>
                                 @foreach($warehouses as $warehouse)
-                                    <option value="{{ $warehouse->name }}" @selected(old('shipping_from_warehouse') === $warehouse->name)>
+                                    <option value="{{ $warehouse->name }}" @selected(old('shipping_from_warehouse', $warehouses->count() === 1 ? $warehouses->first()->name : '') === $warehouse->name)>
                                         {{ $warehouse->name }}
                                     </option>
                                 @endforeach
@@ -310,6 +328,24 @@
                             <div class="min-w-0 flex-1">
                                 <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ $item->name }}</p>
                                 <p class="text-xs text-gray-500">{{ $item->sku ?: '—' }}</p>
+                                @php $itemAnalogs = $analogOptions[$item->id] ?? []; @endphp
+                                @if($itemAnalogs !== [])
+                                    <div class="relative mt-2 max-w-md">
+                                        <select name="items[{{ $index }}][replace_with_distributor_product_id]" class="{{ $selectBrand }} text-xs" aria-label="Заменить на аналог">
+                                            <option value="">Заменить на аналог…</option>
+                                            @foreach($itemAnalogs as $analog)
+                                                <option value="{{ $analog['id'] }}" @selected((string) old('items.'.$index.'.replace_with_distributor_product_id') === (string) $analog['id'])>
+                                                    {{ $analog['name'] }}@if($analog['sku']) · {{ $analog['sku'] }}@endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                                            </svg>
+                                        </span>
+                                    </div>
+                                @endif
                             </div>
                             <div class="w-full lg:w-24 shrink-0">
                                 <label class="block text-xs text-gray-500 mb-1">Кол-во</label>
@@ -318,8 +354,13 @@
                             </div>
                             <div class="w-full lg:w-32 shrink-0">
                                 <label class="block text-xs text-gray-500 mb-1">Цена</label>
-                                <input type="number" min="0" step="0.01" name="items[{{ $index }}][unit_price]" value="{{ old('items.'.$index.'.unit_price', $item->unit_price) }}"
-                                       class="{{ $inputNumber }}">
+                                @if($can_change_order_price ?? true)
+                                    <input type="number" min="0" step="0.01" name="items[{{ $index }}][unit_price]" value="{{ old('items.'.$index.'.unit_price', $item->unit_price) }}"
+                                           class="{{ $inputNumber }}">
+                                @else
+                                    <input type="hidden" name="items[{{ $index }}][unit_price]" value="{{ $item->unit_price }}">
+                                    <p class="h-10 flex items-center text-sm text-gray-700 dark:text-gray-200">{{ number_format((float) $item->unit_price, 2, ',', ' ') }} ₽</p>
+                                @endif
                             </div>
                             <div class="w-full lg:w-48 shrink-0">
                                 <label class="block text-xs text-gray-500 mb-1">Причина</label>
@@ -353,7 +394,12 @@
                             </div>
                             <div class="w-full lg:w-32 shrink-0">
                                 <label class="block text-xs text-gray-500 mb-1">Цена</label>
-                                <input type="number" min="0" step="0.01" :name="'items[' + ({{ $itemCount }} + idx) + '][unit_price]'" :value="row.unit_price" class="{{ $inputNumber }}">
+                                @if($can_change_order_price ?? true)
+                                    <input type="number" min="0" step="0.01" :name="'items[' + ({{ $itemCount }} + idx) + '][unit_price]'" :value="row.unit_price" class="{{ $inputNumber }}">
+                                @else
+                                    <input type="hidden" :name="'items[' + ({{ $itemCount }} + idx) + '][unit_price]'" :value="row.unit_price">
+                                    <p class="h-10 flex items-center text-sm text-gray-700 dark:text-gray-200" x-text="new Intl.NumberFormat('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(row.unit_price) + ' ₽'"></p>
+                                @endif
                             </div>
                             <button type="button" @click="removeExtra(row.id)" class="{{ $btnGhost }} h-10 shrink-0">Убрать</button>
                         </div>
@@ -444,6 +490,7 @@
         <div class="xl:col-span-2 space-y-6">
             @include('orders._items', ['order' => $order, 'show_product_links' => $show_product_links ?? true])
             @include('orders._documents')
+            @include('orders._correspondence')
             @include('orders._history', ['hide_service' => true, 'action_labels' => $action_labels ?? null])
         </div>
 

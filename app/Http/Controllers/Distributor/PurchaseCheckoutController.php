@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Distributor;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Distributor\StorePurchaseCheckoutRequest;
-use App\Models\Role;
 use App\Services\Order\DistributorPurchaseCheckoutService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -37,6 +36,7 @@ class PurchaseCheckoutController extends Controller
             'deliveryMethods' => $prepared['delivery_methods'],
             'transportCompanies' => $prepared['transport_companies'],
             'warehouses' => $prepared['warehouses'],
+            'defaultWarehouseId' => $prepared['default_warehouse_id'],
             'deliveryNotes' => $prepared['delivery_notes'],
             'itemWarnings' => $prepared['item_warnings'],
             'managers' => $profile?->contacts()->orderByDesc('is_primary')->orderBy('full_name')->get() ?? collect(),
@@ -60,7 +60,6 @@ class PurchaseCheckoutController extends Controller
 
     private function ensureAccess(Request $request): void
     {
-        abort_unless($request->user()?->hasRole(Role::SLUG_DISTRIBUTOR), 403);
-        abort_unless($request->user()->getCurrentRole()?->slug === Role::SLUG_DISTRIBUTOR, 403);
+        abort_unless($request->user()?->isDistributorStaff(), 403);
     }
 }

@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Distributor;
 
 use App\Http\Controllers\Concerns\LoadsOrderDetailRelations;
+use App\Http\Controllers\Concerns\ManagesOrderCorrespondence;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Distributor\StoreOrderDocumentRequest;
+use App\Http\Requests\StoreOrderMessageRequest;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderDocument;
 use App\Models\PlatformOrderItem;
+use App\Models\PlatformOrderMessage;
+use App\Models\PlatformOrderMessageAttachment;
 use App\Models\Product;
-use App\Models\Role;
 use App\Services\Cart\DistributorPurchaseCartService;
 use App\Services\Order\BuyerOrderEditService;
 use App\Services\Order\DistributorPurchaseListService;
@@ -24,6 +27,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class PurchaseOrderController extends Controller
 {
     use LoadsOrderDetailRelations;
+    use ManagesOrderCorrespondence;
 
     public function __construct(
         private readonly OrderStatusWorkflowService $workflow,
@@ -92,6 +96,13 @@ class PurchaseOrderController extends Controller
             'distributor.purchases.documents.store',
             'distributor.purchases.documents.destroy',
             'distributor.purchases.documents.preview',
+        ), $this->correspondenceUiContext(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_BUYER,
+            'distributor.purchases.messages.store',
+            'distributor.purchases.messages.attachments.download',
+            'distributor.purchases.messages.attachments.preview',
         )));
     }
 
@@ -265,6 +276,41 @@ class PurchaseOrderController extends Controller
         return redirect()->route('distributor.purchases.show', $order)->with('success', 'Документ загружен.');
     }
 
+    public function storeMessage(StoreOrderMessageRequest $request, PlatformOrder $order): RedirectResponse
+    {
+        $this->ensureAccess($request);
+        $this->ensureOwns($request, $order);
+
+        return $this->storeCorrespondenceMessage(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_BUYER,
+            'distributor.purchases.show',
+        );
+    }
+
+    public function downloadMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureAccess($request);
+        $this->ensureOwns($request, $order);
+
+        return $this->downloadCorrespondenceAttachment($order, $attachment);
+    }
+
+    public function previewMessageAttachment(
+        Request $request,
+        PlatformOrder $order,
+        PlatformOrderMessageAttachment $attachment,
+    ): StreamedResponse {
+        $this->ensureAccess($request);
+        $this->ensureOwns($request, $order);
+
+        return $this->previewCorrespondenceAttachment($order, $attachment);
+    }
+
     public function downloadDocument(
         Request $request,
         PlatformOrder $order,
@@ -323,7 +369,7 @@ class PurchaseOrderController extends Controller
 
     private function ensureAccess(Request $request): void
     {
-        abort_unless($request->user()?->getCurrentRole()?->slug === Role::SLUG_DISTRIBUTOR, 403);
+        abort_unless($request->user()?->isDistributorStaff(), 403);
     }
 
     private function ensureOwns(Request $request, PlatformOrder $order): void

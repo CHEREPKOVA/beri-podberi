@@ -9,7 +9,7 @@ class ManufacturerDocumentPolicy
 {
     public function manage(User $user, ManufacturerDocument $document): bool
     {
-        return (int) $document->manufacturer_profile_id === (int) $user->manufacturerProfile?->id;
+        return (int) $document->manufacturer_profile_id === (int) $user->currentManufacturerProfile()?->id;
     }
 
     public function delete(User $user, ManufacturerDocument $document): bool

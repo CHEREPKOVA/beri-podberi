@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\PlatformOrder;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
@@ -38,6 +39,9 @@ class OrderStatusChangedNotification extends Notification
             'to_status' => $this->toStatus,
             'message' => $this->message,
             'tracking_number' => $this->order->tracking_number,
+            'url' => $notifiable instanceof User
+                ? $this->order->cabinetShowUrlFor($notifiable)
+                : null,
         ];
     }
 }

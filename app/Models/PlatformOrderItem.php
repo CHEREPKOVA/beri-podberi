@@ -21,6 +21,9 @@ class PlatformOrderItem extends Model
         'unit_price',
         'list_unit_price',
         'line_total',
+        'discount_set_id',
+        'distributor_discount_set_id',
+        'discount_label',
     ];
 
     protected function casts(): array

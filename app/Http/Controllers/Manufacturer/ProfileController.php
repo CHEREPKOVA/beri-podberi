@@ -9,6 +9,7 @@ use App\Models\ManufacturerDocument;
 use App\Models\Region;
 use App\Models\TransportCompany;
 use App\Models\Warehouse;
+use App\Services\ManufacturerStaffAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -234,7 +235,7 @@ class ProfileController extends Controller
     public function exportWarehouses(Request $request)
     {
         $profile = $request->user()->manufacturerProfile;
-        $warehouses = $profile->warehouses()->with('region')->get();
+        $warehouses = app(ManufacturerStaffAccess::class)->visibleWarehouses($request->user());
         $exportFilename = 'Список складов '.now()->format('d.m.Y').'.csv';
 
         $headers = [

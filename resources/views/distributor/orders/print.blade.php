@@ -56,7 +56,7 @@
         @endif
         <p><span class="muted">Поставщик:</span> {{ $order->distributorProfile?->displayName() ?? '—' }}</p>
         @if($order->responsibleContact)
-            <p><span class="muted">Менеджер:</span> {{ $order->responsibleContact->full_name }}</p>
+            <p><span class="muted">Менеджер:</span> {{ $order->responsibleContact->displayName() }}</p>
         @endif
     </div>
 

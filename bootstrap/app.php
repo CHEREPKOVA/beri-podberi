@@ -1,5 +1,15 @@
 <?php
 
+use App\Http\Middleware\EnsureBuyerCabinetAccess;
+use App\Http\Middleware\EnsureCurrentRoleSelected;
+use App\Http\Middleware\EnsureDistributorCabinetAccess;
+use App\Http\Middleware\EnsureEndCompanyCabinetAccess;
+use App\Http\Middleware\EnsureManufacturerCabinetAccess;
+use App\Http\Middleware\EnsureManufacturerPartnerCatalogAccess;
+use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\LogAdminAction;
+use App\Http\Middleware\RequirePermission;
+use App\Http\Middleware\RequireRole;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,12 +27,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
 
         $middleware->alias([
-            'role.selected' => \App\Http\Middleware\EnsureCurrentRoleSelected::class,
-            'role' => \App\Http\Middleware\RequireRole::class,
-            'permission' => \App\Http\Middleware\RequirePermission::class,
-            'admin.audit' => \App\Http\Middleware\LogAdminAction::class,
-            'user.active' => \App\Http\Middleware\EnsureUserIsActive::class,
-            'manufacturer.partner' => \App\Http\Middleware\EnsureManufacturerPartnerCatalogAccess::class,
+            'role.selected' => EnsureCurrentRoleSelected::class,
+            'role' => RequireRole::class,
+            'permission' => RequirePermission::class,
+            'admin.audit' => LogAdminAction::class,
+            'user.active' => EnsureUserIsActive::class,
+            'manufacturer.partner' => EnsureManufacturerPartnerCatalogAccess::class,
+            'manufacturer.cabinet' => EnsureManufacturerCabinetAccess::class,
+            'distributor.cabinet' => EnsureDistributorCabinetAccess::class,
+            'end_company.cabinet' => EnsureEndCompanyCabinetAccess::class,
+            'buyer.cabinet' => EnsureBuyerCabinetAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

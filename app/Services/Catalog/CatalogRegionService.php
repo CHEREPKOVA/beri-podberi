@@ -5,6 +5,7 @@ namespace App\Services\Catalog;
 use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\EndCompanyStaffAccess;
 use Illuminate\Support\Collection;
 
 class CatalogRegionService
@@ -47,15 +48,18 @@ class CatalogRegionService
     {
         $role = $user->getCurrentRole();
 
-        if (in_array($role?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)) {
-            $user->loadMissing('endCompanyProfile.deliveryAddresses');
-            $regionIds = $user->endCompanyProfile?->deliveryAddresses
+        if (in_array($role?->slug, [Role::SLUG_END_COMPANY, Role::SLUG_COMPANY_EMPLOYEE], true)
+            && ! $user->isManufacturerStaff()
+            && ! $user->isDistributorStaff()
+        ) {
+            $addresses = app(EndCompanyStaffAccess::class)->visibleAddresses($user);
+            $regionIds = $addresses
                 ->pluck('region_id')
                 ->filter()
                 ->map(static fn ($id): int => (int) $id)
                 ->unique()
                 ->values()
-                ->all() ?? [];
+                ->all();
 
             if ($regionIds === []) {
                 $defaultId = $user->currentCompanyRegionId();
@@ -68,10 +72,11 @@ class CatalogRegionService
             return Region::query()->whereIn('id', $regionIds)->orderBy('name')->get();
         }
 
-        if ($role?->slug === Role::SLUG_DISTRIBUTOR) {
-            $user->loadMissing('distributorProfile.regions');
+        if ($role?->slug === Role::SLUG_DISTRIBUTOR || $user->isDistributorStaff()) {
+            $profile = $user->currentDistributorProfile() ?? $user->distributorProfile;
+            $profile?->loadMissing('regions');
 
-            return $user->distributorProfile?->regions()->orderBy('name')->get() ?? collect();
+            return $profile?->regions()->orderBy('name')->get() ?? collect();
         }
 
         return collect();

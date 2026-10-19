@@ -73,11 +73,6 @@ class DistributorEmployeesTest extends TestCase
                 'name' => 'Иван Петров',
                 'email' => 'ivan.sales@example.com',
                 'employee_role_id' => $role->id,
-                'permissions' => [
-                    'orders' => 'manage',
-                    'purchases' => 'none',
-                    'products' => 'view',
-                ],
                 'all_warehouses' => '1',
             ])
             ->assertRedirect(route('distributor.employees.index'));
@@ -217,6 +212,78 @@ class DistributorEmployeesTest extends TestCase
         ]);
     }
 
+    public function test_default_system_roles_match_tz(): void
+    {
+        [$admin] = $this->makeDistributorAdmin();
+        $names = $admin->distributorProfile->employeeRoles()->orderBy('sort_order')->pluck('name')->all();
+
+        $this->assertSame([
+            'Администратор компании',
+            'Менеджер по продажам',
+            'Менеджер по закупкам',
+            'Оператор каталога',
+            'Логист / менеджер склада',
+            'Поддержка клиентов',
+        ], $names);
+
+        $sales = DistributorEmployeeRole::query()->where('name', 'Менеджер по продажам')->firstOrFail();
+        $this->assertSame('manage', $sales->normalizedPermissions()['orders']);
+        $this->assertSame('none', $sales->normalizedPermissions()['purchases']);
+        $this->assertFalse($sales->normalizedPermissions()['manufacturer_chat']);
+
+        $buyer = DistributorEmployeeRole::query()->where('name', 'Менеджер по закупкам')->firstOrFail();
+        $this->assertSame('manage', $buyer->normalizedPermissions()['purchases']);
+        $this->assertTrue($buyer->normalizedPermissions()['manufacturer_chat']);
+    }
+
+    public function test_employee_sees_only_assigned_warehouses(): void
+    {
+        [$admin] = $this->makeDistributorAdmin();
+        $profile = $admin->distributorProfile;
+        $moscow = $profile->warehouses()->firstOrFail();
+        $region = Region::factory()->create();
+        $rostov = DistributorWarehouse::query()->create([
+            'distributor_profile_id' => $profile->id,
+            'name' => 'Склад Ростов',
+            'address' => 'Ростов',
+            'region_id' => $region->id,
+            'type' => DistributorWarehouse::TYPE_REGIONAL,
+            'is_active' => true,
+        ]);
+
+        $employee = $this->makeActiveEmployee(
+            $admin,
+            'wh-staff@example.com',
+            'Secret123',
+            'Логист / менеджер склада',
+            [
+                'all_warehouses' => '0',
+                'warehouse_ids' => [$moscow->id],
+            ],
+        );
+
+        $this->actingAsEmployee($employee)
+            ->get(route('distributor.warehouses.index'))
+            ->assertOk()
+            ->assertSee('Склад Москва')
+            ->assertDontSee('Склад Ростов');
+
+        $this->assertFalse(
+            app(\App\Services\DistributorStaffAccess::class)->canAccessWarehouse($employee, (int) $rostov->id)
+        );
+    }
+
+    public function test_purchase_manager_can_chat_with_manufacturer_sales_cannot(): void
+    {
+        [$admin] = $this->makeDistributorAdmin();
+        $sales = $this->makeActiveEmployee($admin, 'sales-chat@example.com');
+        $purchaser = $this->makeActiveEmployee($admin, 'buy-chat@example.com', 'Secret123', 'Менеджер по закупкам');
+
+        $access = app(\App\Services\DistributorStaffAccess::class);
+        $this->assertFalse($access->canAccessSection($sales, 'manufacturer_chat'));
+        $this->assertTrue($access->canAccessSection($purchaser, 'manufacturer_chat'));
+    }
+
     /**
      * @return array{0: User}
      */
@@ -254,18 +321,18 @@ class DistributorEmployeesTest extends TestCase
         string $email = 'dst-employee@example.com',
         string $password = 'Secret123',
         string $roleName = 'Менеджер по продажам',
+        array $extra = [],
     ): User {
         Mail::fake();
         $role = DistributorEmployeeRole::query()->where('name', $roleName)->firstOrFail();
 
         $this->actingAsDistributor($admin)
-            ->post(route('distributor.employees.store'), [
+            ->post(route('distributor.employees.store'), array_merge([
                 'name' => 'Сотрудник Дистрибьютора',
                 'email' => $email,
                 'employee_role_id' => $role->id,
-                'permissions' => $role->normalizedPermissions(),
                 'all_warehouses' => '1',
-            ]);
+            ], $extra));
 
         $plainToken = null;
         Mail::assertSent(EmployeeInvitationMail::class, function (EmployeeInvitationMail $mail) use ($email, &$plainToken) {

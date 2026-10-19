@@ -124,7 +124,6 @@ class EmployeesCabinetIsolationTest extends TestCase
                     'name' => 'Сотрудник дистра',
                     'email' => 'iso-dst-emp@example.com',
                     'employee_role_id' => $employeeRole->id,
-                    'permissions' => $employeeRole->normalizedPermissions(),
                     'all_warehouses' => '1',
                 ]);
         });
@@ -150,7 +149,6 @@ class EmployeesCabinetIsolationTest extends TestCase
                     'name' => 'Сотрудник СТО',
                     'email' => 'iso-end-emp@example.com',
                     'employee_role_id' => $employeeRole->id,
-                    'permissions' => $employeeRole->normalizedPermissions(),
                     'all_addresses' => '1',
                 ]);
         });

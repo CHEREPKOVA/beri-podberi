@@ -11,13 +11,19 @@ class DistributorCompanyContext
 {
     public function isCompanyAdmin(User $user): bool
     {
-        $role = $user->getCurrentRole();
-        if ($role?->slug === Role::SLUG_DISTRIBUTOR) {
-            return true;
+        if (! $user->roles->contains('slug', Role::SLUG_DISTRIBUTOR)) {
+            return false;
         }
 
-        return $user->roles->contains('slug', Role::SLUG_DISTRIBUTOR)
-            && $role === null;
+        // Для текущего пользователя учитываем выбранную роль (мульти-роль).
+        if (auth()->id() !== null && (int) auth()->id() === (int) $user->id) {
+            $role = $user->getCurrentRole();
+            if ($role !== null) {
+                return $role->slug === Role::SLUG_DISTRIBUTOR;
+            }
+        }
+
+        return true;
     }
 
     public function isDistributorEmployee(User $user): bool

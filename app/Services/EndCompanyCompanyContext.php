@@ -11,13 +11,18 @@ class EndCompanyCompanyContext
 {
     public function isCompanyAdmin(User $user): bool
     {
-        $role = $user->getCurrentRole();
-        if ($role?->slug === Role::SLUG_END_COMPANY) {
-            return true;
+        if (! $user->roles->contains('slug', Role::SLUG_END_COMPANY)) {
+            return false;
         }
 
-        return $user->roles->contains('slug', Role::SLUG_END_COMPANY)
-            && $role === null;
+        if (auth()->id() !== null && (int) auth()->id() === (int) $user->id) {
+            $role = $user->getCurrentRole();
+            if ($role !== null) {
+                return $role->slug === Role::SLUG_END_COMPANY;
+            }
+        }
+
+        return true;
     }
 
     public function isEndCompanyEmployee(User $user): bool

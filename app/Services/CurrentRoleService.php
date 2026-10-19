@@ -32,7 +32,11 @@ class CurrentRoleService
 
         $role = $user->activeRoles()->firstWhere('id', (int) $roleId);
         if (! $role instanceof Role) {
-            $this->clear();
+            // Сессия хранит роль текущего входа. Нельзя сбрасывать её, когда
+            // getCurrentRole() вызывают для другого пользователя (список сотрудников и т.п.).
+            if (auth()->id() !== null && (int) auth()->id() === (int) $user->id) {
+                $this->clear();
+            }
 
             return null;
         }

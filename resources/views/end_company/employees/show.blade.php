@@ -31,7 +31,7 @@
                 @if($status === 'active')
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{{ $statusLabel }}</span>
                 @elseif($status === 'pending')
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">{{ $statusLabel }}</span>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">{{ $statusLabel }}</span>
                 @else
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800">{{ $statusLabel }}</span>
                 @endif
@@ -74,7 +74,7 @@
                 </div>
             @endif
             <div class="md:col-span-2">
-                <p class="text-gray-500 mb-2">Права доступа</p>
+                <p class="text-gray-500 mb-2">Права роли</p>
                 <ul class="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <li>Заказы: {{ $orderOptions[$permissions['orders']] ?? $permissions['orders'] }}</li>
                     <li>Только свои заказы: {{ $permissions['own_orders_only'] ? 'Да' : 'Нет' }}</li>
@@ -112,7 +112,7 @@
         </div>
 
         <div class="flex flex-wrap gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" x-show="!editing" @click="editing = true" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Редактировать</button>
+            <button type="button" x-show="!editing" @click="editing = true" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Изменить данные</button>
 
             @if($status === 'pending')
                 <form method="POST" action="{{ route('end_company.employees.resend', $employee) }}">
@@ -129,8 +129,10 @@
             @if($status === 'blocked')
                 <form method="POST" action="{{ route('end_company.employees.unblock', $employee) }}">
                     @csrf
-                    <input type="hidden" name="notify" value="1">
-                    <button type="submit" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Разблокировать</button>
+                    <label class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                        <input type="hidden" name="notify" value="1">
+                        <button type="submit">Разблокировать</button>
+                    </label>
                 </form>
             @elseif($status === 'active')
                 <form method="POST" action="{{ route('end_company.employees.block', $employee) }}">
@@ -141,7 +143,7 @@
             @endif
 
             @if($canDelete)
-                <button type="button" @click="showDeleteModal = true" class="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-lg text-sm hover:bg-red-50">Удалить</button>
+                <button type="button" @click="showDeleteModal = true" class="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-lg text-sm hover:bg-red-50">Удалить сотрудника</button>
             @else
                 <span class="px-4 py-2 text-xs text-gray-400 self-center">Удаление недоступно: сотрудник уже участвовал в заказах. Можно только заблокировать.</span>
             @endif

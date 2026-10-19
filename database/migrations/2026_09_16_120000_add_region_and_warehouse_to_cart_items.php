@@ -69,6 +69,17 @@ return new class extends Migration
      */
     private function indexNames(string $table): array
     {
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            return collect(DB::select("PRAGMA index_list('{$table}')"))
+                ->pluck('name')
+                ->map(fn ($name) => (string) $name)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
         return collect(DB::select("SHOW INDEX FROM {$table}"))
             ->pluck('Key_name')
             ->unique()

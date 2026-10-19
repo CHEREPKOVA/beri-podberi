@@ -40,7 +40,7 @@
         x-cloak
         class="absolute z-50 left-0 right-0 mt-1 max-h-72 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1"
     >
-        <template x-for="option in {{ $optionsExpr }}" :key="option.value">
+        <template x-for="option in {{ $optionsExpr }}" :key="'opt-' + option.value">
             <button
                 type="button"
                 @click.stop="{{ $pickExpr }}"

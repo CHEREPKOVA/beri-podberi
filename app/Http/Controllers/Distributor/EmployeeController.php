@@ -49,10 +49,6 @@ class EmployeeController extends Controller
         return view('distributor.employees.create', [
             'roles' => $roles,
             'warehouses' => $warehouses,
-            'orderOptions' => config('distributor_staff.orders'),
-            'purchaseOptions' => config('distributor_staff.purchases'),
-            'productOptions' => config('distributor_staff.products'),
-            'permissions' => DistributorEmployeeRole::normalizePermissions([]),
         ]);
     }
 
@@ -79,9 +75,8 @@ class EmployeeController extends Controller
         $params = $this->context->employeeParams($employee);
         $status = $this->access->status($employee);
         $roleId = (int) ($params['employee_role_id'] ?? 0);
-        $roleName = $roles === []
-            ? 'Сотрудник'
-            : (collect($roles)->firstWhere('id', $roleId)?->name ?? 'Сотрудник');
+        $assignedRole = collect($roles)->firstWhere('id', $roleId);
+        $roleName = $assignedRole?->name ?? 'Сотрудник';
 
         $employeeRole = $employee->roles->firstWhere('slug', Role::SLUG_COMPANY_EMPLOYEE);
         $addedAt = $employeeRole?->pivot?->created_at ?? $employee->created_at;
@@ -93,9 +88,10 @@ class EmployeeController extends Controller
             'orderOptions' => config('distributor_staff.orders'),
             'purchaseOptions' => config('distributor_staff.purchases'),
             'productOptions' => config('distributor_staff.products'),
-            'permissions' => DistributorEmployeeRole::normalizePermissions(
-                is_array($params['permissions'] ?? null) ? $params['permissions'] : []
-            ),
+            'permissions' => $assignedRole?->normalizedPermissions()
+                ?? DistributorEmployeeRole::normalizePermissions(
+                    is_array($params['permissions'] ?? null) ? $params['permissions'] : []
+                ),
             'warehouseIds' => array_map('intval', $params['warehouse_ids'] ?? []),
             'allWarehouses' => (bool) ($params['all_warehouses'] ?? false),
             'phone' => (string) ($params['phone'] ?? ''),

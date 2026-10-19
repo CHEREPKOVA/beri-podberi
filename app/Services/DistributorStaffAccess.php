@@ -65,6 +65,7 @@ class DistributorStaffAccess
             'orders.manage' => $permissions['orders'] === 'manage',
             'purchases' => $permissions['purchases'] !== 'none',
             'purchases.manage' => $permissions['purchases'] === 'manage',
+            'manufacturer_chat' => (bool) $permissions['manufacturer_chat'],
             'catalog' => $permissions['purchases'] !== 'none',
             'discounts' => (bool) $permissions['discounts'],
             'discounts.manage' => (bool) $permissions['discounts'],
@@ -93,6 +94,19 @@ class DistributorStaffAccess
         }
 
         $params = $this->context->employeeParams($user);
+        $roleId = (int) ($params['employee_role_id'] ?? 0);
+        $profile = $this->context->profile($user);
+
+        if ($profile && $roleId > 0) {
+            $role = DistributorEmployeeRole::query()
+                ->where('distributor_profile_id', $profile->id)
+                ->whereKey($roleId)
+                ->first();
+
+            if ($role) {
+                return $role->normalizedPermissions();
+            }
+        }
 
         return DistributorEmployeeRole::normalizePermissions(
             is_array($params['permissions'] ?? null) ? $params['permissions'] : []

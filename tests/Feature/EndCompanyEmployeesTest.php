@@ -72,11 +72,6 @@ class EndCompanyEmployeesTest extends TestCase
                 'name' => 'Иван Петров',
                 'email' => 'ivan.buyer@example.com',
                 'employee_role_id' => $role->id,
-                'permissions' => [
-                    'orders' => 'manage',
-                    'catalog' => '1',
-                    'own_orders_only' => '1',
-                ],
                 'all_addresses' => '1',
             ])
             ->assertRedirect(route('end_company.employees.index'));
@@ -347,7 +342,6 @@ class EndCompanyEmployeesTest extends TestCase
                 'name' => 'Сотрудник Компании',
                 'email' => $email,
                 'employee_role_id' => $role->id,
-                'permissions' => $role->normalizedPermissions(),
                 'all_addresses' => '1',
             ], $extra));
 

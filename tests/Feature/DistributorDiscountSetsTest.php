@@ -332,7 +332,6 @@ class DistributorDiscountSetsTest extends TestCase
                 'name' => 'Сотрудник',
                 'email' => $email,
                 'employee_role_id' => $role->id,
-                'permissions' => $role->normalizedPermissions(),
                 'all_warehouses' => '1',
             ]);
 
@@ -376,7 +375,6 @@ class DistributorDiscountSetsTest extends TestCase
                 'name' => 'Скидочный менеджер',
                 'email' => 'dst-disc-manager@example.com',
                 'employee_role_id' => $role->id,
-                'permissions' => $role->normalizedPermissions(),
                 'all_warehouses' => '1',
             ]);
 

@@ -68,7 +68,7 @@
                 </p>
             </div>
             <div class="md:col-span-2">
-                <p class="text-gray-500 mb-2">Права доступа</p>
+                <p class="text-gray-500 mb-2">Права роли</p>
                 <ul class="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <li>Заказы: {{ $orderOptions[$permissions['orders']] ?? $permissions['orders'] }}</li>
                     <li>Покупки: {{ $purchaseOptions[$permissions['purchases']] ?? $permissions['purchases'] }}</li>
@@ -112,8 +112,10 @@
             @if($status === 'blocked')
                 <form method="POST" action="{{ route('distributor.employees.unblock', $employee) }}">
                     @csrf
-                    <input type="hidden" name="notify" value="1">
-                    <button type="submit" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Разблокировать</button>
+                    <label class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                        <input type="hidden" name="notify" value="1">
+                        <button type="submit">Разблокировать</button>
+                    </label>
                 </form>
             @elseif($status === 'active')
                 <form method="POST" action="{{ route('distributor.employees.block', $employee) }}">

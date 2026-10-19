@@ -82,6 +82,19 @@ class EndCompanyStaffAccess
         }
 
         $params = $this->context->employeeParams($user);
+        $roleId = (int) ($params['employee_role_id'] ?? 0);
+        $profile = $this->context->profile($user);
+
+        if ($profile && $roleId > 0) {
+            $role = EndCompanyEmployeeRole::query()
+                ->where('end_company_profile_id', $profile->id)
+                ->whereKey($roleId)
+                ->first();
+
+            if ($role) {
+                return $role->normalizedPermissions();
+            }
+        }
 
         return EndCompanyEmployeeRole::normalizePermissions(
             is_array($params['permissions'] ?? null) ? $params['permissions'] : []

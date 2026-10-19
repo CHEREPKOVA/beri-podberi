@@ -14,6 +14,7 @@ use App\Models\PlatformOrderMessage;
 use App\Models\PlatformOrderMessageAttachment;
 use App\Models\Product;
 use App\Services\Cart\DistributorPurchaseCartService;
+use App\Services\DistributorStaffAccess;
 use App\Services\Order\BuyerOrderEditService;
 use App\Services\Order\DistributorPurchaseListService;
 use App\Services\Order\OrderDocumentService;
@@ -76,6 +77,17 @@ class PurchaseOrderController extends Controller
                 ->get(['id', 'name', 'sku', 'base_price', 'min_order_quantity'])
             : collect();
 
+        $correspondence = $this->correspondenceUiContext(
+            $request,
+            $order,
+            PlatformOrderMessage::ROLE_BUYER,
+            'distributor.purchases.messages.store',
+            'distributor.purchases.messages.attachments.download',
+            'distributor.purchases.messages.attachments.preview',
+        );
+        $correspondence['correspondence_can_post'] = app(DistributorStaffAccess::class)
+            ->canAccessSection($request->user(), 'manufacturer_chat');
+
         return view('distributor.purchases.show', array_merge([
             'order' => $order,
             'actions' => $this->workflow->availableActions($order, OrderStatusWorkflowService::ACTOR_BUYER),
@@ -96,14 +108,7 @@ class PurchaseOrderController extends Controller
             'distributor.purchases.documents.store',
             'distributor.purchases.documents.destroy',
             'distributor.purchases.documents.preview',
-        ), $this->correspondenceUiContext(
-            $request,
-            $order,
-            PlatformOrderMessage::ROLE_BUYER,
-            'distributor.purchases.messages.store',
-            'distributor.purchases.messages.attachments.download',
-            'distributor.purchases.messages.attachments.preview',
-        )));
+        ), $correspondence));
     }
 
     public function print(Request $request, PlatformOrder $order): View
@@ -280,6 +285,11 @@ class PurchaseOrderController extends Controller
     {
         $this->ensureAccess($request);
         $this->ensureOwns($request, $order);
+        abort_unless(
+            app(DistributorStaffAccess::class)->canAccessSection($request->user(), 'manufacturer_chat'),
+            403,
+            'Недостаточно прав для переписки с производителем.'
+        );
 
         return $this->storeCorrespondenceMessage(
             $request,

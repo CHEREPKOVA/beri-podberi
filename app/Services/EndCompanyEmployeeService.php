@@ -84,7 +84,7 @@ class EndCompanyEmployeeService
         $this->assertEmailAvailable($email);
 
         $role = $this->requireEmployeeRole($profile, (int) $data['employee_role_id']);
-        $permissions = EndCompanyEmployeeRole::normalizePermissions($data['permissions'] ?? []);
+        $permissions = $role->normalizedPermissions();
         $addressIds = $this->normalizeAddressIds($profile, $data);
 
         return DB::transaction(function () use ($admin, $profile, $companyName, $email, $data, $role, $permissions, $addressIds): UserInvitation {
@@ -177,7 +177,7 @@ class EndCompanyEmployeeService
         $this->assertCompanyEmployee($admin, $employee);
         $profile = $this->requireProfile($admin);
         $role = $this->requireEmployeeRole($profile, (int) $data['employee_role_id']);
-        $permissions = EndCompanyEmployeeRole::normalizePermissions($data['permissions'] ?? []);
+        $permissions = $role->normalizedPermissions();
         $addressIds = $this->normalizeAddressIds($profile, $data);
         $email = Str::lower(trim($data['email']));
 

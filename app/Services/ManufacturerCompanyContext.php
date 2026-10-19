@@ -11,13 +11,18 @@ class ManufacturerCompanyContext
 {
     public function isCompanyAdmin(User $user): bool
     {
-        $role = $user->getCurrentRole();
-        if ($role?->slug === Role::SLUG_MANUFACTURER) {
-            return true;
+        if (! $user->roles->contains('slug', Role::SLUG_MANUFACTURER)) {
+            return false;
         }
 
-        return $user->roles->contains('slug', Role::SLUG_MANUFACTURER)
-            && $role === null;
+        if (auth()->id() !== null && (int) auth()->id() === (int) $user->id) {
+            $role = $user->getCurrentRole();
+            if ($role !== null) {
+                return $role->slug === Role::SLUG_MANUFACTURER;
+            }
+        }
+
+        return true;
     }
 
     public function isManufacturerEmployee(User $user): bool

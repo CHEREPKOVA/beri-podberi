@@ -50,8 +50,6 @@ class EmployeeController extends Controller
         return view('end_company.employees.create', [
             'roles' => $roles,
             'addresses' => $addresses,
-            'orderOptions' => config('end_company_staff.orders'),
-            'permissions' => EndCompanyEmployeeRole::normalizePermissions([]),
         ]);
     }
 
@@ -78,9 +76,8 @@ class EmployeeController extends Controller
         $params = $this->context->employeeParams($employee);
         $status = $this->access->status($employee);
         $roleId = (int) ($params['employee_role_id'] ?? 0);
-        $roleName = $roles === []
-            ? 'Сотрудник'
-            : (collect($roles)->firstWhere('id', $roleId)?->name ?? 'Сотрудник');
+        $assignedRole = collect($roles)->firstWhere('id', $roleId);
+        $roleName = $assignedRole?->name ?? 'Сотрудник';
 
         $employeeRole = $employee->roles->firstWhere('slug', Role::SLUG_COMPANY_EMPLOYEE);
         $addedAt = $employeeRole?->pivot?->created_at ?? $employee->created_at;
@@ -97,9 +94,10 @@ class EmployeeController extends Controller
             'roles' => $roles,
             'addresses' => $addresses,
             'orderOptions' => config('end_company_staff.orders'),
-            'permissions' => EndCompanyEmployeeRole::normalizePermissions(
-                is_array($params['permissions'] ?? null) ? $params['permissions'] : []
-            ),
+            'permissions' => $assignedRole?->normalizedPermissions()
+                ?? EndCompanyEmployeeRole::normalizePermissions(
+                    is_array($params['permissions'] ?? null) ? $params['permissions'] : []
+                ),
             'addressIds' => array_map('intval', $params['delivery_address_ids'] ?? []),
             'allAddresses' => (bool) ($params['all_addresses'] ?? false),
             'phone' => (string) ($params['phone'] ?? ''),

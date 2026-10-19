@@ -103,19 +103,21 @@
 @push('scripts')
 <script>
 function employeeForm(config) {
+    const roles = Array.isArray(config.roles) ? config.roles : [];
+    // Стабильный массив: getter с .map() даёт новый reference на каждый доступ и Alpine x-for дублирует пункты.
+    const roleOptions = roles.map((role) => ({
+        value: String(role.id),
+        label: role.name,
+    }));
+
     return {
         openSelect: '',
         roleId: String(config.roleId || ''),
-        roles: config.roles || [],
+        roles,
+        roleOptions,
         allWarehouses: Boolean(config.allWarehouses),
         allWarehouseIds: (config.allWarehouseIds || []).map(String),
         warehouseIds: (config.warehouseIds || []).map(String),
-        get roleOptions() {
-            return (this.roles || []).map((role) => ({
-                value: String(role.id),
-                label: role.name,
-            }));
-        },
         optionLabel(options, value, placeholder) {
             const current = String(value ?? '');
             const item = (options || []).find((option) => String(option.value) === current);

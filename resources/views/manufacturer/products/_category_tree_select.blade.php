@@ -20,6 +20,32 @@
         $selectedIds = [];
     }
 
+    $descendantsMap = [];
+    $parentMap = [];
+    $walkCategoryTree = function ($nodes, $parentId = null) use (&$walkCategoryTree, &$descendantsMap, &$parentMap): void {
+        foreach ($nodes as $node) {
+            $nodeId = (int) $node->id;
+            if ($parentId !== null) {
+                $parentMap[$nodeId] = (int) $parentId;
+            }
+
+            $descendantIds = [];
+            $collectDescendants = function ($current) use (&$collectDescendants, &$descendantIds): void {
+                foreach ($current->children ?? [] as $child) {
+                    $descendantIds[] = (int) $child->id;
+                    $collectDescendants($child);
+                }
+            };
+            $collectDescendants($node);
+            $descendantsMap[$nodeId] = $descendantIds;
+
+            if ($node->children->isNotEmpty()) {
+                $walkCategoryTree($node->children, $nodeId);
+            }
+        }
+    };
+    $walkCategoryTree($tree);
+
     $pickerConfig = [
         'multiple' => $multiple,
         'selectedId' => $selectedId,
@@ -27,6 +53,8 @@
         'placeholder' => $placeholder,
         'labels' => ($categories ?? collect())->pluck('name', 'id')->all(),
         'notifyCategoryChange' => $notifyCategoryChange,
+        'descendantsMap' => $descendantsMap,
+        'parentMap' => $parentMap,
     ];
 @endphp
 
@@ -40,9 +68,11 @@ function categoryPickerState(config) {
         pickerOpen: false,
         multiple: Boolean(config.multiple),
         selectedId: config.selectedId ?? null,
-        selectedIds: Array.isArray(config.selectedIds) ? config.selectedIds : [],
+        selectedIds: Array.isArray(config.selectedIds) ? config.selectedIds.map(Number) : [],
         placeholder: config.placeholder || 'Выберите категорию',
         labels: config.labels || {},
+        descendantsMap: config.descendantsMap || {},
+        parentMap: config.parentMap || {},
         notifyCategoryChange: Boolean(config.notifyCategoryChange),
         emitCategoryChange() {
             if (!this.notifyCategoryChange || this.multiple) {
@@ -77,19 +107,39 @@ function categoryPickerState(config) {
             return this.labels[this.selectedId] || this.placeholder;
         },
         isSelected(id) {
+            id = Number(id);
             if (this.multiple) {
                 return this.selectedIds.indexOf(id) !== -1;
             }
             return this.selectedId === id;
         },
+        relatedIds(id) {
+            id = Number(id);
+            const descendants = this.descendantsMap[id] || this.descendantsMap[String(id)] || [];
+            return [id].concat(descendants.map(Number));
+        },
+        ancestorIds(id) {
+            const result = [];
+            let current = this.parentMap[id] ?? this.parentMap[String(id)];
+            while (current != null && current !== '') {
+                const parentId = Number(current);
+                result.push(parentId);
+                current = this.parentMap[parentId] ?? this.parentMap[String(parentId)];
+            }
+            return result;
+        },
         select(id) {
+            id = Number(id);
             if (this.multiple) {
-                if (this.selectedIds.indexOf(id) !== -1) {
+                const related = this.relatedIds(id);
+                const isSelected = this.selectedIds.indexOf(id) !== -1;
+                if (isSelected) {
+                    const removeSet = new Set(related.concat(this.ancestorIds(id)));
                     this.selectedIds = this.selectedIds.filter(function (item) {
-                        return item !== id;
+                        return !removeSet.has(Number(item));
                     });
                 } else {
-                    this.selectedIds = this.selectedIds.concat([id]);
+                    this.selectedIds = Array.from(new Set(this.selectedIds.concat(related).map(Number)));
                 }
                 return;
             }

@@ -38,7 +38,7 @@ class CatalogEmptyStateService
             $similarQueryCount = $this->catalog->visibleProductsQuery()
                 ->search($similarQuery, $this->searchOptions())
                 ->when(
-                    $category !== null && $params->searchScope !== CatalogListingParams::SEARCH_SCOPE_GLOBAL,
+                    $category !== null && ! $params->ignoresSelectedCategory(),
                     fn ($q) => $q->inCategory($category->id)
                 )
                 ->count();
@@ -74,7 +74,7 @@ class CatalogEmptyStateService
         }
 
         $query = $this->catalog->visibleProductsQuery()->search($params->search, $this->searchOptions());
-        if ($category !== null && $params->searchScope !== CatalogListingParams::SEARCH_SCOPE_GLOBAL) {
+        if ($category !== null && ! $params->ignoresSelectedCategory()) {
             $query->inCategory($category->id);
         }
 

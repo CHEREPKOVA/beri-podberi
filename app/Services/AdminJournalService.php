@@ -35,6 +35,18 @@ class AdminJournalService
             $events = $events->merge($this->collectDistributorProductLogs($request));
         }
 
+        if (in_array('user_login', $sources, true)) {
+            $events = $events->merge($this->collectUserLoginLogs($request));
+        }
+
+        if (in_array('order_status', $sources, true)) {
+            $events = $events->merge($this->collectOrderStatusLogs($request));
+        }
+
+        if (in_array('distributor_discount', $sources, true)) {
+            $events = $events->merge($this->collectDistributorDiscountLogs($request));
+        }
+
         return $events
             ->sortByDesc(fn (array $event) => $event['occurred_at'])
             ->values();
@@ -80,6 +92,9 @@ class AdminJournalService
             'admin_action' => $this->findAdminAction($id),
             'partnership' => $this->findPartnershipLog($id),
             'distributor_product' => $this->findDistributorProductLog($id),
+            'user_login' => $this->findUserLoginLog($id),
+            'order_status' => $this->findOrderStatusLog($id),
+            'distributor_discount' => $this->findDistributorDiscountLog($id),
             default => null,
         };
     }
@@ -139,6 +154,42 @@ class AdminJournalService
             ->limit(self::FETCH_LIMIT)
             ->get()
             ->map(fn (object $row) => $this->normalizeDistributorProductLog($row));
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function collectUserLoginLogs(Request $request): Collection
+    {
+        return $this->userLoginQuery($request)
+            ->orderByDesc('logs.id')
+            ->limit(self::FETCH_LIMIT)
+            ->get()
+            ->map(fn (object $row) => $this->normalizeUserLoginLog($row));
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function collectOrderStatusLogs(Request $request): Collection
+    {
+        return $this->orderStatusQuery($request)
+            ->orderByDesc('logs.id')
+            ->limit(self::FETCH_LIMIT)
+            ->get()
+            ->map(fn (object $row) => $this->normalizeOrderStatusLog($row));
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function collectDistributorDiscountLogs(Request $request): Collection
+    {
+        return $this->distributorDiscountQuery($request)
+            ->orderByDesc('logs.id')
+            ->limit(self::FETCH_LIMIT)
+            ->get()
+            ->map(fn (object $row) => $this->normalizeDistributorDiscountLog($row));
     }
 
     private function adminActionQuery(Request $request): Builder
@@ -226,6 +277,79 @@ class AdminJournalService
             ]);
 
         $this->applySharedFilters($query, $request, 'logs', 'performed_by_user_id');
+
+        if ($request->filled('company_name')) {
+            $query->where('distributor.full_name', 'like', '%'.$request->company_name.'%');
+        }
+
+        return $query;
+    }
+
+    private function userLoginQuery(Request $request): Builder
+    {
+        $query = DB::table('user_login_logs as logs')
+            ->leftJoin('users', 'users.id', '=', 'logs.user_id')
+            ->select([
+                'logs.*',
+                'users.name as actor_display_name',
+                'users.email as actor_email',
+            ]);
+
+        $this->applySharedFilters($query, $request, 'logs', 'user_id');
+
+        if ($request->filled('company_name')) {
+            // У входа нет прямой компании — скрываем при фильтре по компании.
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
+    }
+
+    private function orderStatusQuery(Request $request): Builder
+    {
+        $query = DB::table('platform_order_status_logs as logs')
+            ->leftJoin('users', 'users.id', '=', 'logs.performed_by_user_id')
+            ->join('platform_orders as orders', 'orders.id', '=', 'logs.platform_order_id')
+            ->leftJoin('distributor_profiles as distributor', 'distributor.id', '=', 'orders.distributor_profile_id')
+            ->leftJoin('manufacturer_profiles as manufacturer', 'manufacturer.id', '=', 'orders.manufacturer_profile_id')
+            ->leftJoin('end_company_profiles as end_company', 'end_company.id', '=', 'orders.end_company_profile_id')
+            ->select([
+                'logs.*',
+                'users.name as actor_display_name',
+                'orders.order_number',
+                'distributor.full_name as distributor_name',
+                'manufacturer.full_name as manufacturer_name',
+                'end_company.full_name as end_company_name',
+            ]);
+
+        $this->applySharedFilters($query, $request, 'logs', 'performed_by_user_id');
+
+        if ($request->filled('company_name')) {
+            $companyName = '%'.$request->company_name.'%';
+            $query->where(function (Builder $inner) use ($companyName): void {
+                $inner->where('distributor.full_name', 'like', $companyName)
+                    ->orWhere('manufacturer.full_name', 'like', $companyName)
+                    ->orWhere('end_company.full_name', 'like', $companyName);
+            });
+        }
+
+        return $query;
+    }
+
+    private function distributorDiscountQuery(Request $request): Builder
+    {
+        $query = DB::table('distributor_discount_set_logs as logs')
+            ->leftJoin('users', 'users.id', '=', 'logs.user_id')
+            ->join('distributor_discount_sets as sets', 'sets.id', '=', 'logs.discount_set_id')
+            ->join('distributor_profiles as distributor', 'distributor.id', '=', 'sets.distributor_profile_id')
+            ->select([
+                'logs.*',
+                'users.name as actor_display_name',
+                'sets.name as discount_set_name',
+                'distributor.full_name as distributor_name',
+            ]);
+
+        $this->applySharedFilters($query, $request, 'logs', 'user_id');
 
         if ($request->filled('company_name')) {
             $query->where('distributor.full_name', 'like', '%'.$request->company_name.'%');
@@ -402,5 +526,159 @@ class AdminJournalService
             ->first();
 
         return $row ? $this->normalizeDistributorProductLog($row) : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeUserLoginLog(object $row): array
+    {
+        $ip = $row->ip ? (string) $row->ip : null;
+
+        return [
+            'key' => 'user_login:'.$row->id,
+            'source' => 'user_login',
+            'source_id' => (int) $row->id,
+            'title' => 'Вход в систему',
+            'subtitle' => $ip ? 'IP: '.$ip : ($row->actor_email ?: null),
+            'actor_id' => $row->user_id ? (int) $row->user_id : null,
+            'actor_name' => (string) ($row->actor_display_name ?? 'Удалённый пользователь'),
+            'company_name' => null,
+            'company_type' => null,
+            'module' => config('admin_audit.modules.user_login.label'),
+            'module_key' => 'user_login',
+            'source_label' => config('admin_audit.sources.user_login.label'),
+            'required_permission' => null,
+            'response_status' => 200,
+            'occurred_at' => Carbon::parse($row->created_at)->timestamp,
+            'occurred_at_label' => Carbon::parse($row->created_at)->format('d.m.Y H:i'),
+            'payload' => [
+                'action' => 'login',
+                'ip' => $ip,
+                'user_agent' => $row->user_agent,
+                'email' => $row->actor_email,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeOrderStatusLog(object $row): array
+    {
+        $labels = config('admin_audit.order_status_action_labels', []);
+        $action = (string) ($row->action ?: 'status_changed');
+        $orderNumber = (string) ($row->order_number ?? '');
+        $from = $row->from_status ? (string) $row->from_status : null;
+        $to = (string) ($row->to_status ?? '');
+
+        $subtitleParts = array_filter([
+            $orderNumber !== '' ? 'Заказ '.$orderNumber : null,
+            ($from || $to) ? trim(($from ?: '—').' → '.($to ?: '—')) : null,
+            $row->comment ? (string) $row->comment : null,
+        ]);
+
+        $companyParts = array_filter([
+            $row->distributor_name,
+            $row->manufacturer_name,
+            $row->end_company_name,
+        ]);
+
+        return [
+            'key' => 'order_status:'.$row->id,
+            'source' => 'order_status',
+            'source_id' => (int) $row->id,
+            'title' => $labels[$action] ?? ($action !== '' ? $action : 'Изменение заказа'),
+            'subtitle' => $subtitleParts !== [] ? implode(' · ', $subtitleParts) : null,
+            'actor_id' => $row->performed_by_user_id ? (int) $row->performed_by_user_id : null,
+            'actor_name' => (string) ($row->actor_display_name ?? 'Система'),
+            'company_name' => $companyParts !== [] ? implode(' / ', $companyParts) : null,
+            'company_type' => null,
+            'module' => config('admin_audit.modules.order_status.label'),
+            'module_key' => 'order_status',
+            'source_label' => config('admin_audit.sources.order_status.label'),
+            'required_permission' => null,
+            'response_status' => 200,
+            'occurred_at' => Carbon::parse($row->created_at)->timestamp,
+            'occurred_at_label' => Carbon::parse($row->created_at)->format('d.m.Y H:i'),
+            'payload' => [
+                'action' => $action,
+                'order_number' => $orderNumber,
+                'from_status' => $from,
+                'to_status' => $to,
+                'comment' => $row->comment,
+                'meta' => json_decode((string) ($row->meta ?? 'null'), true),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeDistributorDiscountLog(object $row): array
+    {
+        $labels = config('admin_audit.distributor_discount_action_labels', []);
+        $action = (string) $row->action;
+
+        return [
+            'key' => 'distributor_discount:'.$row->id,
+            'source' => 'distributor_discount',
+            'source_id' => (int) $row->id,
+            'title' => $labels[$action] ?? $action,
+            'subtitle' => $row->discount_set_name ?: null,
+            'actor_id' => $row->user_id ? (int) $row->user_id : null,
+            'actor_name' => (string) ($row->actor_display_name ?? 'Система'),
+            'company_name' => $row->distributor_name,
+            'company_type' => null,
+            'module' => config('admin_audit.modules.distributor_discount.label'),
+            'module_key' => 'distributor_discount',
+            'source_label' => config('admin_audit.sources.distributor_discount.label'),
+            'required_permission' => null,
+            'response_status' => 200,
+            'occurred_at' => Carbon::parse($row->created_at)->timestamp,
+            'occurred_at_label' => Carbon::parse($row->created_at)->format('d.m.Y H:i'),
+            'payload' => [
+                'action' => $action,
+                'discount_set_name' => $row->discount_set_name,
+                'distributor_name' => $row->distributor_name,
+                'meta' => json_decode((string) ($row->changes ?? 'null'), true),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findUserLoginLog(int $id): ?array
+    {
+        $row = $this->userLoginQuery(Request::create('/'))
+            ->where('logs.id', $id)
+            ->first();
+
+        return $row ? $this->normalizeUserLoginLog($row) : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findOrderStatusLog(int $id): ?array
+    {
+        $row = $this->orderStatusQuery(Request::create('/'))
+            ->where('logs.id', $id)
+            ->first();
+
+        return $row ? $this->normalizeOrderStatusLog($row) : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findDistributorDiscountLog(int $id): ?array
+    {
+        $row = $this->distributorDiscountQuery(Request::create('/'))
+            ->where('logs.id', $id)
+            ->first();
+
+        return $row ? $this->normalizeDistributorDiscountLog($row) : null;
     }
 }

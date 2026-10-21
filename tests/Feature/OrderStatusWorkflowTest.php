@@ -71,12 +71,22 @@ class OrderStatusWorkflowTest extends TestCase
             ->post(route('distributor.orders.mark_shipped', $order), [
                 'tracking_number' => 'TTN-123123',
                 'shipping_from_warehouse' => 'Склад 1',
+                'shipping_comment' => 'Передано курьеру СДЭК',
             ])
             ->assertRedirect();
 
         $order->refresh();
         $this->assertSame(PlatformOrder::STATUS_SHIPPED, $order->status);
         $this->assertSame('TTN-123123', $order->tracking_number);
+        $this->assertSame('Передано курьеру СДЭК', $order->shipping_comment);
+
+        app(CurrentRoleService::class)->set($buyer, $buyerRole->id);
+        $this->actingAs($buyer)
+            ->get(route('buyer.orders.show', $order))
+            ->assertOk()
+            ->assertSee('Комментарий к отгрузке')
+            ->assertSee('Передано курьеру СДЭК');
+        app(CurrentRoleService::class)->set($distUser, $distRole->id);
 
         $this->actingAs($distUser)
             ->get(route('distributor.orders.show', $order))
@@ -174,13 +184,28 @@ class OrderStatusWorkflowTest extends TestCase
             ->assertOk()
             ->assertSee('Предложенные изменения')
             ->assertSee('Скорректировали цену')
-            ->assertSee('Согласовать изменения');
+            ->assertSee('Согласовать изменения')
+            ->assertSee('Изменённые позиции выделены')
+            ->assertSee('Состав заказа');
 
         $this->actingAs($buyer)
             ->post(route('buyer.orders.approve_changes', $order))
             ->assertRedirect();
 
         $this->assertSame(PlatformOrder::STATUS_CONFIRMED, $order->fresh()->status);
+    }
+
+    public function test_supplier_order_show_displays_stock_column(): void
+    {
+        [, $distUser, $order] = $this->seedOrder();
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+        app(CurrentRoleService::class)->set($distUser, $distRole->id);
+
+        $this->actingAs($distUser)
+            ->get(route('distributor.orders.show', $order))
+            ->assertOk()
+            ->assertSee('Остаток')
+            ->assertSee('20');
     }
 
     public function test_buyer_reject_changes_returns_order_to_supplier(): void
@@ -210,6 +235,7 @@ class OrderStatusWorkflowTest extends TestCase
         $this->actingAs($buyer)
             ->post(route('buyer.orders.reject_changes', $order), [
                 'reason' => 'Цена слишком высокая',
+                'outcome' => 'renegotiate',
             ])
             ->assertRedirect();
 
@@ -357,6 +383,126 @@ class OrderStatusWorkflowTest extends TestCase
         $this->assertSame(PlatformOrder::STATUS_NEEDS_APPROVAL, $order->fresh()->status);
         $this->assertSame(1, (int) $updated->quantity);
         $this->assertEqualsWithDelta($originalPrice, (float) $updated->unit_price, 0.009);
+    }
+
+    public function test_buyer_reject_changes_can_cancel_order(): void
+    {
+        [$buyer, $distUser, $order] = $this->seedOrder();
+        $buyerRole = Role::query()->where('slug', Role::SLUG_END_COMPANY)->firstOrFail();
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+
+        app(CurrentRoleService::class)->set($distUser, $distRole->id);
+        $item = $order->items()->firstOrFail();
+        $this->actingAs($distUser)
+            ->post(route('distributor.orders.send_for_approval', $order), [
+                'items' => [
+                    ['id' => $item->id, 'quantity' => 1, 'unit_price' => 2000],
+                ],
+            ])
+            ->assertRedirect();
+
+        app(CurrentRoleService::class)->set($buyer, $buyerRole->id);
+        $this->actingAs($buyer)
+            ->post(route('buyer.orders.reject_changes', $order), [
+                'reason' => 'Не подходит',
+                'outcome' => 'cancel',
+            ])
+            ->assertRedirect();
+
+        $order->refresh();
+        $this->assertSame(PlatformOrder::STATUS_REJECTED, $order->status);
+        $this->assertSame('Не подходит', $order->rejection_reason);
+    }
+
+    public function test_confirm_reserves_stock_and_ship_fulfills(): void
+    {
+        [, $distUser, $order] = $this->seedOrder();
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+        app(CurrentRoleService::class)->set($distUser, $distRole->id);
+
+        $stock = DistributorProductStock::query()->firstOrFail();
+        $this->assertSame(20, (int) $stock->quantity);
+        $this->assertSame(0, (int) $stock->reserved);
+
+        $this->actingAs($distUser)->get(route('distributor.orders.show', $order));
+        $this->actingAs($distUser)
+            ->post(route('distributor.orders.confirm', $order))
+            ->assertRedirect();
+
+        $stock->refresh();
+        $order->refresh();
+        $this->assertTrue($order->stock_reserved);
+        $this->assertSame(2, (int) $stock->reserved);
+        $this->assertSame(20, (int) $stock->quantity);
+
+        $this->actingAs($distUser)->post(route('distributor.orders.mark_ready', $order))->assertRedirect();
+        $this->actingAs($distUser)
+            ->post(route('distributor.orders.mark_shipped', $order), [
+                'tracking_number' => 'TTN-RESERVE',
+            ])
+            ->assertRedirect();
+
+        $stock->refresh();
+        $order->refresh();
+        $this->assertFalse($order->stock_reserved);
+        $this->assertSame(0, (int) $stock->reserved);
+        $this->assertSame(18, (int) $stock->quantity);
+    }
+
+    public function test_buyer_cannot_cancel_after_ready_to_ship(): void
+    {
+        [$buyer, $distUser, $order] = $this->seedOrder();
+        $buyerRole = Role::query()->where('slug', Role::SLUG_END_COMPANY)->firstOrFail();
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+
+        app(CurrentRoleService::class)->set($distUser, $distRole->id);
+        $this->actingAs($distUser)->get(route('distributor.orders.show', $order));
+        $this->actingAs($distUser)->post(route('distributor.orders.confirm', $order))->assertRedirect();
+        $this->actingAs($distUser)->post(route('distributor.orders.mark_ready', $order))->assertRedirect();
+
+        app(CurrentRoleService::class)->set($buyer, $buyerRole->id);
+        $this->actingAs($buyer)
+            ->get(route('buyer.orders.show', $order))
+            ->assertOk()
+            ->assertDontSee('Отменить заказ');
+
+        $this->actingAs($buyer)
+            ->post(route('buyer.orders.cancel', $order))
+            ->assertRedirect()
+            ->assertSessionHasErrors();
+    }
+
+    public function test_purchase_channel_status_change_notifies_manufacturer_and_distributor(): void
+    {
+        Notification::fake();
+
+        $mfrUser = User::factory()->create();
+        $mfrRole = Role::query()->where('slug', Role::SLUG_MANUFACTURER)->firstOrFail();
+        $mfrUser->roles()->attach($mfrRole->id);
+        $manufacturer = $mfrUser->getOrCreateManufacturerProfile();
+
+        $distUser = User::factory()->create();
+        $distRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+        $distUser->roles()->attach($distRole->id);
+        $distributor = $distUser->getOrCreateDistributorProfile();
+
+        $order = PlatformOrder::query()->create([
+            'order_number' => 'PO-NOTIFY-1',
+            'source' => PlatformOrder::SOURCE_LK,
+            'order_channel' => PlatformOrder::CHANNEL_DISTRIBUTOR_MANUFACTURER,
+            'distributor_profile_id' => $distributor->id,
+            'manufacturer_profile_id' => $manufacturer->id,
+            'end_company_profile_id' => null,
+            'created_by_user_id' => $distUser->id,
+            'status' => PlatformOrder::STATUS_AWAITING_CONFIRMATION,
+            'total_amount' => 1000,
+            'ordered_at' => now(),
+        ]);
+
+        app(OrderStatusWorkflowService::class)->confirm($order, $mfrUser);
+
+        Notification::assertSentTo($mfrUser, \App\Notifications\OrderStatusChangedNotification::class);
+        Notification::assertSentTo($distUser, \App\Notifications\OrderStatusChangedNotification::class);
     }
 
     /**

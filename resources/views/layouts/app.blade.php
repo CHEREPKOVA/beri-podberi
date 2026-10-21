@@ -93,6 +93,16 @@
       @cart-updated.window="if ($event.detail.count != null) setCartCount($event.detail.count); if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false)"
       @app-toast.window="if ($event.detail.message) showToast($event.detail.message, $event.detail.success !== false, $event.detail.title)">
     @include('partials.page-preloader')
+    {{-- Safelist: Play CDN генерирует CSS только по классам в DOM. При SPA-переходе с главной
+         в каталог lg:/sm: утилиты иначе могут отсутствовать — страница «ломается». --}}
+    <div class="hidden" aria-hidden="true" data-cabinet-tw-safelist>
+        <span class="flex flex-col flex-row flex-1 flex-wrap items-center justify-between gap-2 gap-3 gap-4 gap-6 shrink-0 min-w-0 w-full max-w-sm max-w-none overflow-hidden overflow-visible overflow-y-auto shadow-sm shadow-lg shadow-2xl rounded-lg rounded-xl border p-2 p-3 p-4 px-3 px-4 px-5 py-1.5 py-2 py-2.5 py-3 relative absolute fixed inset-0 inset-y-0 right-0 top-0 top-full left-0 z-10 z-20 z-40 z-50 sticky grid grid-cols-1 aspect-square line-clamp-2 truncate appearance-none cursor-pointer pointer-events-none"></span>
+        <span class="sm:flex-row sm:items-center sm:justify-between sm:grid-cols-2 sm:gap-0"></span>
+        <span class="md:grid-cols-2"></span>
+        <span class="lg:flex-row lg:items-center lg:items-end lg:justify-between lg:w-72 lg:w-auto lg:block lg:hidden lg:static lg:inset-auto lg:z-auto lg:max-w-none lg:shadow-none lg:overflow-visible lg:grid-cols-3"></span>
+        <span class="xl:grid-cols-4"></span>
+        <span class="!block max-h-56 max-h-80 max-h-[calc(100vh-12rem)] max-h-[calc(100vh-14rem)] max-w-[260px] max-w-[240px] min-w-[180px] min-w-[140px] w-28 w-40"></span>
+    </div>
     @php
         $authUser = auth()->user();
         $activeRoles = $authUser?->activeRoles() ?? collect();
@@ -488,6 +498,14 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
                         </svg>
                         <span x-show="sidebarOpen" x-transition>Сотрудники</span>
+                    </a>
+                    <a href="{{ route('end_company.activity.index') }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                           {{ str_starts_with($currentRoute ?? '', 'end_company.activity') ? 'bg-red-50 dark:bg-red-900/20 text-[#c3242a] dark:text-red-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700' }}">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                        </svg>
+                        <span x-show="sidebarOpen" x-transition>Журнал</span>
                     </a>
                     @endif
                 </div>

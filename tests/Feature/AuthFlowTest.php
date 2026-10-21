@@ -31,6 +31,11 @@ class AuthFlowTest extends TestCase
         $this->assertNotNull($user->last_login_at);
         $this->assertSame('127.0.0.1', $user->last_login_ip);
         $this->assertNotEmpty($user->last_login_user_agent);
+
+        $this->assertDatabaseHas('user_login_logs', [
+            'user_id' => $user->id,
+            'ip' => '127.0.0.1',
+        ]);
     }
 
     public function test_login_with_multiple_roles_shows_role_selection_in_auth_block(): void

@@ -58,19 +58,12 @@
             @csrf
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Ответственный</label>
-                <div class="relative min-w-[14rem]">
-                    <select name="responsible_contact_id" class="{{ $inputBrand }} appearance-none pr-10 cursor-pointer">
-                        <option value="">Не назначен</option>
-                        @foreach($managers as $manager)
-                            <option value="{{ $manager->id }}" @selected((string) $order->responsible_contact_id === (string) $manager->id)>{{ $manager->full_name }}</option>
-                        @endforeach
-                    </select>
-                    <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </span>
-                </div>
+                <x-styled-select name="responsible_contact_id" wrapper-class="min-w-[14rem]">
+                    <option value="">Не назначен</option>
+                    @foreach($managers as $manager)
+                        <option value="{{ $manager->id }}" @selected((string) $order->responsible_contact_id === (string) $manager->id)>{{ $manager->full_name }}</option>
+                    @endforeach
+                </x-styled-select>
             </div>
             <button type="submit" class="{{ $btnGhost }}">Сохранить</button>
         </form>
@@ -81,6 +74,18 @@
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Предложенные изменения производителя</h2>
             @if($approvalProposal['supplier_comment'] ?? null)
                 <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $approvalProposal['supplier_comment'] }}</p>
+            @endif
+            @if(!empty($approvalProposal['logistics_changes']))
+                <div class="rounded-lg border border-[#c3242a]/20 px-3 py-2 space-y-1">
+                    <p class="text-xs font-medium text-[#c3242a]">Изменения логистики</p>
+                    @foreach($approvalProposal['logistics_changes'] as $logChange)
+                        <p class="text-sm text-gray-800 dark:text-gray-200">
+                            {{ $logChange['label'] ?? 'Параметр' }}:
+                            <span class="line-through text-gray-400">{{ $logChange['old'] ?: '—' }}</span>
+                            <span class="ml-1 font-medium text-[#c3242a]">{{ $logChange['new'] ?: '—' }}</span>
+                        </p>
+                    @endforeach
+                </div>
             @endif
             @if(!empty($approvalProposal['changes']))
                 <div class="overflow-x-auto">
@@ -186,11 +191,28 @@
                 @endif
             </div>
             <div x-show="rejectOpen" x-cloak class="mt-4 border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 space-y-2">
-                <form method="POST" action="{{ route('distributor.purchases.reject_changes', $order) }}">
+                <form method="POST" action="{{ route('distributor.purchases.reject_changes', $order) }}" class="space-y-3">
                     @csrf
-                    <label class="block text-sm text-gray-600 mb-1">Причина отклонения</label>
-                    <textarea name="reason" rows="2" class="{{ $inputBrand }}"></textarea>
-                    <div class="mt-2 flex gap-2">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">Причина отклонения</label>
+                        <textarea name="reason" rows="2" class="{{ $inputBrand }}">{{ old('reason') }}</textarea>
+                    </div>
+                    <fieldset class="space-y-2">
+                        <legend class="text-sm font-medium text-gray-700">Что сделать дальше?</legend>
+                        <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="radio" name="outcome" value="renegotiate"
+                                   class="mt-1 h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]"
+                                   @checked(old('outcome', 'renegotiate') === 'renegotiate') required>
+                            <span>Вернуть производителю на новое согласование</span>
+                        </label>
+                        <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="radio" name="outcome" value="cancel"
+                                   class="mt-1 h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]"
+                                   @checked(old('outcome') === 'cancel')>
+                            <span>Отменить заказ</span>
+                        </label>
+                    </fieldset>
+                    <div class="flex gap-2">
                         <button type="submit" class="{{ $btnPrimary }}">Отклонить</button>
                         <button type="button" @click="rejectOpen = false" class="{{ $btnGhost }}">Отмена</button>
                     </div>
@@ -242,12 +264,12 @@
                     @csrf
                     <div>
                         <label class="block text-xs text-gray-500 mb-1">Добавить товар</label>
-                        <select name="product_id" class="{{ $inputBrand }} min-w-[16rem]" required>
+                        <x-styled-select name="product_id" required searchable search-placeholder="Название или артикул…" wrapper-class="min-w-[20rem] max-w-[40rem]">
                             <option value="">Выберите</option>
                             @foreach($catalogProducts as $product)
-                                <option value="{{ $product->id }}">{{ $product->name }} · {{ number_format((float) $product->base_price, 2, ',', ' ') }} ₽</option>
+                                <option value="{{ $product->id }}">{{ $product->name }}@if($product->sku) · {{ $product->sku }}@endif · {{ number_format((float) $product->base_price, 2, ',', ' ') }} ₽</option>
                             @endforeach
-                        </select>
+                        </x-styled-select>
                     </div>
                     <div>
                         <label class="block text-xs text-gray-500 mb-1">Кол-во</label>
@@ -261,7 +283,11 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div class="xl:col-span-2 space-y-6">
-            @include('orders._items', ['order' => $order, 'show_product_links' => true])
+            @include('orders._items', [
+                'order' => $order,
+                'show_product_links' => true,
+                'approvalProposal' => $approvalProposal ?? null,
+            ])
             @include('orders._documents')
             @include('orders._correspondence')
             @include('orders._history', ['hide_service' => true])

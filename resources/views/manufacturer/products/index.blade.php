@@ -40,7 +40,7 @@
 }" class="space-y-6">
 
     @if(session('success'))
-    <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+    <div class="bg-red-50 border border-[#c3242a]/30 text-[#a01e24] px-4 py-3 rounded-lg">
         {{ session('success') }}
     </div>
     @endif

@@ -12,7 +12,7 @@
         </p>
     </div>
 
-    @if($profileCompletion && ($profileCompletion['percent'] ?? 0) < 100)
+    @if($profileCompletion)
         @include('dashboard._profile_onboarding', ['completion' => $profileCompletion])
     @endif
 </div>

@@ -263,6 +263,79 @@ class DistributorDiscountSetService
     }
 
     /**
+     * Применяет текущие значения формы к копии набора без сохранения (для проверки скидки).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function draftForPreview(DistributorDiscountSet $set, array $data): DistributorDiscountSet
+    {
+        $draft = $set->replicate();
+        $draft->id = $set->id;
+        $draft->distributor_profile_id = $set->distributor_profile_id;
+        $draft->exists = true;
+
+        $hasDraft = array_key_exists('type', $data) || array_key_exists('audience_type', $data) || array_key_exists('value_kind', $data);
+        if ($hasDraft) {
+            foreach ([
+                'is_indefinite',
+                'apply_to_all_products',
+                'do_not_stack',
+                'auto_deactivate',
+            ] as $checkbox) {
+                if (! array_key_exists($checkbox, $data)) {
+                    $data[$checkbox] = false;
+                }
+            }
+            foreach ([
+                'category_ids',
+                'brands',
+                'product_ids',
+                'company_ids',
+                'region_ids',
+                'company_types',
+                'warehouse_ids',
+            ] as $listField) {
+                if (! array_key_exists($listField, $data)) {
+                    $data[$listField] = [];
+                }
+            }
+        }
+
+        $payload = $this->normalizePayload(array_merge([
+            'name' => $set->name,
+            'description' => $set->description,
+            'type' => $set->type,
+            'value_kind' => $set->value_kind,
+            'status' => $set->status,
+            'discount_percent' => $set->discount_percent,
+            'discount_amount' => $set->discount_amount,
+            'min_order_amount' => $set->min_order_amount,
+            'min_quantity' => $set->min_quantity,
+            'warehouse_ids' => $set->warehouse_ids,
+            'do_not_stack' => $set->do_not_stack,
+            'priority' => $set->priority,
+            'source' => $set->source,
+            'apply_to_all_products' => $set->apply_to_all_products,
+            'category_ids' => $set->category_ids,
+            'brands' => $set->brands,
+            'product_ids' => $set->product_ids,
+            'audience_type' => $set->audience_type,
+            'company_ids' => $set->company_ids,
+            'region_ids' => $set->region_ids,
+            'company_types' => $set->company_types,
+            'starts_at' => $set->starts_at?->toDateString(),
+            'ends_at' => $set->ends_at?->toDateString(),
+            'is_indefinite' => $set->is_indefinite,
+            'auto_deactivate' => $set->auto_deactivate,
+        ], $data));
+
+        $payload['status'] = DistributorDiscountSet::STATUS_ACTIVE;
+        $draft->fill($payload);
+
+        return $draft;
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
@@ -270,7 +343,7 @@ class DistributorDiscountSetService
     {
         $type = (string) ($data['type'] ?? DistributorDiscountSet::TYPE_PRODUCTS);
         $valueKind = (string) ($data['value_kind'] ?? DistributorDiscountSet::VALUE_PERCENT);
-        $isIndefinite = (bool) ($data['is_indefinite'] ?? false);
+        $isIndefinite = $this->toBool($data['is_indefinite'] ?? false);
         $startsAt = $data['starts_at'] ?? null;
         $endsAt = $isIndefinite ? null : ($data['ends_at'] ?? null);
 
@@ -292,7 +365,7 @@ class DistributorDiscountSetService
             'min_order_amount' => ($data['min_order_amount'] ?? '') === '' ? null : (float) $data['min_order_amount'],
             'min_quantity' => ($data['min_quantity'] ?? '') === '' ? null : (int) $data['min_quantity'],
             'warehouse_ids' => $this->intArray($data['warehouse_ids'] ?? []),
-            'do_not_stack' => (bool) ($data['do_not_stack'] ?? false),
+            'do_not_stack' => $this->toBool($data['do_not_stack'] ?? false),
             'priority' => (int) ($data['priority'] ?? 0),
             'source' => (string) ($data['source'] ?? DistributorDiscountSet::SOURCE_MANUAL),
             'apply_to_all_products' => $applyAll,
@@ -305,7 +378,9 @@ class DistributorDiscountSetService
             'product_ids' => $applyAll ? [] : $this->intArray($data['product_ids'] ?? []),
             'audience_type' => $audience,
             'company_ids' => in_array($audience, [DistributorDiscountSet::AUDIENCE_SELECTED], true)
-                ? $this->intArray($data['company_ids'] ?? [])
+                ? ($type === DistributorDiscountSet::TYPE_PERSONAL
+                    ? array_slice($this->intArray($data['company_ids'] ?? []), 0, 1)
+                    : $this->intArray($data['company_ids'] ?? []))
                 : [],
             'region_ids' => $audience === DistributorDiscountSet::AUDIENCE_REGION
                 ? $this->intArray($data['region_ids'] ?? [])
@@ -316,7 +391,7 @@ class DistributorDiscountSetService
             'starts_at' => $startsAt ?: null,
             'ends_at' => $endsAt ?: null,
             'is_indefinite' => $isIndefinite || ! $endsAt,
-            'auto_deactivate' => (bool) ($data['auto_deactivate'] ?? true),
+            'auto_deactivate' => $this->toBool($data['auto_deactivate'] ?? true),
         ];
     }
 
@@ -326,6 +401,11 @@ class DistributorDiscountSetService
     public function formCatalog(DistributorProfile $profile, ?DistributorDiscountSet $set = null): array
     {
         $categoryTree = ProductCategory::assignableTree();
+        $categories = ProductCategory::query()
+            ->active()
+            ->assignableForProducts()
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
         return [
             'types' => config('distributor_discounts.types'),
@@ -333,6 +413,8 @@ class DistributorDiscountSetService
             'audienceTypes' => config('distributor_discounts.audience_types'),
             'companyTypes' => config('distributor_discounts.company_types'),
             'sources' => config('distributor_discounts.sources'),
+            'categoryTree' => $categoryTree,
+            'categories' => $categories,
             'categoryOptions' => ProductCategory::selectOptionsFromTree($categoryTree),
             'regionOptions' => Region::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'brandOptions' => $this->brandOptions($profile),
@@ -515,7 +597,12 @@ class DistributorDiscountSetService
     {
         $names = collect($conflicts)->pluck('name')->filter()->take(3)->implode(', ');
 
-        return 'Уже есть набор скидок с пересекающимися условиями. Продолжить? Пересечение: '.$names;
+        $message = 'Уже есть набор скидок с пересекающимися условиями. Продолжить?';
+        if ($names !== '') {
+            $message .= ' Пересечение: '.$names.'.';
+        }
+
+        return $message;
     }
 
     /**
@@ -577,13 +664,22 @@ class DistributorDiscountSetService
             return false;
         }
         if ($type === DistributorDiscountSet::TYPE_PRODUCTS) {
-            return false;
+            return $this->toBool($data['apply_to_all_products'] ?? false);
         }
 
-        return (bool) ($data['apply_to_all_products'] ?? true)
+        return $this->toBool($data['apply_to_all_products'] ?? true)
             && empty($data['product_ids'])
             && empty($data['category_ids'])
             && empty($data['brands']);
+    }
+
+    private function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
     /**
@@ -850,6 +946,7 @@ class DistributorDiscountSetService
     {
         return [
             'name' => $set->name,
+            'description' => $set->description,
             'type' => $set->type,
             'status' => $set->status,
             'value_kind' => $set->value_kind,
@@ -857,14 +954,21 @@ class DistributorDiscountSetService
             'discount_amount' => $set->discount_amount,
             'starts_at' => $set->starts_at?->toDateString(),
             'ends_at' => $set->ends_at?->toDateString(),
+            'is_indefinite' => $set->is_indefinite,
+            'auto_deactivate' => $set->auto_deactivate,
             'audience_type' => $set->audience_type,
             'min_order_amount' => $set->min_order_amount,
             'min_quantity' => $set->min_quantity,
             'priority' => $set->priority,
+            'do_not_stack' => $set->do_not_stack,
+            'apply_to_all_products' => $set->apply_to_all_products,
             'product_ids' => $set->intList($set->product_ids),
             'company_ids' => $set->intList($set->company_ids),
             'category_ids' => $set->intList($set->category_ids),
             'brands' => $set->stringList($set->brands),
+            'region_ids' => $set->intList($set->region_ids),
+            'warehouse_ids' => $set->intList($set->warehouse_ids),
+            'company_types' => array_values(array_map('strval', is_array($set->company_types) ? $set->company_types : [])),
         ];
     }
 

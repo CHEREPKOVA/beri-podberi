@@ -42,6 +42,7 @@ use App\Http\Controllers\Distributor\PurchaseCheckoutController as DistributorPu
 use App\Http\Controllers\Distributor\PurchaseOrderController as DistributorPurchaseOrderController;
 use App\Http\Controllers\Distributor\WarehouseController as DistributorWarehouseController;
 use App\Http\Controllers\EmployeeInvitationController;
+use App\Http\Controllers\EndCompany\ActivityLogController as EndCompanyActivityLogController;
 use App\Http\Controllers\EndCompany\EmployeeController as EndCompanyEmployeeController;
 use App\Http\Controllers\EndCompany\EmployeeRoleController as EndCompanyEmployeeRoleController;
 use App\Http\Controllers\EndCompany\ProfileController as EndCompanyProfileController;
@@ -462,6 +463,7 @@ Route::middleware(['auth', 'user.active'])->group(function () {
             Route::put('/purchases/cart/items/{cartItem}', [DistributorPurchaseCartController::class, 'update'])->name('purchases.cart.items.update');
             Route::delete('/purchases/cart/items/{cartItem}', [DistributorPurchaseCartController::class, 'destroy'])->name('purchases.cart.items.destroy');
             Route::get('/purchases/checkout/{manufacturer}', [DistributorPurchaseCheckoutController::class, 'create'])->name('purchases.checkout.create');
+            Route::post('/purchases/checkout/{manufacturer}/promo', [DistributorPurchaseCheckoutController::class, 'applyPromo'])->name('purchases.checkout.promo');
             Route::post('/purchases/checkout/{manufacturer}', [DistributorPurchaseCheckoutController::class, 'store'])->name('purchases.checkout.store');
             Route::post('/purchases/{order}/submit', [DistributorPurchaseOrderController::class, 'submit'])->name('purchases.submit');
             Route::post('/purchases/{order}/cancel', [DistributorPurchaseOrderController::class, 'cancel'])->name('purchases.cancel');
@@ -510,6 +512,8 @@ Route::middleware(['auth', 'user.active'])->group(function () {
             Route::put('/employees/roles/{role}', [EndCompanyEmployeeRoleController::class, 'update'])->whereNumber('role')->name('employees.roles.update');
             Route::delete('/employees/roles/{role}', [EndCompanyEmployeeRoleController::class, 'destroy'])->whereNumber('role')->name('employees.roles.destroy');
             Route::delete('/employees/{employee}', [EndCompanyEmployeeController::class, 'destroy'])->whereNumber('employee')->name('employees.destroy');
+
+            Route::get('/activity', [EndCompanyActivityLogController::class, 'index'])->name('activity.index');
         });
     });
 

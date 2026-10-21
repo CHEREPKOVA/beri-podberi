@@ -69,6 +69,19 @@
                 </div>
             @endif
 
+            @if(!empty($approvalProposal['logistics_changes']))
+                <div class="rounded-lg border border-[#c3242a]/20 px-4 py-3 space-y-1">
+                    <p class="text-xs font-medium uppercase tracking-wide text-[#c3242a] mb-1">Изменения логистики</p>
+                    @foreach($approvalProposal['logistics_changes'] as $logChange)
+                        <p class="text-sm text-gray-800 dark:text-gray-200">
+                            {{ $logChange['label'] ?? 'Параметр' }}:
+                            <span class="line-through text-gray-400">{{ $logChange['old'] ?: '—' }}</span>
+                            <span class="ml-1 font-medium text-[#c3242a]">{{ $logChange['new'] ?: '—' }}</span>
+                        </p>
+                    @endforeach
+                </div>
+            @endif
+
             @if(!empty($approvalProposal['changes']))
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -151,7 +164,11 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div class="xl:col-span-2 space-y-6">
-            @include('orders._items', ['order' => $order, 'show_product_links' => $show_product_links ?? true])
+            @include('orders._items', [
+                'order' => $order,
+                'show_product_links' => $show_product_links ?? true,
+                'approvalProposal' => $approvalProposal ?? null,
+            ])
             @include('orders._documents')
             @include('orders._correspondence')
             @include('orders._history', ['hide_service' => true, 'action_labels' => $action_labels ?? null])
@@ -187,11 +204,28 @@
                     </div>
 
                     <div x-show="rejectOpen" x-cloak class="mt-4 border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 dark:bg-red-900/10 space-y-2">
-                        <form method="POST" action="{{ route('buyer.orders.reject_changes', $order) }}">
+                        <form method="POST" action="{{ route('buyer.orders.reject_changes', $order) }}" class="space-y-3">
                             @csrf
-                            <label class="block text-sm text-gray-600 dark:text-gray-300 mb-1">Причина отклонения</label>
-                            <textarea name="reason" rows="2" class="{{ $inputBrand }}" placeholder="Не согласен с изменениями..."></textarea>
-                            <div class="mt-2 flex flex-col gap-2">
+                            <div>
+                                <label class="block text-sm text-gray-600 dark:text-gray-300 mb-1">Причина отклонения</label>
+                                <textarea name="reason" rows="2" class="{{ $inputBrand }}" placeholder="Не согласен с изменениями...">{{ old('reason') }}</textarea>
+                            </div>
+                            <fieldset class="space-y-2">
+                                <legend class="text-sm font-medium text-gray-700 dark:text-gray-200">Что сделать дальше?</legend>
+                                <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                    <input type="radio" name="outcome" value="renegotiate"
+                                           class="mt-1 h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]"
+                                           @checked(old('outcome', 'renegotiate') === 'renegotiate') required>
+                                    <span>Вернуть поставщику на новое согласование</span>
+                                </label>
+                                <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                    <input type="radio" name="outcome" value="cancel"
+                                           class="mt-1 h-4 w-4 shrink-0 border-gray-300 accent-[#c3242a] focus:ring-[#c3242a]"
+                                           @checked(old('outcome') === 'cancel')>
+                                    <span>Отменить заказ</span>
+                                </label>
+                            </fieldset>
+                            <div class="flex flex-col gap-2">
                                 <button type="submit" class="{{ $btnPrimary }} w-full">Отклонить</button>
                                 <button type="button" @click="rejectOpen = false" class="{{ $btnGhost }} w-full">Отмена</button>
                             </div>

@@ -337,7 +337,8 @@ class DiscountEngine
             return false;
         }
 
-        if ($set->apply_to_all_products && $productIds === [] && $set->intList($set->category_ids) === []) {
+        // «Ко всем товарам» перекрывает списки категорий/позиций (они могли остаться в форме скрытыми).
+        if ($set->apply_to_all_products) {
             return true;
         }
 
@@ -346,13 +347,15 @@ class DiscountEngine
             return true;
         }
 
-        if ($productIds !== [] || $categories !== [] || ! $set->apply_to_all_products) {
+        if ($productIds !== [] || $categories !== []) {
             $reasons[] = 'Товар не входит в выбранные категории или позиции.';
 
             return false;
         }
 
-        return true;
+        $reasons[] = 'Товар не входит в выбранные категории или позиции.';
+
+        return false;
     }
 
     /**

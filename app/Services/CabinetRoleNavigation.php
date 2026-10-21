@@ -108,6 +108,7 @@ class CabinetRoleNavigation
             'end_company' => [
                 'profile' => route('end_company.profile'),
                 'employees' => route('end_company.employees.index'),
+                'activity' => route('end_company.activity.index'),
                 'catalog' => route('buyer.catalog.index'),
                 'cart' => route('buyer.cart.index'),
                 'orders' => route('buyer.orders.index'),
@@ -218,6 +219,7 @@ class CabinetRoleNavigation
         foreach ([
             'profile' => '.profile',
             'employees' => '.employees',
+            'activity' => '.activity',
             'warehouses' => '.warehouses',
             'products' => '.products',
             'discounts' => '.discounts',

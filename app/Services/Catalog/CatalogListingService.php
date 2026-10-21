@@ -188,7 +188,7 @@ class CatalogListingService
      */
     private function applyListingFilters(Builder $query, ?ProductCategory $category, CatalogListingParams $params): Builder
     {
-        if ($category !== null && $params->searchScope !== CatalogListingParams::SEARCH_SCOPE_GLOBAL) {
+        if ($category !== null && ! $params->ignoresSelectedCategory()) {
             $category->loadAncestors();
             $query->inCategory($category->id);
         }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\EmployeeAccessChangedMail;
 use App\Mail\EmployeeInvitationMail;
 use App\Mail\EmployeePasswordResetMail;
+use App\Models\EndCompanyActionLog;
 use App\Models\EndCompanyEmployeeRole;
 use App\Models\EndCompanyProfile;
 use App\Models\EndCompanyProfileChange;
@@ -26,6 +27,7 @@ class EndCompanyEmployeeService
     public function __construct(
         private readonly EndCompanyCompanyContext $context,
         private readonly EndCompanyStaffAccess $access,
+        private readonly EndCompanyActionLogger $actionLogger,
     ) {}
 
     /**
@@ -138,6 +140,16 @@ class EndCompanyEmployeeService
 
             $this->sendInvitationMail($invitation, $plainToken, $profile, $companyName);
 
+            $this->actionLogger->log(
+                $profile,
+                $admin,
+                EndCompanyActionLog::ACTION_EMPLOYEE_INVITED,
+                'Приглашён сотрудник '.$user->name.' ('.$email.')',
+                'user',
+                (int) $user->id,
+                ['email' => $email, 'role' => $role->name],
+            );
+
             return $invitation;
         });
     }
@@ -218,6 +230,16 @@ class EndCompanyEmployeeService
                 'warehouse_ids' => json_encode($addressIds, JSON_UNESCAPED_UNICODE),
             ]);
 
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_UPDATED,
+            'Обновлены данные сотрудника '.$employee->name,
+            'user',
+            (int) $employee->id,
+            ['email' => $email, 'role' => $role->name],
+        );
+
         return $employee->fresh(['roles']);
     }
 
@@ -281,9 +303,19 @@ class EndCompanyEmployeeService
     public function block(User $admin, User $employee, bool $notify): void
     {
         $this->assertCompanyEmployee($admin, $employee);
+        $profile = $this->requireProfile($admin);
 
         $employee->update(['is_active' => false]);
         $this->updateCompanyStatus($employee, CompanyStatus::BLOCKED);
+
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_BLOCKED,
+            'Заблокирована учётная запись '.$employee->name,
+            'user',
+            (int) $employee->id,
+        );
 
         if ($notify) {
             $this->notifyAccessChange($admin, $employee, 'blocked');
@@ -298,8 +330,19 @@ class EndCompanyEmployeeService
             throw new InvalidArgumentException('Сотрудник ещё не активировал приглашение.');
         }
 
+        $profile = $this->requireProfile($admin);
+
         $employee->update(['is_active' => true]);
         $this->updateCompanyStatus($employee, CompanyStatus::ACTIVE);
+
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_UNBLOCKED,
+            'Разблокирована учётная запись '.$employee->name,
+            'user',
+            (int) $employee->id,
+        );
 
         if ($notify) {
             $this->notifyAccessChange($admin, $employee, 'unblocked');
@@ -314,6 +357,10 @@ class EndCompanyEmployeeService
             throw new InvalidArgumentException('Сотрудника нельзя удалить: он уже участвовал в заказах. Заблокируйте доступ.');
         }
 
+        $profile = $this->requireProfile($admin);
+        $employeeName = $employee->name;
+        $employeeId = (int) $employee->id;
+
         DB::transaction(function () use ($employee): void {
             UserInvitation::query()->where('user_id', $employee->id)->delete();
 
@@ -326,6 +373,15 @@ class EndCompanyEmployeeService
                 $employee->delete();
             }
         });
+
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_DELETED,
+            'Удалена учётная запись '.$employeeName,
+            'user',
+            $employeeId,
+        );
     }
 
     public function hasOperationalHistory(User $user): bool
@@ -366,11 +422,23 @@ class EndCompanyEmployeeService
     {
         $profile = $this->requireProfile($admin);
 
-        return $profile->employeeRoles()->create([
+        $role = $profile->employeeRoles()->create([
             'name' => trim($data['name']),
             'permissions' => EndCompanyEmployeeRole::normalizePermissions($data['permissions'] ?? []),
             'sort_order' => (int) ($profile->employeeRoles()->max('sort_order') ?? 0) + 1,
         ]);
+
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_ROLE_MANAGED,
+            'Создана роль «'.$role->name.'»',
+            'end_company_employee_role',
+            (int) $role->id,
+            ['operation' => 'created'],
+        );
+
+        return $role;
     }
 
     /**
@@ -379,13 +447,26 @@ class EndCompanyEmployeeService
     public function updateRole(User $admin, EndCompanyEmployeeRole $role, array $data): EndCompanyEmployeeRole
     {
         $this->assertRoleOwnership($admin, $role);
+        $profile = $this->requireProfile($admin);
 
         $role->update([
             'name' => trim($data['name']),
             'permissions' => EndCompanyEmployeeRole::normalizePermissions($data['permissions'] ?? []),
         ]);
 
-        return $role->fresh();
+        $role = $role->fresh();
+
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_ROLE_MANAGED,
+            'Изменена роль «'.$role->name.'»',
+            'end_company_employee_role',
+            (int) $role->id,
+            ['operation' => 'updated'],
+        );
+
+        return $role;
     }
 
     public function deleteRole(User $admin, EndCompanyEmployeeRole $role): void
@@ -405,7 +486,20 @@ class EndCompanyEmployeeService
             throw new InvalidArgumentException('Роль назначена сотрудникам. Сначала смените роль у сотрудников.');
         }
 
+        $profile = $this->requireProfile($admin);
+        $roleName = $role->name;
+        $roleId = (int) $role->id;
         $role->delete();
+
+        $this->actionLogger->log(
+            $profile,
+            $admin,
+            EndCompanyActionLog::ACTION_EMPLOYEE_ROLE_MANAGED,
+            'Удалена роль «'.$roleName.'»',
+            'end_company_employee_role',
+            $roleId,
+            ['operation' => 'deleted'],
+        );
     }
 
     public function requireOwnedEmployee(User $admin, User $employee): User

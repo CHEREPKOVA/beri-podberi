@@ -41,6 +41,18 @@ final class CatalogListingParams
     }
 
     /**
+     * «Искать во всём каталоге» расширяет выдачу за пределы категории только при активном поиске.
+     * Без поисковой строки глобальный scope не должен снимать фильтр категории (иначе AJAX-смена
+     * категории с «Все категории» оставляет hidden search_scope=global и ломает листинг).
+     */
+    public function ignoresSelectedCategory(): bool
+    {
+        return $this->searchScope === self::SEARCH_SCOPE_GLOBAL
+            && $this->search !== null
+            && trim($this->search) !== '';
+    }
+
+    /**
      * @return list<string>
      */
     public static function stockOptions(): array

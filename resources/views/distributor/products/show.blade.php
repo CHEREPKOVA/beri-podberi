@@ -11,7 +11,7 @@
 @section('content')
 <div x-data="{ activeTab: '{{ $tab }}', showPriceModal: false, priceType: 'retail', editingStocks: false, stockEditingDisabled: {{ $stockEditingDisabled ? 'true' : 'false' }} }" class="space-y-6">
     @if(session('success'))
-    <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{{ session('success') }}</div>
+    <div class="bg-red-50 border border-[#c3242a]/30 text-[#a01e24] px-4 py-3 rounded-lg">{{ session('success') }}</div>
     @endif
     @if(session('error'))
     <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{{ session('error') }}</div>
@@ -61,7 +61,7 @@
         </div>
 
         <nav class="flex border-b border-gray-200 dark:border-gray-700 px-6 overflow-x-auto">
-            @foreach(['info' => 'Основное', 'publication' => 'Публикация', 'prices' => 'Цены', 'stocks' => 'Остатки', 'documents' => 'Документы', 'log' => 'История'] as $key => $label)
+            @foreach(['info' => 'Основное', 'publication' => 'Публикация', 'prices' => 'Цены', 'stocks' => 'Остатки', 'documents' => 'Документы'] as $key => $label)
             <button type="button" @click="activeTab = '{{ $key }}'"
                 :class="activeTab === '{{ $key }}' ? 'border-[#c3242a] text-[#c3242a]' : 'border-transparent text-gray-500 hover:text-gray-700'"
                 class="px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap">{{ $label }}</button>
@@ -253,33 +253,6 @@
                 </div>
                 @endif
 
-                <h3 class="text-sm font-semibold text-gray-700 mb-3 mt-8">История изменений цен</h3>
-                <div class="overflow-x-auto border border-gray-200 rounded-lg">
-                    <table class="min-w-full text-sm">
-                        <thead class="bg-gray-50"><tr>
-                            <th class="px-4 py-2 text-left">Дата</th>
-                            <th class="px-4 py-2 text-left">Тип</th>
-                            <th class="px-4 py-2 text-left">Было</th>
-                            <th class="px-4 py-2 text-left">Стало</th>
-                            <th class="px-4 py-2 text-left">Комментарий</th>
-                            <th class="px-4 py-2 text-left">Кто</th>
-                        </tr></thead>
-                        <tbody class="divide-y divide-gray-100">
-                            @forelse($product->priceHistories as $h)
-                            <tr>
-                                <td class="px-4 py-2">{{ $h->created_at->format('d.m.Y H:i') }}</td>
-                                <td class="px-4 py-2">{{ $h->typeLabel() }}</td>
-                                <td class="px-4 py-2">{{ $h->old_price !== null ? number_format($h->old_price, 2, ',', ' ') . ' ₽' : '—' }}</td>
-                                <td class="px-4 py-2 font-medium">{{ number_format($h->new_price, 2, ',', ' ') }} ₽</td>
-                                <td class="px-4 py-2 text-gray-500">{{ $h->comment ?: '—' }}</td>
-                                <td class="px-4 py-2 text-gray-500">{{ $h->changedByUser?->name ?? '—' }}</td>
-                            </tr>
-                            @empty
-                            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">История пуста</td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
             </div>
 
             {{-- Остатки --}}
@@ -401,34 +374,6 @@
                 </div>
             </div>
 
-            {{-- Лог --}}
-            <div x-show="activeTab === 'log'" x-cloak>
-                <ul class="space-y-3">
-                    @forelse($product->changeLogs as $log)
-                    <li class="p-4 border border-gray-200 rounded-lg text-sm">
-                        <div class="flex justify-between gap-4 items-start">
-                            <div class="space-y-1">
-                                <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium {{ $log->actionBadgeClass() }}">
-                                    {{ $log->actionLabel() }}
-                                </span>
-                                <p class="font-medium text-gray-900">{{ $log->description ?: $log->action }}</p>
-                                @if(is_array($log->meta) && isset($log->meta['old_status'], $log->meta['new_status']))
-                                <p class="text-xs text-gray-500">
-                                    {{ \App\Models\DistributorProduct::statusLabels()[$log->meta['old_status']] ?? $log->meta['old_status'] }}
-                                    →
-                                    {{ \App\Models\DistributorProduct::statusLabels()[$log->meta['new_status']] ?? $log->meta['new_status'] }}
-                                </p>
-                                @endif
-                            </div>
-                            <span class="text-gray-400 shrink-0">{{ $log->created_at->format('d.m.Y H:i') }}</span>
-                        </div>
-                        <p class="text-gray-500 mt-2">{{ $log->performedByUser?->name ?? 'Система' }}</p>
-                    </li>
-                    @empty
-                    <li class="text-gray-500 text-center py-8">Записей пока нет</li>
-                    @endforelse
-                </ul>
-            </div>
         </div>
     </div>
 

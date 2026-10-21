@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\EndCompany;
 
 use App\Http\Controllers\Controller;
+use App\Models\EndCompanyActionLog;
 use App\Models\EndCompanyContact;
 use App\Models\EndCompanyDeliveryAddress;
 use App\Models\EndCompanyDocument;
 use App\Models\EndCompanyProfileChange;
 use App\Models\Region;
+use App\Models\User;
+use App\Services\EndCompanyActionLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -329,5 +332,16 @@ class ProfileController extends Controller
             'section' => $section,
             'summary' => mb_substr($summary, 0, 500),
         ]);
+
+        $actor = User::query()->find($userId);
+        app(EndCompanyActionLogger::class)->log(
+            $profile,
+            $actor,
+            EndCompanyActionLog::ACTION_PROFILE_UPDATED,
+            $summary,
+            'profile_section',
+            null,
+            ['section' => $section],
+        );
     }
 }

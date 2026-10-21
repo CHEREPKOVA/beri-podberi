@@ -71,7 +71,7 @@
         @endforeach
     </ol>
 
-    @if($order->tracking_number || $order->shipped_at || $order->shipping_from_warehouse || $order->received_at)
+    @if($order->tracking_number || $order->shipped_at || $order->shipping_from_warehouse || $order->shipping_comment || $order->received_at)
         <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-sm space-y-1">
             @if($order->tracking_number)
                 <p>
@@ -92,6 +92,9 @@
             @endif
             @if($order->transportCompany)
                 <p><span class="text-gray-500">ТК:</span> <span class="text-gray-900 dark:text-white">{{ $order->transportCompany->name }}</span></p>
+            @endif
+            @if($order->shipping_comment)
+                <p><span class="text-gray-500">Комментарий к отгрузке:</span> <span class="text-gray-900 dark:text-white whitespace-pre-line">{{ $order->shipping_comment }}</span></p>
             @endif
             @if($order->received_at)
                 <p><span class="text-gray-500">Получен:</span> <span class="text-gray-900 dark:text-white">{{ $order->received_at->format('d.m.Y H:i') }}</span></p>

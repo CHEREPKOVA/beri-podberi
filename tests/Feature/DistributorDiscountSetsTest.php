@@ -43,7 +43,7 @@ class DistributorDiscountSetsTest extends TestCase
             ->get(route('distributor.discounts.index'))
             ->assertOk()
             ->assertSee('Наборы скидок')
-            ->assertSee('Создать набор скидок');
+            ->assertSee('Создать');
 
         $this->actingAsDistributor($admin)
             ->post(route('distributor.discounts.store'), $this->validPayload([
@@ -60,6 +60,31 @@ class DistributorDiscountSetsTest extends TestCase
             'status' => DistributorDiscountSet::STATUS_ACTIVE,
             'source' => DistributorDiscountSet::SOURCE_MANUAL,
         ]);
+    }
+
+    public function test_product_discount_can_apply_to_all_catalog_products(): void
+    {
+        [$admin] = $this->makeDistributorAdmin();
+        $this->makeOffer($admin);
+
+        $this->actingAsDistributor($admin)
+            ->post(route('distributor.discounts.store'), $this->validPayload([
+                'name' => 'Скидка на весь каталог',
+                'type' => DistributorDiscountSet::TYPE_PRODUCTS,
+                'apply_to_all_products' => '1',
+                'activate' => '1',
+            ]))
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('distributor_discount_sets', [
+            'name' => 'Скидка на весь каталог',
+            'type' => DistributorDiscountSet::TYPE_PRODUCTS,
+            'apply_to_all_products' => 1,
+            'status' => DistributorDiscountSet::STATUS_ACTIVE,
+        ]);
+
+        $set = DistributorDiscountSet::query()->where('name', 'Скидка на весь каталог')->firstOrFail();
+        $this->assertSame([], $set->intList($set->product_ids));
     }
 
     public function test_employee_without_discount_rights_cannot_open_section(): void
@@ -199,6 +224,57 @@ class DistributorDiscountSetsTest extends TestCase
             ->assertRedirect();
         $this->assertSame(2, DistributorDiscountSet::query()->count());
         $this->assertSame(DistributorDiscountSet::STATUS_INACTIVE, DistributorDiscountSet::query()->orderByDesc('id')->first()->status);
+    }
+
+    public function test_preview_uses_unsaved_apply_to_all_from_form(): void
+    {
+        [$admin] = $this->makeDistributorAdmin();
+        $offer = $this->makeOffer($admin, ['retail_price' => 1000]);
+        $other = $this->makeOffer($admin, [
+            'retail_price' => 2000,
+            'name' => 'Другой товар',
+            'internal_sku' => 'D-DISC-2',
+        ]);
+        $buyer = $this->makeBuyer($admin, 'preview-buyer@example.com');
+        $companyId = $buyer->getOrCreateEndCompanyProfile()->id;
+
+        $set = DistributorDiscountSet::query()->create([
+            'distributor_profile_id' => $admin->distributorProfile->id,
+            'name' => 'Только один товар',
+            'type' => DistributorDiscountSet::TYPE_PRODUCTS,
+            'value_kind' => DistributorDiscountSet::VALUE_PERCENT,
+            'status' => DistributorDiscountSet::STATUS_ACTIVE,
+            'discount_percent' => 10,
+            'apply_to_all_products' => false,
+            'product_ids' => [$other->id],
+            'audience_type' => DistributorDiscountSet::AUDIENCE_ALL,
+            'is_indefinite' => true,
+            'source' => DistributorDiscountSet::SOURCE_MANUAL,
+        ]);
+
+        $this->actingAsDistributor($admin)
+            ->postJson(route('distributor.discounts.preview', $set), [
+                'company_id' => $companyId,
+                'product_id' => $offer->id,
+                'quantity' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', false);
+
+        $this->actingAsDistributor($admin)
+            ->postJson(route('distributor.discounts.preview', $set), [
+                'company_id' => $companyId,
+                'product_id' => $offer->id,
+                'quantity' => 1,
+                'type' => DistributorDiscountSet::TYPE_PRODUCTS,
+                'value_kind' => DistributorDiscountSet::VALUE_PERCENT,
+                'discount_percent' => 10,
+                'apply_to_all_products' => '1',
+                'name' => 'Только один товар',
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', true)
+            ->assertJsonPath('unit_price', 900);
     }
 
     /**

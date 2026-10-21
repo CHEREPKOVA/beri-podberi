@@ -4,7 +4,9 @@ namespace App\Services\Order;
 
 use App\Models\DeliveryMethod;
 use App\Models\DistributorProfile;
+use App\Models\EndCompanyActionLog;
 use App\Models\EndCompanyDeliveryAddress;
+use App\Models\EndCompanyProfile;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderItem;
 use App\Models\PlatformOrderStatusLog;
@@ -12,6 +14,7 @@ use App\Models\TransportCompany;
 use App\Models\User;
 use App\Services\Cart\CartService;
 use App\Services\Catalog\CatalogRegionService;
+use App\Services\EndCompanyActionLogger;
 use App\Services\EndCompanyStaffAccess;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -338,6 +341,25 @@ class OrderCheckoutService
             'performed_by_user_id' => $user->id,
             'meta' => ['actor' => OrderStatusWorkflowService::ACTOR_BUYER],
         ]);
+
+        if ($order->end_company_profile_id) {
+            try {
+                $endProfile = EndCompanyProfile::query()->find($order->end_company_profile_id);
+                if ($endProfile) {
+                    app(EndCompanyActionLogger::class)->log(
+                        $endProfile,
+                        $user,
+                        EndCompanyActionLog::ACTION_ORDER_CREATED,
+                        'Создан заказ '.$order->order_number,
+                        'platform_order',
+                        (int) $order->id,
+                        ['order_number' => $order->order_number],
+                    );
+                }
+            } catch (\Throwable) {
+                // Журнал компании не блокирует оформление.
+            }
+        }
 
         try {
             app(OrderCorrespondenceService::class)->postOrderCreated($order);

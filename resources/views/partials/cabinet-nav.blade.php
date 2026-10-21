@@ -52,6 +52,17 @@
         }
     }
 
+    /**
+     * Alpine держит MutationObserver и сам вызывает initTree на новых узлах.
+     * Без паузы swap + наш initRegion дают двойную инициализацию (x-for дублирует блоки).
+     */
+    function withoutAlpineMutations(fn) {
+        if (window.Alpine && typeof Alpine.mutateDom === 'function') {
+            return Alpine.mutateDom(fn);
+        }
+        fn();
+    }
+
     function clearPageListeners() {
         pageListeners.forEach(function (item) {
             const target = item[0] === 'window' ? window : document;
@@ -87,6 +98,24 @@
             copy.setAttribute('data-cabinet-style', '1');
             document.head.appendChild(copy);
         });
+    }
+
+    /**
+     * Play CDN (cdn.tailwindcss.com) иногда не успевает/не сканирует классы
+     * во вложенном HTML после replaceWith — страница остаётся без lg:/sm: утилит.
+     * Полный rebuild через правку style[type=text/tailwindcss] пересканирует весь DOM.
+     */
+    function refreshTailwind() {
+        const style = document.querySelector('style[type="text/tailwindcss"]');
+        if (!style) return;
+        const marker = '/*cabinet-nav-refresh*/';
+        let css = style.textContent || '';
+        if (css.indexOf(marker) !== -1) {
+            css = css.split(marker).join('');
+        } else {
+            css = css + '\n' + marker;
+        }
+        style.textContent = css;
     }
 
     function runInlineScript(code) {
@@ -160,17 +189,19 @@
         if (!fresh) {
             if (current) {
                 destroyRegion(current);
-                current.remove();
+                withoutAlpineMutations(function () { current.remove(); });
             }
             return null;
         }
         const copy = document.importNode(fresh, true);
-        if (current) {
-            destroyRegion(current);
-            current.replaceWith(copy);
-        } else {
-            document.body.appendChild(copy);
-        }
+        withoutAlpineMutations(function () {
+            if (current) {
+                destroyRegion(current);
+                current.replaceWith(copy);
+            } else {
+                document.body.appendChild(copy);
+            }
+        });
         return copy;
     }
 
@@ -240,12 +271,15 @@
             const header = swapRegion('[data-cabinet-header]', doc);
             const main = swapRegion('[data-cabinet-main]', doc);
             const modal = swapRegion('[data-cabinet-role-modal]', doc);
+            refreshTailwind();
             await runPageScripts(doc);
             if (token !== navToken) return false;
             initRegion(aside);
             initRegion(header);
             initRegion(main);
             initRegion(modal);
+            // Повторно после скриптов/Alpine — на случай поздней подмены классов в DOM.
+            requestAnimationFrame(function () { refreshTailwind(); });
             syncCartCount();
             if (doc.title) document.title = doc.title;
             const same = finalUrl.pathname === window.location.pathname && finalUrl.search === window.location.search && finalUrl.hash === window.location.hash;

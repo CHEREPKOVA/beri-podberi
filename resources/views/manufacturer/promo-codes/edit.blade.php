@@ -5,6 +5,7 @@
     $isEdit = $promo !== null;
     $locked = $promo?->isLocked() ?? false;
     $canManage = $canManage ?? true;
+    $canDelete = $canDelete ?? false;
 @endphp
 
 @section('title', $isEdit ? 'Промокод '.$promo->code : 'Новый промокод')
@@ -18,10 +19,11 @@
 <div class="space-y-6" x-data="{
     type: @js(old('discount_type', $promo->discount_type ?? 'percent')),
     applyAll: {{ old('apply_to_all_products', $promo->apply_to_all_products ?? true) ? 'true' : 'false' }},
-    code: @js(old('code', $promo->code ?? $generatedCode ?? ''))
+    code: @js(old('code', $promo->code ?? $generatedCode ?? '')),
+    showDeleteModal: false
 }">
     @if(session('success'))
-        <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{{ session('success') }}</div>
+        <div class="bg-red-50 border border-[#c3242a]/30 text-[#a01e24] px-4 py-3 rounded-lg">{{ session('success') }}</div>
     @endif
     @if($errors->any())
         <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
@@ -56,11 +58,8 @@
                 </div>
             </div>
             <textarea name="description" rows="3" class="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" placeholder="Описание">{{ old('description', $promo->description ?? '') }}</textarea>
-            <label class="flex items-center gap-2 text-sm">
-                <input type="hidden" name="status" value="inactive">
-                <input type="checkbox" name="status" value="active" @checked(old('status', $promo->status ?? 'inactive') === 'active') class="rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]">
-                Активен
-            </label>
+            <input type="hidden" name="status" value="inactive">
+            <x-brand-checkbox name="status" value="active" :checked="old('status', $promo->status ?? 'inactive') === 'active'">Активен</x-brand-checkbox>
         </section>
 
         <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
@@ -68,11 +67,11 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="mb-1.5 block text-sm font-medium">Тип скидки</label>
-                    <select name="discount_type" x-model="type" class="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm" @disabled($locked)>
+                    <x-styled-select name="discount_type" x-model="type" :disabled="$locked">
                         @foreach($types as $value => $label)
                             <option value="{{ $value }}">{{ $label }}</option>
                         @endforeach
-                    </select>
+                    </x-styled-select>
                 </div>
                 <div>
                     <label class="mb-1.5 block text-sm font-medium">Размер скидки</label>
@@ -103,18 +102,12 @@
                     <input type="number" min="0" step="0.01" name="min_order_amount" value="{{ old('min_order_amount', $promo->min_order_amount ?? '') }}" class="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm">
                 </div>
             </div>
-            <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="per_user_limit" value="1" @checked(old('per_user_limit', ($promo->per_user_limit ?? 0) > 0)) class="rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]">
-                Ограничение на одного пользователя
-            </label>
+            <x-brand-checkbox name="per_user_limit" value="1" :checked="(int) old('per_user_limit', $promo->per_user_limit ?? 0)">Ограничение на одного пользователя</x-brand-checkbox>
         </section>
 
         <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
             <h2 class="text-lg font-semibold">Область применения</h2>
-            <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="apply_to_all_products" value="1" x-model="applyAll" class="rounded border-gray-300 text-[#c3242a] focus:ring-[#c3242a]">
-                Применять ко всем товарам
-            </label>
+            <x-brand-checkbox name="apply_to_all_products" value="1" x-model="applyAll">Применять ко всем товарам</x-brand-checkbox>
             <div x-show="!applyAll" x-cloak class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="mb-1.5 block text-sm font-medium">Категории</label>
@@ -131,14 +124,38 @@
             </div>
         </section>
 
-        @if($canManage)
-        <div class="flex flex-wrap gap-3">
-            <button type="submit" class="px-4 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium">Сохранить</button>
-            <button type="submit" name="activate" value="1" class="px-4 py-2 border border-[#c3242a] text-[#c3242a] rounded-lg text-sm">Сохранить и активировать</button>
-            <a href="{{ route('manufacturer.promo-codes.index') }}" class="px-4 py-2 text-sm text-gray-500">Отмена</a>
+        <div class="flex flex-wrap justify-between gap-3">
+            <div class="flex gap-2">
+                <a href="{{ route('manufacturer.promo-codes.index') }}" class="px-4 py-2 text-sm text-gray-500">Отмена</a>
+                @if($isEdit && $canDelete && ! $locked)
+                    <button type="button" @click="showDeleteModal = true" class="px-4 py-2 border border-red-300 text-red-700 rounded-lg text-sm">Удалить промокод</button>
+                @elseif($isEdit && $locked)
+                    <span class="self-center text-xs text-gray-500">Удаление недоступно: промокод уже использовался.</span>
+                @endif
+            </div>
+            @if($canManage)
+            <div class="flex gap-2">
+                <button type="submit" class="px-4 py-2 bg-[#c3242a] text-white rounded-lg text-sm font-medium">Сохранить</button>
+                <button type="submit" name="activate" value="1" class="px-4 py-2 border border-[#c3242a] text-[#c3242a] rounded-lg text-sm">Сохранить и активировать</button>
+            </div>
+            @endif
         </div>
-        @endif
     </form>
+
+    @if($isEdit && $canDelete && ! $locked)
+    <div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showDeleteModal = false">
+        <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Удаление промокода</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">Удалить промокод «{{ $promo->code }}»?</p>
+            <form method="POST" action="{{ route('manufacturer.promo-codes.destroy', $promo) }}" class="flex justify-end gap-3">
+                @csrf
+                @method('DELETE')
+                <button type="button" @click="showDeleteModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Отмена</button>
+                <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Удалить</button>
+            </form>
+        </div>
+    </div>
+    @endif
 </div>
 @endsection
 

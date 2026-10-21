@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\DeliveryMethod;
 use App\Models\DistributorWarehouse;
 use App\Models\ManufacturerDistributorPartnership;
+use App\Models\ManufacturerPromoCode;
 use App\Models\PlatformOrder;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -219,6 +220,56 @@ class DistributorPurchasesCabinetTest extends TestCase
                     && str_contains((string) $data['message'], 'Новый заказ №'.$order->order_number);
             }
         );
+    }
+
+    public function test_checkout_can_apply_promo_code_and_recalculate_total(): void
+    {
+        Notification::fake();
+        [$distUser, $product, $manufacturerId] = $this->seedPartnerCatalog();
+        $this->actAsDistributor($distUser);
+
+        ManufacturerPromoCode::query()->create([
+            'manufacturer_profile_id' => $manufacturerId,
+            'code' => 'SAVE10',
+            'name' => 'Минус 10%',
+            'discount_type' => ManufacturerPromoCode::TYPE_PERCENT,
+            'discount_value' => 10,
+            'status' => ManufacturerPromoCode::STATUS_ACTIVE,
+            'apply_to_all_products' => true,
+            'uses_count' => 0,
+            'created_by_user_id' => $distUser->id,
+            'updated_by_user_id' => $distUser->id,
+        ]);
+
+        $this->actingAs($distUser)
+            ->post(route('distributor.purchases.cart.items.store'), [
+                'product_id' => $product->id,
+                'quantity' => 2,
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($distUser)
+            ->from(route('distributor.purchases.checkout.create', $manufacturerId))
+            ->post(route('distributor.purchases.checkout.promo', $manufacturerId), [
+                'promo_code' => 'SAVE10',
+            ])
+            ->assertRedirect(route('distributor.purchases.checkout.create', $manufacturerId))
+            ->assertSessionHas('success');
+
+        $this->actingAs($distUser)
+            ->get(route('distributor.purchases.checkout.create', $manufacturerId))
+            ->assertOk()
+            ->assertSee('SAVE10')
+            ->assertSee(number_format(2700, 2, ',', ' '))
+            ->assertSee('Итого');
+
+        $this->actingAs($distUser)
+            ->from(route('distributor.purchases.checkout.create', $manufacturerId))
+            ->post(route('distributor.purchases.checkout.promo', $manufacturerId), [
+                'promo_code' => 'WRONGCODE',
+            ])
+            ->assertRedirect(route('distributor.purchases.checkout.create', $manufacturerId))
+            ->assertSessionHasErrors('promo_code');
     }
 
     public function test_buyer_can_edit_items_before_confirm(): void

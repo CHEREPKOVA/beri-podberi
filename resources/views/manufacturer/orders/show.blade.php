@@ -193,7 +193,9 @@
                     <button type="button" @click="shipOpen = true; rejectOpen = false; editOpen = false; claimOpen = false" class="{{ $btnPrimary }}">Отметить как отгружен</button>
                 @endif
 
-                <button type="button" @click="claimOpen = true; rejectOpen = false; shipOpen = false; editOpen = false" class="{{ $btnOutline }}">Претензия</button>
+                @if(config('orders.claims_enabled'))
+                    <button type="button" @click="claimOpen = true; rejectOpen = false; shipOpen = false; editOpen = false" class="{{ $btnOutline }}">Претензия</button>
+                @endif
             </div>
 
             <div x-show="rejectOpen" x-cloak class="border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 dark:bg-red-900/10">
@@ -243,39 +245,31 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Склад отправления</label>
-                        <div class="relative">
-                            <select name="shipping_from_warehouse" class="{{ $selectBrand }}">
-                                <option value="">— не указан —</option>
-                                @foreach($warehouses as $warehouse)
-                                    <option value="{{ $warehouse->name }}" @selected(old('shipping_from_warehouse', $warehouses->count() === 1 ? $warehouses->first()->name : '') === $warehouse->name)>
-                                        {{ $warehouse->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select name="shipping_from_warehouse">
+                            <option value="">— не указан —</option>
+                            @foreach($warehouses as $warehouse)
+                                <option value="{{ $warehouse->name }}" @selected(old('shipping_from_warehouse', $warehouses->count() === 1 ? $warehouses->first()->name : '') === $warehouse->name)>
+                                    {{ $warehouse->name }}
+                                </option>
+                            @endforeach
+                        </x-styled-select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Транспортная компания</label>
-                        <div class="relative">
-                            <select name="transport_company_id" class="{{ $selectBrand }}">
-                                <option value="">— не менять / не указано —</option>
-                                @foreach($transportCompanies as $company)
-                                    <option value="{{ $company->id }}" @selected((string) old('transport_company_id', $order->transport_company_id) === (string) $company->id)>
-                                        {{ $company->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select name="transport_company_id">
+                            <option value="">— не менять / не указано —</option>
+                            @foreach($transportCompanies as $company)
+                                <option value="{{ $company->id }}" @selected((string) old('transport_company_id', $order->transport_company_id) === (string) $company->id)>
+                                    {{ $company->name }}
+                                </option>
+                            @endforeach
+                        </x-styled-select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Дополнительные комментарии</label>
+                        <textarea name="shipping_comment" rows="2" maxlength="2000"
+                                  class="{{ $inputBrand }}"
+                                  placeholder="Комментарий для покупателя (необязательно)">{{ old('shipping_comment') }}</textarea>
                     </div>
                     <div class="flex gap-2">
                         <button type="submit" class="{{ $btnPrimary }}">Отгрузить</button>
@@ -284,37 +278,39 @@
                 </form>
             </div>
 
-            <div x-show="claimOpen" x-cloak class="border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 dark:bg-red-900/10">
-                <form method="POST" action="{{ route('manufacturer.orders.claims.store', $order) }}" class="space-y-3">
-                    @csrf
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Причина *</label>
-                        <div class="relative">
-                            <select name="reason" required class="{{ $selectBrand }}">
-                                <option value="">— выберите —</option>
-                                @foreach($claimReasons as $slug => $label)
-                                    <option value="{{ $slug }}" @selected(old('reason') === $slug)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
+            @if(config('orders.claims_enabled'))
+                <div x-show="claimOpen" x-cloak class="border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 dark:bg-red-900/10">
+                    <form method="POST" action="{{ route('manufacturer.orders.claims.store', $order) }}" class="space-y-3">
+                        @csrf
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Причина *</label>
+                            <div class="relative">
+                                <select name="reason" required class="{{ $selectBrand }}">
+                                    <option value="">— выберите —</option>
+                                    @foreach($claimReasons as $slug => $label)
+                                        <option value="{{ $slug }}" @selected(old('reason') === $slug)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                                <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </span>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Описание *</label>
-                        <textarea name="description" rows="3" required maxlength="5000"
-                                  class="{{ $inputBrand }}"
-                                  placeholder="Опишите суть претензии">{{ old('description') }}</textarea>
-                    </div>
-                    <div class="flex gap-2">
-                        <button type="submit" class="{{ $btnPrimary }}">Зарегистрировать претензию</button>
-                        <button type="button" @click="claimOpen = false" class="{{ $btnGhost }}">Отмена</button>
-                    </div>
-                </form>
-            </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Описание *</label>
+                            <textarea name="description" rows="3" required maxlength="5000"
+                                      class="{{ $inputBrand }}"
+                                      placeholder="Опишите суть претензии">{{ old('description') }}</textarea>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="submit" class="{{ $btnPrimary }}">Зарегистрировать претензию</button>
+                            <button type="button" @click="claimOpen = false" class="{{ $btnGhost }}">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            @endif
 
             <div id="edit" x-show="editOpen" x-cloak class="border-2 border-[#c3242a]/30 rounded-lg p-4 bg-red-50/40 dark:bg-red-900/10">
                 <form method="POST" action="{{ route('manufacturer.orders.send_for_approval', $order) }}" class="space-y-3">
@@ -410,6 +406,36 @@
                     </button>
                     <p x-show="catalog.length === 0" x-cloak class="text-xs text-gray-500">В номенклатуре нет доступных товаров для этого дистрибьютора.</p>
 
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div>
+                            <label class="block text-sm mb-1">Способ доставки</label>
+                            <div class="relative">
+                                <select name="delivery_method_id" class="{{ $selectBrand }}">
+                                    @foreach(($deliveryMethods ?? []) as $method)
+                                        <option value="{{ $method->id }}" @selected((string) old('delivery_method_id', $order->delivery_method_id) === (string) $method->id)>
+                                            {{ $method->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1">Дата доставки</label>
+                            <input type="date" name="delivery_date" value="{{ old('delivery_date', $order->delivery_date?->format('Y-m-d')) }}" class="{{ $inputBrand }}">
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1">Время с</label>
+                            <input type="time" name="delivery_time_from" value="{{ old('delivery_time_from', $order->delivery_time_from ? \Illuminate\Support\Str::of($order->delivery_time_from)->substr(0, 5) : '') }}" class="{{ $inputBrand }}">
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1">Время до</label>
+                            <input type="time" name="delivery_time_to" value="{{ old('delivery_time_to', $order->delivery_time_to ? \Illuminate\Support\Str::of($order->delivery_time_to)->substr(0, 5) : '') }}" class="{{ $inputBrand }}">
+                        </div>
+                    </div>
+
                     <div>
                         <label class="block text-sm mb-1">Комментарий к изменениям</label>
                         <textarea name="comment" rows="2" class="{{ $inputBrand }}">{{ old('comment') }}</textarea>
@@ -421,7 +447,7 @@
                 </form>
             </div>
         </section>
-    @else
+    @elseif(config('orders.claims_enabled'))
         <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 space-y-4">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Доступные действия</h2>
             <div class="flex flex-wrap gap-2">
@@ -460,7 +486,7 @@
         </section>
     @endif
 
-    @if($order->claims->isNotEmpty())
+    @if(config('orders.claims_enabled') && $order->claims->isNotEmpty())
         <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 space-y-3">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Претензии</h2>
             <ul class="space-y-3">
@@ -488,7 +514,12 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div class="xl:col-span-2 space-y-6">
-            @include('orders._items', ['order' => $order, 'show_product_links' => $show_product_links ?? true])
+            @include('orders._items', [
+                'order' => $order,
+                'show_product_links' => $show_product_links ?? true,
+                'show_stock' => $show_stock ?? true,
+                'approvalProposal' => $approvalProposal ?? null,
+            ])
             @include('orders._documents')
             @include('orders._correspondence')
             @include('orders._history', ['hide_service' => true, 'action_labels' => $action_labels ?? null])
@@ -509,21 +540,14 @@
                     @csrf
                     <div>
                         <label class="block text-xs text-gray-500 mb-1">Менеджер</label>
-                        <div class="relative">
-                            <select name="manufacturer_responsible_contact_id" class="{{ $selectBrand }}">
-                                <option value="">— не назначен —</option>
-                                @foreach($managers as $manager)
-                                    <option value="{{ $manager->id }}" @selected((string) old('manufacturer_responsible_contact_id', $order->manufacturer_responsible_contact_id) === (string) $manager->id)>
-                                        {{ $manager->full_name }}@if($manager->position) · {{ $manager->position }}@endif
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select name="manufacturer_responsible_contact_id" searchable search-placeholder="Найти менеджера…">
+                            <option value="">— не назначен —</option>
+                            @foreach($managers as $manager)
+                                <option value="{{ $manager->id }}" @selected((string) old('manufacturer_responsible_contact_id', $order->manufacturer_responsible_contact_id) === (string) $manager->id)>
+                                    {{ $manager->full_name }}@if($manager->position) · {{ $manager->position }}@endif
+                                </option>
+                            @endforeach
+                        </x-styled-select>
                     </div>
                     <button type="submit" class="{{ $btnOutline }} h-9 text-xs">Сохранить</button>
                 </form>

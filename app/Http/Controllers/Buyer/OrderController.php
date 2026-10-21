@@ -235,13 +235,27 @@ class OrderController extends Controller
 
     public function rejectChanges(Request $request, PlatformOrder $order): RedirectResponse
     {
-        return $this->runAction($request, $order, function () use ($request, $order) {
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:2000'],
+            'outcome' => ['required', 'in:renegotiate,cancel'],
+        ], [
+            'outcome.required' => 'Выберите, что сделать с заказом.',
+            'outcome.in' => 'Выберите: вернуть поставщику или отменить заказ.',
+        ]);
+
+        $outcome = $validated['outcome'];
+        $success = $outcome === OrderStatusWorkflowService::REJECT_CHANGES_CANCEL
+            ? 'Изменения отклонены. Заказ отменён.'
+            : 'Изменения отклонены. Заказ возвращён поставщику на согласование.';
+
+        return $this->runAction($request, $order, function () use ($request, $order, $validated, $outcome) {
             $this->workflow->rejectChanges(
                 $order,
                 $request->user(),
-                $request->input('reason'),
+                $validated['reason'] ?? null,
+                $outcome,
             );
-        }, 'Изменения отклонены. Заказ возвращён поставщику на согласование.');
+        }, $success);
     }
 
     public function confirmReceipt(Request $request, PlatformOrder $order): RedirectResponse

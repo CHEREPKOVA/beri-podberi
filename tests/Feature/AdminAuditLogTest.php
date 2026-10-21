@@ -224,4 +224,82 @@ class AdminAuditLogTest extends TestCase
             ->assertSee('Блокировка сотрудника')
             ->assertSee('Дистрибьютор добавлен в партнёры');
     }
+
+    public function test_journal_includes_logins_orders_and_distributor_discounts(): void
+    {
+        $adminRole = Role::query()->where('slug', Role::SLUG_ADMIN)->firstOrFail();
+        $admin = User::factory()->create(['name' => 'Админ']);
+        $admin->roles()->sync([$adminRole->id]);
+
+        $distributorId = DB::table('distributor_profiles')->insertGetId([
+            'user_id' => $admin->id,
+            'full_name' => 'ООО Дистрибьютор Аудит',
+            'inn' => '7700000099',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('user_login_logs')->insert([
+            'user_id' => $admin->id,
+            'ip' => '10.0.0.8',
+            'user_agent' => 'PHPUnit',
+            'created_at' => now(),
+        ]);
+
+        $orderId = DB::table('platform_orders')->insertGetId([
+            'order_number' => 'AUD-100',
+            'source' => 'lk',
+            'order_channel' => 'end_company_distributor',
+            'distributor_profile_id' => $distributorId,
+            'status' => 'confirmed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('platform_order_status_logs')->insert([
+            'platform_order_id' => $orderId,
+            'from_status' => 'new',
+            'to_status' => 'confirmed',
+            'action' => 'status_changed',
+            'performed_by_user_id' => $admin->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $setId = DB::table('distributor_discount_sets')->insertGetId([
+            'distributor_profile_id' => $distributorId,
+            'name' => 'Скидка тест',
+            'type' => 'mass',
+            'value_kind' => 'percent',
+            'status' => 'active',
+            'discount_percent' => 5,
+            'audience_type' => 'all',
+            'source' => 'manual',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('distributor_discount_set_logs')->insert([
+            'discount_set_id' => $setId,
+            'user_id' => $admin->id,
+            'action' => 'created',
+            'changes' => json_encode(['name' => 'Скидка тест'], JSON_UNESCAPED_UNICODE),
+            'created_at' => now(),
+        ]);
+
+        $events = app(AdminJournalService::class)->collect(Request::create('/'));
+        $sources = $events->pluck('source')->unique()->values()->all();
+
+        $this->assertContains('user_login', $sources);
+        $this->assertContains('order_status', $sources);
+        $this->assertContains('distributor_discount', $sources);
+
+        $this->actingAs($admin)
+            ->withSession(['current_role_id' => $adminRole->id])
+            ->get(route('admin.audit.index'))
+            ->assertOk()
+            ->assertSee('Вход в систему')
+            ->assertSee('Изменён статус заказа')
+            ->assertSee('Создан набор скидок');
+    }
 }

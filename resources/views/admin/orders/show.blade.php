@@ -147,7 +147,11 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div class="xl:col-span-2 space-y-6">
-            @include('orders._items', ['order' => $order, 'show_product_links' => false])
+            @include('orders._items', [
+                'order' => $order,
+                'show_product_links' => false,
+                'approvalProposal' => $approvalProposal ?? null,
+            ])
             @include('orders._documents')
             @include('orders._correspondence')
             @include('orders._history', [

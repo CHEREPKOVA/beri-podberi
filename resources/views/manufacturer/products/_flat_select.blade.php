@@ -48,11 +48,20 @@
         'options' => $normalizedOptions,
         'disabled' => $disabled,
     ];
+
+    $fallbackLabel = $placeholder;
+    foreach ($normalizedOptions as $option) {
+        if ((string) $option['value'] === (string) $selected) {
+            $fallbackLabel = $option['label'];
+            break;
+        }
+    }
 @endphp
 
 @once
+@push('scripts')
 <script>
-function flatPickerState(config) {
+window.flatPickerState = window.flatPickerState || function flatPickerState(config) {
     return {
         pickerOpen: false,
         selected: config.selected ?? '',
@@ -84,8 +93,9 @@ function flatPickerState(config) {
             this.pickerOpen = false;
         },
     };
-}
+};
 </script>
+@endpush
 @endonce
 
 <div
@@ -98,6 +108,7 @@ function flatPickerState(config) {
     <input
         type="hidden"
         name="{{ $name }}"
+        value="{{ $selected }}"
         :value="hiddenValue()"
         @if($required) :required="!hasSelection()" @endif
     />
@@ -107,13 +118,13 @@ function flatPickerState(config) {
         id="{{ $inputId }}"
         @click.stop="if (!disabled) pickerOpen = !pickerOpen"
         :disabled="disabled"
-        class="{{ $buttonClass }}"
+        class="relative {{ $buttonClass }}"
         :class="[
             pickerOpen ? 'ring-2 ring-[#c3242a] border-transparent' : '',
             disabled ? 'opacity-60 cursor-not-allowed' : '',
         ]"
     >
-        <span class="truncate" :class="hasSelection() ? 'text-gray-900 dark:text-white' : 'text-gray-500'" x-text="buttonLabel()"></span>
+        <span class="truncate min-w-0 flex-1" :class="hasSelection() ? 'text-gray-900 dark:text-white' : 'text-gray-500'" x-text="buttonLabel()">{{ $fallbackLabel }}</span>
         <svg class="{{ $chevronClass }}" :class="pickerOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>

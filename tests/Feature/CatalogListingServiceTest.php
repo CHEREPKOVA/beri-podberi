@@ -188,6 +188,47 @@ class CatalogListingServiceTest extends TestCase
         $this->assertSame([$inA->id], $global['products']->pluck('id')->all());
     }
 
+    public function test_global_search_scope_without_query_keeps_selected_category(): void
+    {
+        $role = Role::query()->create([
+            'slug' => Role::SLUG_MANUFACTURER,
+            'name' => 'Производитель',
+            'sort_order' => 0,
+        ]);
+        $user = User::factory()->create();
+        $user->roles()->attach($role->id);
+        $profile = ManufacturerProfile::factory()->create(['user_id' => $user->id]);
+
+        $categoryA = ProductCategory::factory()->create(['name' => 'Cat Keep A']);
+        $categoryB = ProductCategory::factory()->create(['name' => 'Cat Keep B']);
+        $inA = Product::factory()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'category_id' => $categoryA->id,
+            'name' => 'KeepScopeInA',
+            'show_in_catalog' => true,
+            'status' => Product::STATUS_ACTIVE,
+        ]);
+        $inB = Product::factory()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'category_id' => $categoryB->id,
+            'name' => 'KeepScopeInB',
+            'show_in_catalog' => true,
+            'status' => Product::STATUS_ACTIVE,
+        ]);
+
+        $user->load('roles');
+        app(CurrentRoleService::class)->set($user, $role->id);
+        $listing = new CatalogListingService(new CatalogQueryService($user), $user);
+
+        $result = $listing->build($categoryB, new CatalogListingParams(
+            searchScope: CatalogListingParams::SEARCH_SCOPE_GLOBAL,
+        ));
+
+        $ids = $result['products']->pluck('id')->all();
+        $this->assertContains($inB->id, $ids);
+        $this->assertNotContains($inA->id, $ids);
+    }
+
     public function test_price_bounds_reflect_offer_prices_for_end_company(): void
     {
         $role = Role::query()->create([

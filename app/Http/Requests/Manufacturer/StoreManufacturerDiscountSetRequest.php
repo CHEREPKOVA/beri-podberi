@@ -109,12 +109,19 @@ class StoreManufacturerDiscountSetRequest extends FormRequest
                 }
             }
 
-            if ($type === ManufacturerDiscountSet::TYPE_CATEGORY && ! $applyAll && empty($this->input('category_ids'))) {
+            if ($type === ManufacturerDiscountSet::TYPE_CATEGORY && empty($this->input('category_ids'))) {
                 $validator->errors()->add('category_ids', 'Выберите категории товаров.');
             }
 
-            if ($type === ManufacturerDiscountSet::TYPE_INDIVIDUAL && $this->input('audience_type') === ManufacturerDiscountSet::AUDIENCE_SELECTED && empty($this->input('distributor_ids'))) {
-                $validator->errors()->add('distributor_ids', 'Выберите дистрибьютора для индивидуальной скидки.');
+            if ($type === ManufacturerDiscountSet::TYPE_INDIVIDUAL) {
+                $audience = (string) $this->input('audience_type');
+                if ($audience !== '' && $audience !== ManufacturerDiscountSet::AUDIENCE_SELECTED) {
+                    $validator->errors()->add('audience_type', 'Индивидуальная скидка привязывается только к выбранному дистрибьютору.');
+                }
+                $distributorIds = array_values(array_filter(array_map('intval', (array) $this->input('distributor_ids', []))));
+                if (count($distributorIds) !== 1) {
+                    $validator->errors()->add('distributor_ids', 'Выберите ровно одного дистрибьютора для индивидуальной скидки.');
+                }
             }
 
             if ($type === ManufacturerDiscountSet::TYPE_REGION && empty($this->input('region_ids')) && empty($this->input('audience_region_ids'))) {
@@ -150,7 +157,7 @@ class StoreManufacturerDiscountSetRequest extends FormRequest
             ? ManufacturerDiscountSet::STATUS_ACTIVE
             : (string) ($this->input('status') ?? ManufacturerDiscountSet::STATUS_INACTIVE);
 
-        $this->merge([
+        $merge = [
             'require_all_conditions' => $this->boolean('require_all_conditions'),
             'apply_to_all_products' => $this->boolean('apply_to_all_products'),
             'apply_only_active_products' => $this->boolean('apply_only_active_products'),
@@ -160,6 +167,14 @@ class StoreManufacturerDiscountSetRequest extends FormRequest
             'confirm_conflicts' => $this->boolean('confirm_conflicts'),
             'activate' => $this->boolean('activate'),
             'status' => $status,
-        ]);
+        ];
+
+        if ((string) $this->input('type') === ManufacturerDiscountSet::TYPE_INDIVIDUAL) {
+            $merge['audience_type'] = ManufacturerDiscountSet::AUDIENCE_SELECTED;
+            $ids = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('distributor_ids', [])))));
+            $merge['distributor_ids'] = array_slice($ids, 0, 1);
+        }
+
+        $this->merge($merge);
     }
 }

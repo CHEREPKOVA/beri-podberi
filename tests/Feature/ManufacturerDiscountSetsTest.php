@@ -38,7 +38,7 @@ class ManufacturerDiscountSetsTest extends TestCase
             ->get(route('manufacturer.discounts.index'))
             ->assertOk()
             ->assertSee('Наборы скидок')
-            ->assertSee('Создать набор скидок');
+            ->assertSee('Создать');
 
         $this->actingAsManufacturer($admin)
             ->post(route('manufacturer.discounts.store'), $this->validPayload([
@@ -184,6 +184,222 @@ class ManufacturerDiscountSetsTest extends TestCase
             ->assertSessionHasErrors('code');
     }
 
+    public function test_preview_uses_unsaved_audience_from_form(): void
+    {
+        [$admin] = $this->makeManufacturerAdmin();
+        $profile = $admin->manufacturerProfile;
+        $product = Product::factory()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'base_price' => 1000,
+            'status' => Product::STATUS_ACTIVE,
+        ]);
+        $distributor = $this->makeDistributorPartner($admin, 'preview-aud@example.com', 'Козлов');
+
+        $set = ManufacturerDiscountSet::query()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'name' => 'Эксклюзив',
+            'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+            'status' => ManufacturerDiscountSet::STATUS_ACTIVE,
+            'discount_percent' => 10,
+            'apply_to_all_products' => true,
+            'apply_only_active_products' => true,
+            'audience_type' => ManufacturerDiscountSet::AUDIENCE_EXCLUSIVE,
+            'is_indefinite' => true,
+        ]);
+
+        $this->actingAsManufacturer($admin)
+            ->postJson(route('manufacturer.discounts.preview', $set), [
+                'distributor_id' => $distributor->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', false)
+            ->assertJsonFragment(['explanation' => 'Набор не применяется к выбранному дистрибьютору. Дистрибьютор не является эксклюзивным в этом регионе.']);
+
+        $this->actingAsManufacturer($admin)
+            ->postJson(route('manufacturer.discounts.preview', $set), [
+                'distributor_id' => $distributor->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'audience_type' => ManufacturerDiscountSet::AUDIENCE_ALL,
+                'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+                'discount_percent' => 10,
+                'apply_to_all_products' => 1,
+                'apply_only_active_products' => 1,
+                'name' => 'Эксклюзив',
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', true)
+            ->assertJsonPath('unit_price', 900);
+    }
+
+    public function test_preview_apply_to_all_covers_product_even_with_stale_product_ids(): void
+    {
+        [$admin] = $this->makeManufacturerAdmin();
+        $profile = $admin->manufacturerProfile;
+        $product = Product::factory()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'base_price' => 1000,
+            'status' => Product::STATUS_ACTIVE,
+        ]);
+        $other = Product::factory()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'base_price' => 2000,
+            'status' => Product::STATUS_ACTIVE,
+        ]);
+        $distributor = $this->makeDistributorPartner($admin, 'preview-all@example.com', 'ВсеТовары');
+
+        $set = ManufacturerDiscountSet::query()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'name' => 'На все',
+            'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+            'status' => ManufacturerDiscountSet::STATUS_ACTIVE,
+            'discount_percent' => 10,
+            'apply_to_all_products' => false,
+            'apply_only_active_products' => true,
+            'audience_type' => ManufacturerDiscountSet::AUDIENCE_ALL,
+            'product_ids' => [$other->id],
+            'is_indefinite' => true,
+        ]);
+
+        $this->actingAsManufacturer($admin)
+            ->postJson(route('manufacturer.discounts.preview', $set), [
+                'distributor_id' => $distributor->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'audience_type' => ManufacturerDiscountSet::AUDIENCE_ALL,
+                'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+                'discount_percent' => 10,
+                'apply_to_all_products' => '1',
+                'apply_only_active_products' => '1',
+                'product_ids' => [$other->id],
+                'name' => 'На все',
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', true)
+            ->assertJsonPath('unit_price', 900);
+    }
+
+    public function test_preview_cleared_regions_override_saved_region_ids(): void
+    {
+        [$admin] = $this->makeManufacturerAdmin();
+        $profile = $admin->manufacturerProfile;
+        $product = Product::factory()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'base_price' => 1000,
+            'status' => Product::STATUS_ACTIVE,
+        ]);
+        $distributor = $this->makeDistributorPartner($admin, 'preview-region@example.com', 'РегионТест');
+
+        $set = ManufacturerDiscountSet::query()->create([
+            'manufacturer_profile_id' => $profile->id,
+            'name' => 'Только Алтай',
+            'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+            'status' => ManufacturerDiscountSet::STATUS_ACTIVE,
+            'discount_percent' => 10,
+            'apply_to_all_products' => true,
+            'apply_only_active_products' => true,
+            'audience_type' => ManufacturerDiscountSet::AUDIENCE_ALL,
+            'region_ids' => [999],
+            'is_indefinite' => true,
+        ]);
+
+        $this->actingAsManufacturer($admin)
+            ->postJson(route('manufacturer.discounts.preview', $set), [
+                'distributor_id' => $distributor->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', false)
+            ->assertJsonFragment(['explanation' => 'Набор не покрывает выбранный товар. Регион не входит в область действия скидки.']);
+
+        $this->actingAsManufacturer($admin)
+            ->postJson(route('manufacturer.discounts.preview', $set), [
+                'distributor_id' => $distributor->id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'audience_type' => ManufacturerDiscountSet::AUDIENCE_ALL,
+                'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+                'discount_percent' => 10,
+                'apply_to_all_products' => 1,
+                'apply_only_active_products' => 1,
+                'name' => 'Только Алтай',
+                // region_ids отсутствуют — как при «Все регионы» на форме
+            ])
+            ->assertOk()
+            ->assertJsonPath('applies', true)
+            ->assertJsonPath('unit_price', 900);
+    }
+
+    public function test_individual_discount_requires_exactly_one_distributor(): void
+    {
+        [$admin] = $this->makeManufacturerAdmin();
+        $first = $this->makeDistributorPartner($admin, 'first-disc@example.com', 'Первый');
+        $second = $this->makeDistributorPartner($admin, 'second-disc@example.com', 'Второй');
+
+        $this->actingAsManufacturer($admin)
+            ->from(route('manufacturer.discounts.create'))
+            ->post(route('manufacturer.discounts.store'), $this->validPayload([
+                'name' => 'Индивидуальная',
+                'type' => ManufacturerDiscountSet::TYPE_INDIVIDUAL,
+                'audience_type' => ManufacturerDiscountSet::AUDIENCE_ALL,
+                'distributor_ids' => [],
+            ]))
+            ->assertRedirect(route('manufacturer.discounts.create'))
+            ->assertSessionHasErrors('distributor_ids');
+
+        $this->actingAsManufacturer($admin)
+            ->post(route('manufacturer.discounts.store'), $this->validPayload([
+                'name' => 'Индивидуальная',
+                'type' => ManufacturerDiscountSet::TYPE_INDIVIDUAL,
+                'audience_type' => ManufacturerDiscountSet::AUDIENCE_SELECTED,
+                'distributor_ids' => [$first->id, $second->id],
+            ]))
+            ->assertRedirect();
+
+        $set = ManufacturerDiscountSet::query()->where('name', 'Индивидуальная')->firstOrFail();
+        $this->assertSame(ManufacturerDiscountSet::AUDIENCE_SELECTED, $set->audience_type);
+        $this->assertSame([(int) $first->id], $set->intList($set->distributor_ids));
+    }
+
+    public function test_volume_tiers_can_store_multiple_steps_and_history_tracks_percent(): void
+    {
+        [$admin] = $this->makeManufacturerAdmin();
+
+        $this->actingAsManufacturer($admin)
+            ->post(route('manufacturer.discounts.store'), $this->validPayload([
+                'name' => 'Многоступенчатая',
+                'type' => ManufacturerDiscountSet::TYPE_VOLUME_TIER,
+                'discount_percent' => null,
+                'tiers' => [
+                    ['min_amount' => 10000, 'min_quantity' => '', 'percent' => 3, 'amount' => ''],
+                    ['min_amount' => 50000, 'min_quantity' => '', 'percent' => 5, 'amount' => ''],
+                    ['min_amount' => 100000, 'min_quantity' => '', 'percent' => 10, 'amount' => ''],
+                ],
+            ]))
+            ->assertRedirect();
+
+        $set = ManufacturerDiscountSet::query()->where('name', 'Многоступенчатая')->firstOrFail();
+        $this->assertCount(3, $set->normalizedTiers());
+
+        $this->actingAsManufacturer($admin)
+            ->put(route('manufacturer.discounts.update', $set), $this->validPayload([
+                'name' => 'Многоступенчатая',
+                'type' => ManufacturerDiscountSet::TYPE_PERCENT,
+                'discount_percent' => 12,
+                'apply_to_all_products' => 1,
+            ]))
+            ->assertRedirect();
+
+        $set->refresh()->load('logs');
+        $updateLog = $set->logs->firstWhere('action', 'updated');
+        $this->assertNotNull($updateLog);
+        $this->assertArrayHasKey('discount_percent', $updateLog->changes);
+        $this->assertArrayHasKey('type', $updateLog->changes);
+    }
+
     public function test_employee_without_discounts_cannot_open_section(): void
     {
         [$admin] = $this->makeManufacturerAdmin();
@@ -274,6 +490,24 @@ class ManufacturerDiscountSetsTest extends TestCase
         $user->roles()->attach($role->id);
         $profile = $user->getOrCreateDistributorProfile();
         $profile->update(['full_name' => 'Дистрибьютор Скидок', 'short_name' => 'ДС']);
+
+        return $profile;
+    }
+
+    private function makeDistributorPartner(User $admin, string $email, string $name): DistributorProfile
+    {
+        $user = User::factory()->create(['email' => $email, 'name' => $name]);
+        $role = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+        $user->roles()->attach($role->id);
+        $profile = $user->getOrCreateDistributorProfile();
+        $profile->update(['full_name' => $name, 'short_name' => $name]);
+
+        ManufacturerDistributorPartnership::query()->create([
+            'manufacturer_profile_id' => $admin->manufacturerProfile->id,
+            'distributor_profile_id' => $profile->id,
+            'status' => ManufacturerDistributorPartnership::STATUS_ACTIVE,
+            'added_at' => now(),
+        ]);
 
         return $profile;
     }

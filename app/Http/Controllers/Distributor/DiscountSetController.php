@@ -194,12 +194,43 @@ class DiscountSetController extends Controller
     public function preview(Request $request, DistributorDiscountSet $discountSet): JsonResponse
     {
         $this->assertOwns($request, $discountSet);
+        abort_unless($this->access->canAccessSection($request->user(), 'discounts.manage'), 403);
+
         $data = $request->validate([
             'company_id' => ['required', 'integer'],
             'product_id' => ['required', 'integer'],
             'quantity' => ['required', 'integer', 'min:1'],
             'region_id' => ['nullable', 'integer'],
             'warehouse_id' => ['nullable', 'integer'],
+            'type' => ['nullable', 'string'],
+            'value_kind' => ['nullable', 'string'],
+            'status' => ['nullable', 'string'],
+            'audience_type' => ['nullable', 'string'],
+            'discount_percent' => ['nullable', 'numeric'],
+            'discount_amount' => ['nullable', 'numeric'],
+            'min_order_amount' => ['nullable', 'numeric'],
+            'min_quantity' => ['nullable', 'integer'],
+            'priority' => ['nullable', 'integer'],
+            'is_indefinite' => ['nullable'],
+            'apply_to_all_products' => ['nullable'],
+            'do_not_stack' => ['nullable'],
+            'auto_deactivate' => ['nullable'],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer'],
+            'brands' => ['nullable', 'array'],
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['integer'],
+            'company_ids' => ['nullable', 'array'],
+            'company_ids.*' => ['integer'],
+            'region_ids' => ['nullable', 'array'],
+            'region_ids.*' => ['integer'],
+            'warehouse_ids' => ['nullable', 'array'],
+            'warehouse_ids.*' => ['integer'],
+            'company_types' => ['nullable', 'array'],
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date'],
+            'name' => ['nullable', 'string'],
+            'description' => ['nullable', 'string'],
         ]);
 
         $company = EndCompanyProfile::query()->findOrFail((int) $data['company_id']);
@@ -207,8 +238,10 @@ class DiscountSetController extends Controller
             ->where('distributor_profile_id', $discountSet->distributor_profile_id)
             ->findOrFail((int) $data['product_id']);
 
+        $draft = $this->sets->draftForPreview($discountSet, $request->all());
+
         $result = $this->engine->preview(
-            $discountSet,
+            $draft,
             $company,
             $product,
             (int) $data['quantity'],

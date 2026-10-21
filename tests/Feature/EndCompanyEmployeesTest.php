@@ -6,6 +6,7 @@ use App\Mail\EmployeeInvitationMail;
 use App\Mail\EmployeePasswordResetMail;
 use App\Models\EndCompanyDeliveryAddress;
 use App\Models\EndCompanyEmployeeRole;
+use App\Models\EndCompanyActionLog;
 use App\Models\EndCompanyProfileChange;
 use App\Models\PlatformOrder;
 use App\Models\Region;
@@ -216,6 +217,38 @@ class EndCompanyEmployeesTest extends TestCase
         $this->assertDatabaseHas('end_company_employee_roles', [
             'name' => 'Экономист филиала',
         ]);
+    }
+
+    public function test_activity_journal_records_employee_management_and_is_restricted(): void
+    {
+        [$admin] = $this->makeEndCompanyAdmin();
+        $employee = $this->makeActiveEmployee($admin, 'journal@end.example.com');
+        $hr = $this->makeActiveEmployee($admin, 'hr-journal@end.example.com', 'Secret123', 'Администратор компании');
+
+        $this->actingAsEndCompany($admin)
+            ->post(route('end_company.employees.block', $employee))
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('end_company_action_logs', [
+            'end_company_profile_id' => $admin->endCompanyProfile->id,
+            'user_id' => $admin->id,
+            'action' => EndCompanyActionLog::ACTION_EMPLOYEE_BLOCKED,
+        ]);
+
+        $this->actingAsEndCompany($admin)
+            ->get(route('end_company.activity.index'))
+            ->assertOk()
+            ->assertSee('Журнал действий')
+            ->assertSee('Заблокирована учётная запись');
+
+        $this->actingAsEmployee($hr)
+            ->get(route('end_company.activity.index'))
+            ->assertOk();
+
+        $viewer = $this->makeActiveEmployee($admin, 'viewer-journal@end.example.com');
+        $this->actingAsEmployee($viewer)
+            ->get(route('end_company.activity.index'))
+            ->assertForbidden();
     }
 
     public function test_branch_manager_sees_only_own_branch_orders(): void

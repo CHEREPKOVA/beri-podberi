@@ -33,6 +33,7 @@ class WipeCompaniesAndProductsCommand extends Command
         'platform_order_status_logs',
         'platform_order_items',
         'platform_orders',
+        'end_company_action_logs',
         'distributor_product_regional_prices',
         'distributor_product_documents',
         'distributor_product_change_logs',

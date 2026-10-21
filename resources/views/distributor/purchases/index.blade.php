@@ -10,7 +10,7 @@
 @endphp
 <div class="space-y-6">
     @if(session('success'))
-        <div class="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-900 dark:border-green-700 dark:bg-green-900/20 dark:text-green-100">
+        <div class="rounded-lg border border-[#c3242a]/30 bg-red-50 px-4 py-3 text-sm text-[#a01e24] dark:border-[#c3242a]/40 dark:bg-red-900/20 dark:text-red-100">
             {{ session('success') }}
         </div>
     @endif

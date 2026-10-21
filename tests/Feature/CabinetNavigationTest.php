@@ -70,4 +70,20 @@ class CabinetNavigationTest extends TestCase
             ->assertSee('data-cabinet-main', false)
             ->assertSee('data-role-switch', false);
     }
+
+    public function test_cabinet_shell_safelists_spa_layout_utilities(): void
+    {
+        $user = User::factory()->withRoles(['distributor'])->create();
+        $distributorRole = Role::query()->where('slug', Role::SLUG_DISTRIBUTOR)->firstOrFail();
+
+        $this->actingAs($user)
+            ->withSession([CurrentRoleService::SESSION_KEY => $distributorRole->id])
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('data-cabinet-tw-safelist', false)
+            ->assertSee('lg:flex-row', false)
+            ->assertSee('lg:w-72', false)
+            ->assertSee('lg:hidden', false)
+            ->assertSee('refreshTailwind', false);
+    }
 }

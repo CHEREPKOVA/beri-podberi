@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Manufacturer\StoreOrderDocumentRequest;
 use App\Http\Requests\StoreOrderMessageRequest;
 use App\Models\ClaimStatus;
+use App\Models\DeliveryMethod;
 use App\Models\DistributorProduct;
 use App\Models\ManufacturerContact;
 use App\Models\PlatformOrder;
@@ -158,6 +159,9 @@ class OrderController extends Controller
             'progressIndex' => $this->workflow->progressIndex($order),
             'transportCompanies' => TransportCompany::query()->where('is_active', true)->orderBy('name')->get(),
             'buyerChangesRejection' => $this->workflow->latestBuyerChangesRejection($order),
+            'approvalProposal' => $order->status === PlatformOrder::STATUS_NEEDS_APPROVAL
+                ? $this->workflow->latestApprovalProposal($order)
+                : null,
             'viewer' => 'supplier',
             'warehouses' => $warehouses,
             'catalogProducts' => $catalogProducts,
@@ -168,6 +172,8 @@ class OrderController extends Controller
             'managers' => $managers,
             'claimReasons' => PlatformOrderClaim::reasonLabels(),
             'claimStatuses' => ClaimStatus::labelsMap(),
+            'show_stock' => true,
+            'deliveryMethods' => DeliveryMethod::query()->orderBy('name')->get(),
         ], $this->documentUiContext(
             $request,
             $order,
@@ -468,7 +474,7 @@ class OrderController extends Controller
     public function sendForApproval(Request $request, PlatformOrder $order): RedirectResponse
     {
         $validated = $request->validate([
-            'items' => ['required', 'array', 'min:1'],
+            'items' => ['nullable', 'array'],
             'items.*.id' => ['nullable', 'integer'],
             'items.*.distributor_product_id' => ['nullable', 'integer'],
             'items.*.distributor_warehouse_id' => ['nullable', 'integer'],
@@ -478,18 +484,32 @@ class OrderController extends Controller
             'items.*.reason' => ['nullable', 'string', 'max:500'],
             'items.*.replace_with_distributor_product_id' => ['nullable', 'integer'],
             'comment' => ['nullable', 'string', 'max:2000'],
+            'delivery_method_id' => ['nullable', 'integer', 'exists:delivery_methods,id'],
+            'delivery_date' => ['nullable', 'date'],
+            'delivery_time_from' => ['nullable', 'date_format:H:i'],
+            'delivery_time_to' => ['nullable', 'date_format:H:i'],
+            'distributor_warehouse_id' => ['nullable', 'integer'],
         ]);
 
         $canChangePrice = app(ManufacturerStaffAccess::class)
             ->canAccessSection($request->user(), 'products.manage');
 
-        return $this->runAction($request, $order, function () use ($request, $order, $validated, $canChangePrice) {
+        $logistics = array_intersect_key($validated, array_flip([
+            'delivery_method_id',
+            'delivery_date',
+            'delivery_time_from',
+            'delivery_time_to',
+            'distributor_warehouse_id',
+        ]));
+
+        return $this->runAction($request, $order, function () use ($request, $order, $validated, $canChangePrice, $logistics) {
             $this->workflow->sendForApproval(
                 $order,
                 $request->user(),
-                $validated['items'],
+                $validated['items'] ?? [],
                 $validated['comment'] ?? null,
                 $canChangePrice,
+                $logistics,
             );
         }, 'Изменения отправлены покупателю на согласование.');
     }
@@ -515,6 +535,7 @@ class OrderController extends Controller
             'shipped_at' => ['nullable', 'date'],
             'shipping_from_warehouse' => ['nullable', 'string', 'max:255'],
             'transport_company_id' => ['nullable', 'integer', 'exists:transport_companies,id'],
+            'shipping_comment' => ['nullable', 'string', 'max:2000'],
         ], [
             'tracking_number.required' => 'Укажите номер ТТН / трек-номер.',
         ]);

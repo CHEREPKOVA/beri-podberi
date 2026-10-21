@@ -3,8 +3,11 @@
 namespace App\Services\Order;
 
 use App\Mail\OrderStatusChangedMail;
+use App\Models\DeliveryMethod;
 use App\Models\DistributorProduct;
 use App\Models\DistributorWarehouse;
+use App\Models\EndCompanyActionLog;
+use App\Models\EndCompanyProfile;
 use App\Models\ManufacturerProfile;
 use App\Models\PlatformOrder;
 use App\Models\PlatformOrderItem;
@@ -12,6 +15,7 @@ use App\Models\PlatformOrderStatusLog;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Notifications\OrderStatusChangedNotification;
+use App\Services\EndCompanyActionLogger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -254,6 +258,8 @@ class OrderStatusWorkflowService
     {
         $this->assertCan($order, self::ACTOR_SUPPLIER, self::ACTION_CONFIRM);
 
+        app(OrderStockReservationService::class)->reserve($order);
+
         return $this->transition(
             $order,
             PlatformOrder::STATUS_CONFIRMED,
@@ -281,6 +287,8 @@ class OrderStatusWorkflowService
             ]);
         }
 
+        app(OrderStockReservationService::class)->release($order);
+
         $order->rejection_reason = $reasons[$code].'. '.$comment;
 
         return $this->transition(
@@ -307,6 +315,13 @@ class OrderStatusWorkflowService
      *     reason?: ?string,
      *     delete?: bool|int|string
      * }>  $items
+     * @param  array{
+     *     delivery_method_id?: int|string|null,
+     *     delivery_date?: string|null,
+     *     delivery_time_from?: string|null,
+     *     delivery_time_to?: string|null,
+     *     distributor_warehouse_id?: int|string|null
+     * }  $logistics
      */
     public function sendForApproval(
         PlatformOrder $order,
@@ -314,23 +329,50 @@ class OrderStatusWorkflowService
         array $items,
         ?string $comment = null,
         bool $canChangePrice = true,
+        array $logistics = [],
     ): PlatformOrder {
         $this->assertCan($order, self::ACTOR_SUPPLIER, self::ACTION_SEND_FOR_APPROVAL);
 
-        if ($items === []) {
+        $hasLogisticsInput = $this->logisticsPayloadProvided($logistics);
+        if ($items === [] && ! $hasLogisticsInput) {
             throw ValidationException::withMessages([
-                'items' => 'Укажите изменения по позициям заказа.',
+                'items' => 'Укажите изменения по позициям или логистике заказа.',
             ]);
         }
 
+        // Пока заказ на согласовании, резерв не держим.
+        app(OrderStockReservationService::class)->release($order);
+
         $previousTotal = round((float) $order->total_amount, 2);
-        $order->load('items');
+        $order->load(['items', 'deliveryMethod', 'distributorWarehouse']);
         $snapshot = $this->snapshotItems($order);
+        $logisticsSnapshot = $this->snapshotLogistics($order);
         $analogOptions = $this->analogOptionsByItem($order);
         $changes = [];
+        $logisticsChanges = [];
         $newTotal = 0.0;
 
-        DB::transaction(function () use ($order, $items, $canChangePrice, $analogOptions, &$changes, &$newTotal): void {
+        DB::transaction(function () use (
+            $order,
+            $items,
+            $canChangePrice,
+            $analogOptions,
+            $logistics,
+            $hasLogisticsInput,
+            &$changes,
+            &$logisticsChanges,
+            &$newTotal,
+        ): void {
+            if ($hasLogisticsInput) {
+                $logisticsChanges = $this->applyLogisticsChanges($order, $logistics);
+            }
+
+            if ($items === []) {
+                $newTotal = round((float) $order->items()->sum('line_total'), 2);
+
+                return;
+            }
+
             $warehouseNames = $this->warehouseNamesForOrder($order);
 
             foreach ($items as $row) {
@@ -498,6 +540,12 @@ class OrderStatusWorkflowService
             $order->save();
         });
 
+        if ($changes === [] && $logisticsChanges === []) {
+            throw ValidationException::withMessages([
+                'items' => 'Нет фактических изменений для отправки на согласование.',
+            ]);
+        }
+
         $order->refresh();
         $supplierComment = filled($comment) ? trim((string) $comment) : null;
 
@@ -509,7 +557,9 @@ class OrderStatusWorkflowService
             $supplierComment ?: 'Поставщик отправил изменения на согласование',
             [
                 'changes' => $changes,
+                'logistics_changes' => $logisticsChanges,
                 'items_snapshot' => $snapshot,
+                'logistics_snapshot' => $logisticsSnapshot,
                 'previous_total' => $previousTotal,
                 'new_total' => round((float) $order->total_amount, 2),
                 'supplier_comment' => $supplierComment,
@@ -524,6 +574,7 @@ class OrderStatusWorkflowService
      *     comment: ?string,
      *     supplier_comment: ?string,
      *     changes: list<array<string, mixed>>,
+     *     logistics_changes: list<array<string, mixed>>,
      *     previous_total: ?float,
      *     new_total: ?float,
      *     created_at: ?Carbon
@@ -555,6 +606,7 @@ class OrderStatusWorkflowService
             'comment' => $log->comment,
             'supplier_comment' => $supplierComment ? (string) $supplierComment : null,
             'changes' => array_values($meta['changes'] ?? []),
+            'logistics_changes' => array_values($meta['logistics_changes'] ?? []),
             'previous_total' => isset($meta['previous_total']) ? (float) $meta['previous_total'] : null,
             'new_total' => isset($meta['new_total']) ? (float) $meta['new_total'] : null,
             'created_at' => $log->created_at,
@@ -565,18 +617,44 @@ class OrderStatusWorkflowService
     {
         $this->assertCan($order, self::ACTOR_BUYER, self::ACTION_APPROVE_CHANGES);
 
-        return $this->transition(
+        app(OrderStockReservationService::class)->reserve($order);
+
+        $order = $this->transition(
             $order,
             PlatformOrder::STATUS_CONFIRMED,
             $user,
             self::ACTION_APPROVE_CHANGES,
             'Покупатель согласовал изменения',
         );
+
+        $this->logEndCompanyAction(
+            $order,
+            $user,
+            EndCompanyActionLog::ACTION_ORDER_CHANGES_APPROVED,
+            'Утверждены изменения по заказу '.$order->order_number,
+        );
+
+        return $order;
     }
 
-    public function rejectChanges(PlatformOrder $order, User $user, ?string $reason = null): PlatformOrder
-    {
+    public const REJECT_CHANGES_RENEGOTIATE = 'renegotiate';
+
+    public const REJECT_CHANGES_CANCEL = 'cancel';
+
+    public function rejectChanges(
+        PlatformOrder $order,
+        User $user,
+        ?string $reason = null,
+        string $outcome = self::REJECT_CHANGES_RENEGOTIATE,
+    ): PlatformOrder {
         $this->assertCan($order, self::ACTOR_BUYER, self::ACTION_REJECT_CHANGES);
+
+        if (! in_array($outcome, [self::REJECT_CHANGES_RENEGOTIATE, self::REJECT_CHANGES_CANCEL], true)) {
+            throw ValidationException::withMessages([
+                'outcome' => 'Выберите действие: вернуть поставщику или отменить заказ.',
+            ]);
+        }
+
         $reason = trim((string) $reason);
         $comment = $reason !== ''
             ? $reason
@@ -589,23 +667,54 @@ class OrderStatusWorkflowService
         $meta = is_array($proposalLog?->meta) ? $proposalLog->meta : [];
         $snapshot = $meta['items_snapshot'] ?? null;
         $previousTotal = $meta['previous_total'] ?? null;
+        $logisticsSnapshot = $meta['logistics_snapshot'] ?? null;
 
         if (is_array($snapshot) && $snapshot !== []) {
             $this->restoreItems($order, $snapshot, $previousTotal);
         }
+        if (is_array($logisticsSnapshot) && $logisticsSnapshot !== []) {
+            $this->restoreLogistics($order, $logisticsSnapshot);
+        }
 
-        // Не завершаем заказ: возвращаем поставщику на доработку / повторное согласование.
-        return $this->transition(
+        if ($outcome === self::REJECT_CHANGES_CANCEL) {
+            $order->rejection_reason = $comment;
+            $order = $this->transition(
+                $order,
+                PlatformOrder::STATUS_REJECTED,
+                $user,
+                self::ACTION_REJECT_CHANGES,
+                $comment,
+                [
+                    'type' => 'buyer_rejected_changes_cancelled',
+                    'buyer_rejection_reason' => $reason !== '' ? $reason : null,
+                    'outcome' => $outcome,
+                ],
+            );
+        } else {
+            // Возвращаем поставщику на доработку / повторное согласование.
+            $order = $this->transition(
+                $order,
+                PlatformOrder::STATUS_AWAITING_CONFIRMATION,
+                $user,
+                self::ACTION_REJECT_CHANGES,
+                $comment,
+                [
+                    'type' => 'buyer_rejected_changes',
+                    'buyer_rejection_reason' => $reason !== '' ? $reason : null,
+                    'outcome' => $outcome,
+                ],
+            );
+        }
+
+        $this->logEndCompanyAction(
             $order,
-            PlatformOrder::STATUS_AWAITING_CONFIRMATION,
             $user,
-            self::ACTION_REJECT_CHANGES,
-            $comment,
-            [
-                'type' => 'buyer_rejected_changes',
-                'buyer_rejection_reason' => $reason !== '' ? $reason : null,
-            ],
+            EndCompanyActionLog::ACTION_ORDER_CHANGES_REJECTED,
+            'Отклонены изменения по заказу '.$order->order_number,
+            ['reason' => $reason !== '' ? $reason : null, 'outcome' => $outcome],
         );
+
+        return $order;
     }
 
     /**
@@ -668,6 +777,7 @@ class OrderStatusWorkflowService
     public function cancelByBuyer(PlatformOrder $order, User $user, ?string $reason = null): PlatformOrder
     {
         $this->assertCan($order, self::ACTOR_BUYER, self::ACTION_CANCEL);
+        app(OrderStockReservationService::class)->release($order);
         $order->rejection_reason = trim((string) $reason) ?: 'Заказ отменён покупателем';
 
         return $this->transition(
@@ -723,7 +833,13 @@ class OrderStatusWorkflowService
     }
 
     /**
-     * @param  array{tracking_number: string, shipped_at?: ?string, shipping_from_warehouse?: ?string, transport_company_id?: ?int}  $data
+     * @param  array{
+     *     tracking_number: string,
+     *     shipped_at?: ?string,
+     *     shipping_from_warehouse?: ?string,
+     *     transport_company_id?: ?int,
+     *     shipping_comment?: ?string
+     * }  $data
      */
     public function markShipped(PlatformOrder $order, User $user, array $data): PlatformOrder
     {
@@ -736,6 +852,10 @@ class OrderStatusWorkflowService
             ]);
         }
 
+        $shippingComment = filled($data['shipping_comment'] ?? null)
+            ? trim((string) $data['shipping_comment'])
+            : null;
+
         $order->tracking_number = $tracking;
         $order->shipped_at = filled($data['shipped_at'] ?? null)
             ? $data['shipped_at']
@@ -743,9 +863,17 @@ class OrderStatusWorkflowService
         $order->shipping_from_warehouse = filled($data['shipping_from_warehouse'] ?? null)
             ? trim((string) $data['shipping_from_warehouse'])
             : null;
+        $order->shipping_comment = $shippingComment;
 
         if (isset($data['transport_company_id']) && $data['transport_company_id']) {
             $order->transport_company_id = (int) $data['transport_company_id'];
+        }
+
+        app(OrderStockReservationService::class)->fulfill($order);
+
+        $logComment = 'Заказ отгружен. ТТН: '.$tracking;
+        if ($shippingComment !== null) {
+            $logComment .= '. '.$shippingComment;
         }
 
         return $this->transition(
@@ -753,10 +881,11 @@ class OrderStatusWorkflowService
             PlatformOrder::STATUS_SHIPPED,
             $user,
             self::ACTION_MARK_SHIPPED,
-            'Заказ отгружен. ТТН: '.$tracking,
-            [
+            $logComment,
+            array_filter([
                 'tracking_number' => $tracking,
-            ],
+                'shipping_comment' => $shippingComment,
+            ], static fn ($value) => $value !== null && $value !== ''),
         );
     }
 
@@ -1071,6 +1200,158 @@ class OrderStatusWorkflowService
     }
 
     /**
+     * @param  array<string, mixed>  $logistics
+     */
+    private function logisticsPayloadProvided(array $logistics): bool
+    {
+        foreach (['delivery_method_id', 'delivery_date', 'delivery_time_from', 'delivery_time_to', 'distributor_warehouse_id'] as $key) {
+            if (array_key_exists($key, $logistics)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function snapshotLogistics(PlatformOrder $order): array
+    {
+        return [
+            'delivery_method_id' => $order->delivery_method_id,
+            'delivery_method_name' => $order->deliveryMethod?->name,
+            'delivery_date' => $order->delivery_date?->format('Y-m-d'),
+            'delivery_time_from' => $order->delivery_time_from,
+            'delivery_time_to' => $order->delivery_time_to,
+            'distributor_warehouse_id' => $order->distributor_warehouse_id,
+            'distributor_warehouse_name' => $order->distributorWarehouse?->name,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $logistics
+     * @return list<array{field: string, label: string, old: mixed, new: mixed}>
+     */
+    private function applyLogisticsChanges(PlatformOrder $order, array $logistics): array
+    {
+        $changes = [];
+
+        if (array_key_exists('delivery_method_id', $logistics)) {
+            $oldId = $order->delivery_method_id ? (int) $order->delivery_method_id : null;
+            $newId = $logistics['delivery_method_id'] !== null && $logistics['delivery_method_id'] !== ''
+                ? (int) $logistics['delivery_method_id']
+                : null;
+            if ($oldId !== $newId) {
+                $newName = $newId
+                    ? DeliveryMethod::query()->whereKey($newId)->value('name')
+                    : null;
+                if ($newId && ! $newName) {
+                    throw ValidationException::withMessages([
+                        'delivery_method_id' => 'Способ доставки не найден.',
+                    ]);
+                }
+                $changes[] = [
+                    'field' => 'delivery_method_id',
+                    'label' => 'Способ доставки',
+                    'old' => $order->deliveryMethod?->name,
+                    'new' => $newName,
+                ];
+                $order->delivery_method_id = $newId;
+            }
+        }
+
+        if (array_key_exists('delivery_date', $logistics)) {
+            $old = $order->delivery_date?->format('Y-m-d');
+            $new = filled($logistics['delivery_date'] ?? null)
+                ? Carbon::parse((string) $logistics['delivery_date'])->format('Y-m-d')
+                : null;
+            if ($old !== $new) {
+                $changes[] = [
+                    'field' => 'delivery_date',
+                    'label' => 'Дата доставки',
+                    'old' => $old ? Carbon::parse($old)->format('d.m.Y') : null,
+                    'new' => $new ? Carbon::parse($new)->format('d.m.Y') : null,
+                ];
+                $order->delivery_date = $new;
+            }
+        }
+
+        if (array_key_exists('delivery_time_from', $logistics)) {
+            $old = $order->delivery_time_from ? substr((string) $order->delivery_time_from, 0, 5) : null;
+            $new = filled($logistics['delivery_time_from'] ?? null)
+                ? substr((string) $logistics['delivery_time_from'], 0, 5)
+                : null;
+            if ($old !== $new) {
+                $changes[] = [
+                    'field' => 'delivery_time_from',
+                    'label' => 'Время доставки с',
+                    'old' => $old,
+                    'new' => $new,
+                ];
+                $order->delivery_time_from = $new;
+            }
+        }
+
+        if (array_key_exists('delivery_time_to', $logistics)) {
+            $old = $order->delivery_time_to ? substr((string) $order->delivery_time_to, 0, 5) : null;
+            $new = filled($logistics['delivery_time_to'] ?? null)
+                ? substr((string) $logistics['delivery_time_to'], 0, 5)
+                : null;
+            if ($old !== $new) {
+                $changes[] = [
+                    'field' => 'delivery_time_to',
+                    'label' => 'Время доставки до',
+                    'old' => $old,
+                    'new' => $new,
+                ];
+                $order->delivery_time_to = $new;
+            }
+        }
+
+        if (array_key_exists('distributor_warehouse_id', $logistics)) {
+            $oldId = $order->distributor_warehouse_id ? (int) $order->distributor_warehouse_id : null;
+            $newId = $logistics['distributor_warehouse_id'] !== null && $logistics['distributor_warehouse_id'] !== ''
+                ? (int) $logistics['distributor_warehouse_id']
+                : null;
+            if ($oldId !== $newId) {
+                $names = $this->warehouseNamesForOrder($order);
+                if ($newId && ! isset($names[$newId])) {
+                    throw ValidationException::withMessages([
+                        'distributor_warehouse_id' => 'Склад не найден у поставщика.',
+                    ]);
+                }
+                $changes[] = [
+                    'field' => 'distributor_warehouse_id',
+                    'label' => 'Склад отгрузки',
+                    'old' => $oldId ? ($names[$oldId] ?? null) : null,
+                    'new' => $newId ? ($names[$newId] ?? null) : null,
+                ];
+                $order->distributor_warehouse_id = $newId;
+            }
+        }
+
+        if ($changes !== []) {
+            $order->save();
+        }
+
+        return $changes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     */
+    private function restoreLogistics(PlatformOrder $order, array $snapshot): void
+    {
+        $order->delivery_method_id = $snapshot['delivery_method_id'] ?? $order->delivery_method_id;
+        $order->delivery_date = $snapshot['delivery_date'] ?? null;
+        $order->delivery_time_from = $snapshot['delivery_time_from'] ?? null;
+        $order->delivery_time_to = $snapshot['delivery_time_to'] ?? null;
+        $order->distributor_warehouse_id = $snapshot['distributor_warehouse_id'] ?? null;
+        $order->save();
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     private function snapshotItems(PlatformOrder $order): array
@@ -1305,8 +1586,14 @@ class OrderStatusWorkflowService
         $message = $this->notificationMessage($order, $to, $comment);
         $recipients = collect();
 
-        $buyerUser = $order->endCompanyProfile?->user;
-        $supplierUser = $order->distributorProfile?->user;
+        // Закупка дистрибьютора у производителя: buyer = дистрибьютор, supplier = производитель.
+        // Остальные каналы: buyer = конечная компания, supplier = дистрибьютор.
+        $buyerUser = $order->isDistributorPurchase()
+            ? $order->distributorProfile?->user
+            : $order->endCompanyProfile?->user;
+        $supplierUser = $order->isDistributorPurchase()
+            ? $order->manufacturerProfile?->user
+            : $order->distributorProfile?->user;
 
         if ($buyerUser) {
             $recipients->push($buyerUser);
@@ -1341,7 +1628,9 @@ class OrderStatusWorkflowService
             PlatformOrder::STATUS_NEEDS_APPROVAL => "Заказ №{$number} ожидает подтверждения покупателя",
             PlatformOrder::STATUS_REJECTED => "Заказ №{$number} отклонён".($order->rejection_reason ? ': '.$order->rejection_reason : ''),
             PlatformOrder::STATUS_READY_TO_SHIP => "Заказ №{$number} готов к отгрузке",
-            PlatformOrder::STATUS_SHIPPED => "Ваш заказ №{$number} был отгружен".($order->tracking_number ? '. ТТН: '.$order->tracking_number : ''),
+            PlatformOrder::STATUS_SHIPPED => "Ваш заказ №{$number} был отгружен"
+                .($order->tracking_number ? '. ТТН: '.$order->tracking_number : '')
+                .(filled($order->shipping_comment) ? '. '.$order->shipping_comment : ''),
             PlatformOrder::STATUS_COMPLETED => "Заказ №{$number} завершён",
             PlatformOrder::STATUS_AWAITING_CONFIRMATION => $comment
                 ? "Заказ №{$number}: {$comment}"
@@ -1353,5 +1642,39 @@ class OrderStatusWorkflowService
     private function emailNotificationsEnabled(): bool
     {
         return (bool) SystemSetting::getActiveParsed('notifications.email_enabled', true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function logEndCompanyAction(
+        PlatformOrder $order,
+        User $user,
+        string $action,
+        string $description,
+        array $meta = [],
+    ): void {
+        if (! $order->end_company_profile_id) {
+            return;
+        }
+
+        try {
+            $profile = EndCompanyProfile::query()->find($order->end_company_profile_id);
+            if (! $profile) {
+                return;
+            }
+
+            app(EndCompanyActionLogger::class)->log(
+                $profile,
+                $user,
+                $action,
+                $description,
+                'platform_order',
+                (int) $order->id,
+                array_merge(['order_number' => $order->order_number], $meta),
+            );
+        } catch (\Throwable) {
+            // Журнал компании не блокирует смену статуса.
+        }
     }
 }

@@ -108,8 +108,22 @@ class StoreDistributorDiscountSetRequest extends FormRequest
                 $validator->errors()->add('brands', 'Выберите хотя бы один бренд.');
             }
 
-            if ($type === DistributorDiscountSet::TYPE_PRODUCTS && empty($this->input('product_ids'))) {
-                $validator->errors()->add('product_ids', 'Выберите хотя бы один товар.');
+            if (
+                $type === DistributorDiscountSet::TYPE_PRODUCTS
+                && ! $this->boolean('apply_to_all_products')
+                && empty($this->input('product_ids'))
+            ) {
+                $validator->errors()->add('product_ids', 'Выберите хотя бы один товар или отметьте «На все товары каталога».');
+            }
+
+            if (
+                in_array($type, [DistributorDiscountSet::TYPE_PERSONAL, DistributorDiscountSet::TYPE_MASS], true)
+                && ! $this->boolean('apply_to_all_products')
+                && empty($this->input('product_ids'))
+                && empty($this->input('category_ids'))
+                && empty($this->input('brands'))
+            ) {
+                $validator->errors()->add('product_ids', 'Выберите товары или отметьте «На все товары каталога».');
             }
 
             if ($type === DistributorDiscountSet::TYPE_PERSONAL && empty($this->input('company_ids'))) {

@@ -16,7 +16,7 @@
                         Введите email вашего аккаунта — мы отправим ссылку для сброса пароля.
                     </p>
                     @if (session('status'))
-                        <div class="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                        <div class="mb-5 rounded-lg border border-[#c3242a]/30 bg-red-50 px-4 py-3 text-sm text-[#a01e24]">
                             {{ session('status') }}
                         </div>
                     @endif

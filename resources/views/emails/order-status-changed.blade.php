@@ -10,6 +10,10 @@
 **ТТН / трек-номер:** {{ $order->tracking_number }}
 @endif
 
+@if($order->shipping_comment)
+**Комментарий к отгрузке:** {{ $order->shipping_comment }}
+@endif
+
 @if($order->rejection_reason)
 **Комментарий:** {{ $order->rejection_reason }}
 @endif

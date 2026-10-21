@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Models\UserLoginLog;
 use App\Services\CurrentRoleService;
 use App\Support\CompanyStatus;
 use Illuminate\Http\RedirectResponse;
@@ -79,11 +80,21 @@ class LoginController extends Controller
             ]);
         }
 
+        $loginIp = $request->ip();
+        $loginUserAgent = Str::limit((string) $request->userAgent(), 1000, '');
+
         $user->forceFill([
             'last_login_at' => now(),
-            'last_login_ip' => $request->ip(),
-            'last_login_user_agent' => Str::limit((string) $request->userAgent(), 1000, ''),
+            'last_login_ip' => $loginIp,
+            'last_login_user_agent' => $loginUserAgent,
         ])->save();
+
+        UserLoginLog::query()->create([
+            'user_id' => $user->id,
+            'ip' => $loginIp,
+            'user_agent' => $loginUserAgent !== '' ? $loginUserAgent : null,
+            'created_at' => now(),
+        ]);
 
         $redirect = app(CurrentRoleService::class)->applyAfterLogin($user);
         if ($redirect !== null) {

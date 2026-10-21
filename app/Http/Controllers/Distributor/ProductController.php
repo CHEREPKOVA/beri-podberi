@@ -125,8 +125,6 @@ class ProductController extends Controller
             'sourceProduct.attributeValues.attribute',
             'sourceProduct.documents',
             'stocks.warehouse.region',
-            'priceHistories.changedByUser',
-            'changeLogs.performedByUser',
             'documents',
             'regionalPrices.region',
         ]);
@@ -136,7 +134,11 @@ class ProductController extends Controller
         $unitTypes = UnitType::query()->active()->orderBy('name')->get();
         $warehouses = app(DistributorStaffAccess::class)->visibleWarehouses($request->user());
         $regions = $profile->regions()->orderBy('name')->get();
+        $allowedTabs = ['info', 'publication', 'prices', 'stocks', 'documents'];
         $tab = $request->get('tab', 'info');
+        if (! in_array($tab, $allowedTabs, true)) {
+            $tab = 'info';
+        }
         $managedBy1c = $profile->integration_import_1c_stocks || $product->managed_by_1c;
         $stockEditingDisabled = $managedBy1c && $product->isSyncedFrom1c();
 

@@ -2,23 +2,16 @@
     $addressIds = collect($addressIds ?? []);
     $allAddresses = $allAddresses ?? false;
     $selectedRoleId = old('employee_role_id', $roleId ?? ($roles[0]->id ?? ''));
-    $rolesPayload = collect($roles)->map(fn ($role) => [
-        'id' => $role->id,
-        'name' => $role->name,
-    ])->values();
     $checkboxBox = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-[1.25px] border-gray-300 bg-white transition-colors pointer-events-none peer-checked:border-[#c3242a] peer-checked:bg-[#c3242a] peer-checked:[&>svg]:opacity-100 peer-focus:ring-2 peer-focus:ring-[#c3242a]/30 dark:border-gray-600 dark:bg-gray-800 dark:peer-checked:border-[#c3242a] dark:peer-checked:bg-[#c3242a]';
 @endphp
 
 <div
     x-data="endCompanyEmployeeForm({
-        roleId: {{ json_encode((string) old('employee_role_id', $selectedRoleId)) }},
-        roles: {{ json_encode($rolesPayload) }},
         allAddresses: {{ json_encode((bool) old('all_addresses', $allAddresses)) }},
         addressIds: {{ json_encode(array_map('strval', old('delivery_address_ids', $addressIds->all()))) }},
         allAddressIds: {{ json_encode($addresses->pluck('id')->map(fn ($id) => (string) $id)->values()->all()) }}
     })"
     class="space-y-6"
-    @keydown.escape.window="openSelect = ''"
 >
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
@@ -63,12 +56,11 @@
         <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
             Роль сотрудника <span class="text-red-500">*</span>
         </label>
-        @include('end_company.employees._styled_select', [
+        @include('manufacturer.products._flat_select', [
             'name' => 'employee_role_id',
-            'openKey' => 'role',
-            'valueExpr' => 'roleId',
-            'optionsExpr' => 'roleOptions',
             'placeholder' => 'Выберите роль',
+            'options' => collect($roles)->mapWithKeys(fn ($role) => [(string) $role->id => $role->name])->all(),
+            'selected' => (string) $selectedRoleId,
             'required' => true,
         ])
         @error('employee_role_id')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
@@ -121,26 +113,10 @@
 @push('scripts')
 <script>
 function endCompanyEmployeeForm(config) {
-    const roles = Array.isArray(config.roles) ? config.roles : [];
-    // Стабильный массив: getter с .map() даёт новый reference на каждый доступ и Alpine x-for дублирует пункты.
-    const roleOptions = roles.map((role) => ({
-        value: String(role.id),
-        label: role.name,
-    }));
-
     return {
-        openSelect: '',
-        roleId: String(config.roleId || ''),
-        roles,
-        roleOptions,
         allAddresses: Boolean(config.allAddresses),
         allAddressIds: (config.allAddressIds || []).map(String),
         addressIds: (config.addressIds || []).map(String),
-        optionLabel(options, value, placeholder) {
-            const current = String(value ?? '');
-            const item = (options || []).find((option) => String(option.value) === current);
-            return item ? item.label : (placeholder || 'Выберите');
-        },
         init() {
             if (this.allAddresses) {
                 this.addressIds = [...this.allAddressIds];

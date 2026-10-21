@@ -16,6 +16,8 @@ trait LoadsOrderDetailRelations
     {
         return [
             'items.product.images',
+            'items.product.stocks',
+            'items.distributorProduct.stocks',
             'items.warehouse',
             'responsibleContact',
             'manufacturerResponsibleContact',

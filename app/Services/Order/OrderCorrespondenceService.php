@@ -184,7 +184,8 @@ class OrderCorrespondenceService
             ],
             OrderStatusWorkflowService::ACTION_MARK_SHIPPED => [
                 PlatformOrderMessage::EVENT_TTN_ADDED,
-                'Поставщик добавил ТТН'.($order->tracking_number ? ': '.$order->tracking_number : '.'),
+                'Поставщик добавил ТТН'.($order->tracking_number ? ': '.$order->tracking_number : '.')
+                    .(filled($order->shipping_comment) ? ' '.$order->shipping_comment : ''),
             ],
             OrderStatusWorkflowService::ACTION_VIEW,
             OrderStatusWorkflowService::ACTION_SERVICE_COMMENT,

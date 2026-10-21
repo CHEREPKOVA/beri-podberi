@@ -18,7 +18,7 @@
 
 <div class="space-y-6" x-data="{ addModalOpen: false, addAction: '', addDistributorName: '' }">
     @if(session('success'))
-    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 px-4 py-3 rounded-lg">
+    <div class="bg-red-50 dark:bg-red-900/20 border border-[#c3242a]/30 dark:border-[#c3242a]/40 text-[#a01e24] dark:text-red-100 px-4 py-3 rounded-lg">
         {{ session('success') }}
     </div>
     @endif

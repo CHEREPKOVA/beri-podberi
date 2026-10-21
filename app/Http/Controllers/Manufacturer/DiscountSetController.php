@@ -196,6 +196,37 @@ class DiscountSetController extends Controller
             'product_id' => ['required', 'integer'],
             'quantity' => ['required', 'integer', 'min:1'],
             'region_id' => ['nullable', 'integer'],
+            'type' => ['nullable', 'string'],
+            'status' => ['nullable', 'string'],
+            'audience_type' => ['nullable', 'string'],
+            'discount_percent' => ['nullable', 'numeric'],
+            'discount_amount' => ['nullable', 'numeric'],
+            'min_order_amount' => ['nullable', 'numeric'],
+            'min_quantity' => ['nullable', 'integer'],
+            'require_all_conditions' => ['nullable'],
+            'apply_to_all_products' => ['nullable'],
+            'apply_only_active_products' => ['nullable'],
+            'only_new_distributors' => ['nullable'],
+            'is_indefinite' => ['nullable'],
+            'auto_deactivate' => ['nullable'],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer'],
+            'excluded_category_ids' => ['nullable', 'array'],
+            'excluded_category_ids.*' => ['integer'],
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['integer'],
+            'region_ids' => ['nullable', 'array'],
+            'region_ids.*' => ['integer'],
+            'audience_region_ids' => ['nullable', 'array'],
+            'audience_region_ids.*' => ['integer'],
+            'distributor_ids' => ['nullable', 'array'],
+            'distributor_ids.*' => ['integer'],
+            'company_types' => ['nullable', 'array'],
+            'tiers' => ['nullable', 'array'],
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date'],
+            'name' => ['nullable', 'string'],
+            'description' => ['nullable', 'string'],
         ]);
 
         $distributor = DistributorProfile::query()->findOrFail((int) $data['distributor_id']);
@@ -203,8 +234,10 @@ class DiscountSetController extends Controller
             ->where('manufacturer_profile_id', $discountSet->manufacturer_profile_id)
             ->findOrFail((int) $data['product_id']);
 
+        $draft = $this->sets->draftForPreview($discountSet, $request->all());
+
         $result = $this->engine->preview(
-            $discountSet,
+            $draft,
             $distributor,
             $product,
             (int) $data['quantity'],

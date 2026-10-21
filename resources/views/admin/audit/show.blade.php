@@ -75,10 +75,25 @@
                     <dd class="font-medium text-gray-900 dark:text-white">{{ $event['company_name'] }}</dd>
                 </div>
             @endif
-            @if($event['source'] === 'admin_action' && ! empty($context['ip']))
+            @php
+                $ip = $context['ip'] ?? ($payload['ip'] ?? null);
+            @endphp
+            @if(! empty($ip))
                 <div>
                     <dt class="text-gray-500">IP</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ $context['ip'] }}</dd>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ $ip }}</dd>
+                </div>
+            @endif
+            @if($event['source'] === 'user_login' && ! empty($payload['user_agent']))
+                <div class="md:col-span-2">
+                    <dt class="text-gray-500">User-Agent</dt>
+                    <dd class="font-mono text-xs text-gray-800 dark:text-gray-200 break-all">{{ $payload['user_agent'] }}</dd>
+                </div>
+            @endif
+            @if(in_array($event['source'], ['order_status', 'distributor_discount', 'distributor_product'], true) && ! empty($payload['action']))
+                <div>
+                    <dt class="text-gray-500">Действие</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ $payload['action'] }}</dd>
                 </div>
             @endif
         </dl>

@@ -54,7 +54,7 @@ class EndCompanyStaffAccess
         $permissions = $this->permissions($user);
 
         return match ($section) {
-            'employees' => (bool) $permissions['employees'],
+            'employees', 'activity' => (bool) $permissions['employees'],
             'profile' => (bool) $permissions['company_profile'],
             'catalog' => (bool) $permissions['catalog'],
             'cart' => in_array($permissions['orders'], ['create', 'manage'], true),

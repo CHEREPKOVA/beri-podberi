@@ -239,40 +239,32 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Склад отправления</label>
-                        <div class="relative">
-                            <select name="shipping_from_warehouse" class="{{ $inputBrand }} appearance-none pr-10 cursor-pointer">
-                                <option value="">— не указан —</option>
-                                @foreach($warehouses as $warehouse)
-                                    <option value="{{ $warehouse->name }}"
-                                        @selected(old('shipping_from_warehouse', $order->shipping_from_warehouse) === $warehouse->name)>
-                                        {{ $warehouse->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select name="shipping_from_warehouse">
+                            <option value="">— не указан —</option>
+                            @foreach($warehouses as $warehouse)
+                                <option value="{{ $warehouse->name }}"
+                                    @selected(old('shipping_from_warehouse', $order->shipping_from_warehouse) === $warehouse->name)>
+                                    {{ $warehouse->name }}
+                                </option>
+                            @endforeach
+                        </x-styled-select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Транспортная компания</label>
-                        <div class="relative">
-                            <select name="transport_company_id" class="{{ $inputBrand }} appearance-none pr-10 cursor-pointer">
-                                <option value="">— не менять / не указано —</option>
-                                @foreach($transportCompanies as $company)
-                                    <option value="{{ $company->id }}" @selected((string) old('transport_company_id', $order->transport_company_id) === (string) $company->id)>
-                                        {{ $company->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select name="transport_company_id">
+                            <option value="">— не менять / не указано —</option>
+                            @foreach($transportCompanies as $company)
+                                <option value="{{ $company->id }}" @selected((string) old('transport_company_id', $order->transport_company_id) === (string) $company->id)>
+                                    {{ $company->name }}
+                                </option>
+                            @endforeach
+                        </x-styled-select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Дополнительные комментарии</label>
+                        <textarea name="shipping_comment" rows="2" maxlength="2000"
+                                  class="{{ $inputBrand }}"
+                                  placeholder="Комментарий для покупателя (необязательно)">{{ old('shipping_comment') }}</textarea>
                     </div>
                     <div class="flex gap-2">
                         <button type="submit" class="{{ $btnPrimary }}">Отгрузить</button>
@@ -422,6 +414,54 @@
                     </button>
                     <p x-show="catalog.length === 0" x-cloak class="text-xs text-gray-500">В номенклатуре нет доступных товаров.</p>
 
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div>
+                            <label class="block text-sm mb-1">Способ доставки</label>
+                            <div class="relative">
+                                <select name="delivery_method_id" class="{{ $selectBrand }}">
+                                    @foreach(($deliveryMethods ?? []) as $method)
+                                        <option value="{{ $method->id }}" @selected((string) old('delivery_method_id', $order->delivery_method_id) === (string) $method->id)>
+                                            {{ $method->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1">Склад отгрузки (заказ)</label>
+                            <div class="relative">
+                                <select name="distributor_warehouse_id" class="{{ $selectBrand }}">
+                                    <option value="">— не указан —</option>
+                                    @foreach($warehouses as $warehouse)
+                                        <option value="{{ $warehouse->id }}" @selected((string) old('distributor_warehouse_id', $order->distributor_warehouse_id) === (string) $warehouse->id)>
+                                            {{ $warehouse->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1">Дата доставки</label>
+                            <input type="date" name="delivery_date" value="{{ old('delivery_date', $order->delivery_date?->format('Y-m-d')) }}" class="{{ $inputBrand }}">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-sm mb-1">Время с</label>
+                                <input type="time" name="delivery_time_from" value="{{ old('delivery_time_from', $order->delivery_time_from ? \Illuminate\Support\Str::of($order->delivery_time_from)->substr(0, 5) : '') }}" class="{{ $inputBrand }}">
+                            </div>
+                            <div>
+                                <label class="block text-sm mb-1">Время до</label>
+                                <input type="time" name="delivery_time_to" value="{{ old('delivery_time_to', $order->delivery_time_to ? \Illuminate\Support\Str::of($order->delivery_time_to)->substr(0, 5) : '') }}" class="{{ $inputBrand }}">
+                            </div>
+                        </div>
+                    </div>
+
                     <div>
                         <label class="block text-sm mb-1">Комментарий к изменениям</label>
                         <textarea name="comment" rows="2" class="{{ $inputBrand }}">{{ old('comment') }}</textarea>
@@ -437,7 +477,12 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div class="xl:col-span-2 space-y-6">
-            @include('orders._items', ['order' => $order, 'show_product_links' => $show_product_links ?? true])
+            @include('orders._items', [
+                'order' => $order,
+                'show_product_links' => $show_product_links ?? true,
+                'show_stock' => $show_stock ?? true,
+                'approvalProposal' => $approvalProposal ?? null,
+            ])
             @include('orders._documents')
             @include('orders._correspondence')
             @include('orders._history', ['hide_service' => true, 'action_labels' => $action_labels ?? null])
@@ -454,21 +499,14 @@
                     @csrf
                     <div>
                         <label class="block text-xs text-gray-500 mb-1">Менеджер</label>
-                        <div class="relative">
-                            <select name="responsible_contact_id" class="{{ $inputBrand }} appearance-none pr-10 cursor-pointer">
-                                <option value="">— не назначен —</option>
-                                @foreach($managers as $manager)
-                                    <option value="{{ $manager->id }}" @selected((string) old('responsible_contact_id', $order->responsible_contact_id) === (string) $manager->id)>
-                                        {{ $manager->full_name }}@if($manager->position) · {{ $manager->position }}@endif
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select name="responsible_contact_id">
+                            <option value="">— не назначен —</option>
+                            @foreach($managers as $manager)
+                                <option value="{{ $manager->id }}" @selected((string) old('responsible_contact_id', $order->responsible_contact_id) === (string) $manager->id)>
+                                    {{ $manager->full_name }}@if($manager->position) · {{ $manager->position }}@endif
+                                </option>
+                            @endforeach
+                        </x-styled-select>
                     </div>
                     <button type="submit" class="{{ $btnOutline }} h-9 text-xs">Сохранить</button>
                 </form>

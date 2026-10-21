@@ -77,7 +77,7 @@
         </div>
     @endif
 
-    @if($order->received_at || $order->completion_notes || $order->has_active_claim)
+    @if($order->received_at || $order->completion_notes || (config('orders.claims_enabled') && $order->has_active_claim))
         <div class="pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
             <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Завершение</p>
             @if($order->received_at)
@@ -89,7 +89,7 @@
                     <p class="text-gray-900 dark:text-white whitespace-pre-line">{{ $order->completion_notes }}</p>
                 </div>
             @endif
-            @if($order->has_active_claim)
+            @if(config('orders.claims_enabled') && $order->has_active_claim)
                 <p class="text-[#c3242a] font-medium">По заказу есть активная претензия / заявка на возврат</p>
             @endif
         </div>

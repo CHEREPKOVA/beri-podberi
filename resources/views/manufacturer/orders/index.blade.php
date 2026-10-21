@@ -12,7 +12,6 @@
     use App\Models\PlatformOrder;
 
     $inputClass = 'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#c3242a] focus:border-transparent transition-colors hover:border-[#c3242a]';
-    $selectClass = $inputClass.' appearance-none pl-3 pr-9 cursor-pointer';
     $canEditStatuses = [
         PlatformOrder::STATUS_NEW,
         PlatformOrder::STATUS_AWAITING_CONFIRMATION,
@@ -66,7 +65,7 @@
 @endphp
 <div class="space-y-6">
     @if(session('success'))
-        <div class="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-900 dark:border-green-700 dark:bg-green-900/20 dark:text-green-100">
+        <div class="rounded-lg border border-[#c3242a]/30 bg-red-50 px-4 py-3 text-sm text-[#a01e24] dark:border-[#c3242a]/40 dark:bg-red-900/20 dark:text-red-100">
             {{ session('success') }}
         </div>
     @endif
@@ -111,46 +110,31 @@
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Статус</label>
-                    <div class="relative min-w-[11rem]">
-                        <select name="status" class="{{ $selectClass }}">
-                            <option value="">Все статусы</option>
-                            @foreach($statusLabels as $slug => $label)
-                                <option value="{{ $slug }}" @selected(request('status') === $slug)>{{ $label }}</option>
-                            @endforeach
-                        </select>
-                        <svg class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </div>
+                    <x-styled-select name="status" size="sm" wrapper-class="min-w-[11rem]">
+                        <option value="">Все статусы</option>
+                        @foreach($statusLabels as $slug => $label)
+                            <option value="{{ $slug }}" @selected(request('status') === $slug)>{{ $label }}</option>
+                        @endforeach
+                    </x-styled-select>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Тип клиента</label>
-                    <div class="relative min-w-[10rem]">
-                        <select name="client_type" class="{{ $selectClass }}">
-                            <option value="">Все</option>
-                            <option value="end_company" @selected(request('client_type') === 'end_company')>Конечная компания</option>
-                            <option value="distributor" @selected(request('client_type') === 'distributor')>Дистрибьютор</option>
-                        </select>
-                        <svg class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </div>
+                    <x-styled-select name="client_type" size="sm" wrapper-class="min-w-[10rem]">
+                        <option value="">Все</option>
+                        <option value="end_company" @selected(request('client_type') === 'end_company')>Конечная компания</option>
+                        <option value="distributor" @selected(request('client_type') === 'distributor')>Дистрибьютор</option>
+                    </x-styled-select>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Регион</label>
-                    <div class="relative min-w-[10rem]">
-                        <select name="region_id" class="{{ $selectClass }}">
-                            <option value="">Все регионы</option>
-                            @foreach($regions as $region)
-                                <option value="{{ $region->id }}" @selected((string) request('region_id') === (string) $region->id)>
-                                    {{ $region->name }}
-                                </option>
-                            @endforeach
-                        </select>
-                        <svg class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </div>
+                    <x-styled-select name="region_id" size="sm" searchable search-placeholder="Найти регион…" wrapper-class="min-w-[12rem]">
+                        <option value="">Все регионы</option>
+                        @foreach($regions as $region)
+                            <option value="{{ $region->id }}" @selected((string) request('region_id') === (string) $region->id)>
+                                {{ $region->name }}
+                            </option>
+                        @endforeach
+                    </x-styled-select>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Сумма от</label>
@@ -192,19 +176,14 @@
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">Менеджер</label>
-                    <div class="relative min-w-[11rem]">
-                        <select name="responsible_contact_id" class="{{ $selectClass }}">
-                            <option value="">Все менеджеры</option>
-                            @foreach($managers as $manager)
-                                <option value="{{ $manager->id }}" @selected((string) request('responsible_contact_id') === (string) $manager->id)>
-                                    {{ $manager->full_name }}
-                                </option>
-                            @endforeach
-                        </select>
-                        <svg class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </div>
+                    <x-styled-select name="responsible_contact_id" size="sm" searchable search-placeholder="Найти менеджера…" wrapper-class="min-w-[11rem]">
+                        <option value="">Все менеджеры</option>
+                        @foreach($managers as $manager)
+                            <option value="{{ $manager->id }}" @selected((string) request('responsible_contact_id') === (string) $manager->id)>
+                                {{ $manager->full_name }}
+                            </option>
+                        @endforeach
+                    </x-styled-select>
                 </div>
                 <label class="inline-flex items-center gap-2.5 h-10 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                     <input type="checkbox" name="mine" value="1" @checked(request()->boolean('mine'))
@@ -283,9 +262,14 @@
                         <tr>
                             <th class="text-left py-3 px-5">Номер</th>
                             <th class="text-left py-3 px-3">
-                                <a href="{{ $headerSortUrl('ordered_at') }}" class="inline-flex items-center hover:text-[#c3242a] {{ $sort === 'ordered_at' ? 'text-[#c3242a] font-medium' : '' }}">
-                                    Создан {!! $sortIcon('ordered_at') !!}
-                                </a>
+                                <div class="inline-flex flex-col gap-0.5">
+                                    <a href="{{ $headerSortUrl('ordered_at') }}" class="inline-flex items-center hover:text-[#c3242a] {{ $sort === 'ordered_at' ? 'text-[#c3242a] font-medium' : '' }}">
+                                        Создан {!! $sortIcon('ordered_at') !!}
+                                    </a>
+                                    <a href="{{ $headerSortUrl('updated') }}" class="inline-flex items-center text-xs font-normal hover:text-[#c3242a] {{ $sort === 'updated' ? 'text-[#c3242a] font-medium' : '' }}">
+                                        Обновлён {!! $sortIcon('updated') !!}
+                                    </a>
+                                </div>
                             </th>
                             <th class="text-left py-3 px-3">Клиент</th>
                             <th class="text-left py-3 px-3">Статус</th>
@@ -295,11 +279,6 @@
                                 </a>
                             </th>
                             <th class="text-left py-3 px-3">Менеджер</th>
-                            <th class="text-left py-3 px-3">
-                                <a href="{{ $headerSortUrl('updated') }}" class="inline-flex items-center hover:text-[#c3242a] {{ $sort === 'updated' ? 'text-[#c3242a] font-medium' : '' }}">
-                                    Обновлён {!! $sortIcon('updated') !!}
-                                </a>
-                            </th>
                             <th class="text-left py-3 px-5">Действия</th>
                         </tr>
                     </thead>
@@ -323,7 +302,14 @@
                                     </a>
                                 </td>
                                 <td class="py-3 px-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                                    {{ optional($order->ordered_at)->format('d.m.Y H:i') ?: '—' }}
+                                    @php
+                                        $createdAt = optional($order->ordered_at)->format('d.m.Y H:i');
+                                        $updatedAt = optional($order->lastActivityAt())->format('d.m.Y H:i');
+                                    @endphp
+                                    <span>{{ $createdAt ?: '—' }}</span>
+                                    @if($updatedAt && $updatedAt !== $createdAt)
+                                        <p class="text-xs text-gray-500 mt-0.5" title="Обновлён">{{ $updatedAt }}</p>
+                                    @endif
                                 </td>
                                 <td class="py-3 px-3 text-gray-900 dark:text-white">
                                     @if($clientParts === [])
@@ -336,21 +322,16 @@
                                     @endif
                                 </td>
                                 <td class="py-3 px-3">
-                                    <span class="px-2 py-1 rounded-md text-xs font-medium {{ $order->statusBadgeClass() }}">
+                                    <span class="inline-flex px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap {{ $order->statusBadgeClass() }}"
+                                          @if($order->statusDescription()) title="{{ $order->statusDescription() }}" @endif>
                                         {{ $order->statusLabel() }}
                                     </span>
-                                    @if($order->statusDescription())
-                                        <p class="text-xs text-gray-500 mt-1 max-w-[12rem]">{{ $order->statusDescription() }}</p>
-                                    @endif
                                 </td>
                                 <td class="py-3 px-3 font-medium text-gray-900 dark:text-white whitespace-nowrap">
                                     {{ number_format((float) $order->total_amount, 2, ',', ' ') }} ₽
                                 </td>
                                 <td class="py-3 px-3 text-gray-600 dark:text-gray-300">
                                     {{ $order->manufacturerResponsibleContact?->full_name ?? '—' }}
-                                </td>
-                                <td class="py-3 px-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                                    {{ optional($order->lastActivityAt())->format('d.m.Y H:i') ?: '—' }}
                                 </td>
                                 <td class="py-3 px-5">
                                     <div class="flex items-center gap-1 min-h-[2rem] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">

@@ -63,13 +63,9 @@ function catalogListingMixin(config) {
             if (searchEl && searchEl.value.trim() !== '') {
                 params.set('search', searchEl.value.trim());
             }
-            const scopeEl = document.getElementById('catalog-search-scope-global');
-            if (scopeEl) {
-                if (scopeEl.type === 'checkbox') {
-                    params.set('search_scope', scopeEl.checked ? 'global' : 'category');
-                } else if (scopeEl.value) {
-                    params.set('search_scope', scopeEl.value);
-                }
+            const searchScope = this.resolveSearchScope();
+            if (searchScope) {
+                params.set('search_scope', searchScope);
             }
             if (includeFilters) {
                 const form = document.getElementById('catalog-filters-form');
@@ -112,16 +108,72 @@ function catalogListingMixin(config) {
                 .then((html) => {
                     const container = document.getElementById(this.productsContainerId);
                     if (container) {
+                        if (window.Alpine && typeof Alpine.destroyTree === 'function') {
+                            try { Alpine.destroyTree(container); } catch (e) { /* уже снят */ }
+                        }
                         container.innerHTML = html;
+                        if (window.Alpine && typeof Alpine.initTree === 'function') {
+                            Alpine.initTree(container);
+                        }
                     }
                     history.replaceState({ category: slug || null }, '', catalogUrl);
                     this.selectedCategorySlug = slug || null;
+                    this.syncSearchScopeControl(slug || null);
                     if (slug) {
                         this.expandAncestorsForSlug(slug);
                     }
                     this.bindPaginationLinks();
                 })
                 .finally(() => { this.loading = false; });
+        },
+        resolveSearchScope() {
+            const scopeEl = document.getElementById('catalog-search-scope-global');
+            if (!scopeEl) {
+                return this.selectedCategorySlug ? 'category' : 'global';
+            }
+            if (scopeEl.type === 'checkbox') {
+                return scopeEl.checked ? 'global' : 'category';
+            }
+            // Hidden input с «Все категории» (value=global). При выбранной категории
+            // не тащим global — иначе листинг игнорирует category до перезагрузки.
+            if (this.selectedCategorySlug) {
+                return 'category';
+            }
+            return scopeEl.value || 'global';
+        },
+        syncSearchScopeControl(categorySlug) {
+            const current = document.getElementById('catalog-search-scope-global');
+            if (!current) {
+                return;
+            }
+            const host = current.closest('label') || current.parentElement;
+            if (!host) {
+                return;
+            }
+            if (categorySlug) {
+                if (current.type === 'checkbox') {
+                    return;
+                }
+                const label = document.createElement('label');
+                label.className = 'inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer w-fit';
+                label.innerHTML = ''
+                    + '<input type="checkbox" id="catalog-search-scope-global" name="search_scope" value="global" '
+                    + 'class="h-4 w-4 rounded border-gray-300 focus:ring-[#c3242a] focus:ring-offset-0" '
+                    + 'style="accent-color: #c3242a;" />'
+                    + '<span>Искать во всём каталоге</span>';
+                host.replaceWith(label);
+                return;
+            }
+            if (current.type !== 'checkbox' && current.tagName === 'INPUT') {
+                current.value = 'global';
+                return;
+            }
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = 'catalog-search-scope-global';
+            hidden.name = 'search_scope';
+            hidden.value = 'global';
+            host.replaceWith(hidden);
         },
         bindPaginationLinks() {
             const container = document.getElementById(this.productsContainerId);
@@ -146,6 +198,7 @@ function catalogListingMixin(config) {
         },
         loadCategory(slug) {
             this.selectedCategorySlug = slug || null;
+            this.syncSearchScopeControl(slug || null);
             const params = this.buildCatalogParams(true, { structuralOnly: true });
             params.delete('page');
             if (slug) {
@@ -242,13 +295,11 @@ function catalogSearchSuggestMixin(config) {
             if (this.selectedCategorySlug) {
                 params.set('category', this.selectedCategorySlug);
             }
-            const scopeEl = document.getElementById('catalog-search-scope-global');
-            if (scopeEl) {
-                if (scopeEl.type === 'checkbox') {
-                    params.set('search_scope', scopeEl.checked ? 'global' : 'category');
-                } else if (scopeEl.value) {
-                    params.set('search_scope', scopeEl.value);
-                }
+            const searchScope = typeof this.resolveSearchScope === 'function'
+                ? this.resolveSearchScope()
+                : (this.selectedCategorySlug ? 'category' : 'global');
+            if (searchScope) {
+                params.set('search_scope', searchScope);
             }
             return params;
         },

@@ -90,23 +90,17 @@
                 <div x-show="currentSlug() === transportSlug" x-cloak class="pt-2 space-y-3">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Транспортная компания</label>
-                        <div class="relative">
-                            <select name="{{ $fieldName('transport_company_id') }}"
-                                    class="{{ $brandControl }} appearance-none pr-10 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                                    :disabled="currentSlug() !== transportSlug">
-                                <option value="">Выберите ТК</option>
-                                @foreach($transportCompanies as $company)
-                                    <option value="{{ $company->id }}" @selected((string) old($oldKey('transport_company_id')) === (string) $company->id)>
-                                        {{ $company->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                        </div>
+                        <x-styled-select
+                            name="{{ $fieldName('transport_company_id') }}"
+                            x-bind:disabled="currentSlug() !== transportSlug"
+                        >
+                            <option value="">Выберите ТК</option>
+                            @foreach($transportCompanies as $company)
+                                <option value="{{ $company->id }}" @selected((string) old($oldKey('transport_company_id')) === (string) $company->id)>
+                                    {{ $company->name }}
+                                </option>
+                            @endforeach
+                        </x-styled-select>
                         @error($oldKey('transport_company_id'))
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror

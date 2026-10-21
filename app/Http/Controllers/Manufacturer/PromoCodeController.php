@@ -35,6 +35,7 @@ class PromoCodeController extends Controller
             'types' => config('manufacturer_discounts.promo_discount_types'),
             'statuses' => config('manufacturer_discounts.promo_statuses'),
             'canManage' => $this->access->canAccessSection($request->user(), 'discounts.manage'),
+            'canDelete' => $this->access->canAccessSection($request->user(), 'discounts.delete'),
         ]);
     }
 
@@ -49,6 +50,7 @@ class PromoCodeController extends Controller
                 'generatedCode' => $this->promos->generateCode(),
                 'types' => config('manufacturer_discounts.promo_discount_types'),
                 'canManage' => true,
+                'canDelete' => false,
             ]
         ));
     }
@@ -75,6 +77,7 @@ class PromoCodeController extends Controller
                 'generatedCode' => $promoCode->code,
                 'types' => config('manufacturer_discounts.promo_discount_types'),
                 'canManage' => $this->access->canAccessSection($request->user(), 'discounts.manage'),
+                'canDelete' => $this->access->canAccessSection($request->user(), 'discounts.delete'),
             ]
         ));
     }

@@ -34,10 +34,12 @@
            class="{{ $filterChip }} {{ $problem === 'paused' ? $filterChipActive : $filterChipIdle }}">
             Приостановлены <span class="opacity-70">{{ $counts['paused'] }}</span>
         </a>
-        <a href="{{ route('admin.orders.index', array_merge(request()->except('page'), ['problem' => 'active_claim'])) }}"
-           class="{{ $filterChip }} {{ $problem === 'active_claim' ? $filterChipActive : $filterChipIdle }}">
-            Претензии <span class="opacity-70">{{ $counts['claims'] }}</span>
-        </a>
+        @if(config('orders.claims_enabled'))
+            <a href="{{ route('admin.orders.index', array_merge(request()->except('page'), ['problem' => 'active_claim'])) }}"
+               class="{{ $filterChip }} {{ $problem === 'active_claim' ? $filterChipActive : $filterChipIdle }}">
+                Претензии <span class="opacity-70">{{ $counts['claims'] }}</span>
+            </a>
+        @endif
         <a href="{{ route('admin.orders.index', array_merge(request()->except('page'), ['problem' => 'integration_error'])) }}"
            class="{{ $filterChip }} {{ $problem === 'integration_error' ? $filterChipActive : $filterChipIdle }}">
             Ошибки интеграции <span class="opacity-70">{{ $counts['integration'] }}</span>

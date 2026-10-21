@@ -378,15 +378,98 @@ class ManufacturerDiscountSetService
     }
 
     /**
+     * Применяет текущие значения формы к копии набора без сохранения в БД (для проверки скидки).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function draftForPreview(ManufacturerDiscountSet $set, array $data): ManufacturerDiscountSet
+    {
+        $draft = $set->replicate();
+        $draft->id = $set->id;
+        $draft->manufacturer_profile_id = $set->manufacturer_profile_id;
+        $draft->exists = true;
+
+        $hasDraft = array_key_exists('audience_type', $data) || array_key_exists('type', $data);
+        if ($hasDraft) {
+            // Неотмеченные чекбоксы не приходят в запросе — для черновика формы это false.
+            foreach ([
+                'require_all_conditions',
+                'apply_to_all_products',
+                'apply_only_active_products',
+                'only_new_distributors',
+                'is_indefinite',
+                'auto_deactivate',
+            ] as $checkbox) {
+                if (! array_key_exists($checkbox, $data)) {
+                    $data[$checkbox] = false;
+                }
+            }
+
+            // Очищенные multi-select тоже не приходят — иначе остаются старые значения из БД.
+            foreach ([
+                'category_ids',
+                'excluded_category_ids',
+                'product_ids',
+                'region_ids',
+                'audience_region_ids',
+                'distributor_ids',
+                'company_types',
+                'tiers',
+            ] as $listField) {
+                if (! array_key_exists($listField, $data)) {
+                    $data[$listField] = [];
+                }
+            }
+        }
+
+        $payload = $this->normalizePayload($set->manufacturerProfile, array_merge([
+            'name' => $set->name,
+            'type' => $set->type,
+            'status' => $set->status,
+            'audience_type' => $set->audience_type,
+            'is_indefinite' => $set->is_indefinite,
+            'apply_to_all_products' => $set->apply_to_all_products,
+            'apply_only_active_products' => $set->apply_only_active_products,
+            'only_new_distributors' => $set->only_new_distributors,
+            'require_all_conditions' => $set->require_all_conditions,
+            'auto_deactivate' => $set->auto_deactivate,
+            'discount_percent' => $set->discount_percent,
+            'discount_amount' => $set->discount_amount,
+            'min_order_amount' => $set->min_order_amount,
+            'min_quantity' => $set->min_quantity,
+            'category_ids' => $set->category_ids,
+            'excluded_category_ids' => $set->excluded_category_ids,
+            'product_ids' => $set->product_ids,
+            'region_ids' => $set->region_ids,
+            'audience_region_ids' => $set->audience_region_ids,
+            'distributor_ids' => $set->distributor_ids,
+            'company_types' => $set->company_types,
+            'tiers' => $set->tiers,
+            'starts_at' => $set->starts_at?->toDateString(),
+            'ends_at' => $set->ends_at?->toDateString(),
+            'description' => $set->description,
+        ], $data));
+
+        // Для проверки считаем набор активным, даже если в форме ещё «отключен».
+        $payload['status'] = ManufacturerDiscountSet::STATUS_ACTIVE;
+        $draft->fill($payload);
+
+        return $draft;
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
     public function normalizePayload(ManufacturerProfile $profile, array $data): array
     {
         $type = (string) ($data['type'] ?? ManufacturerDiscountSet::TYPE_PERCENT);
-        $isIndefinite = (bool) ($data['is_indefinite'] ?? false);
-        $applyAll = (bool) ($data['apply_to_all_products'] ?? false);
+        $isIndefinite = $this->toBool($data['is_indefinite'] ?? false);
+        $applyAll = $this->toBool($data['apply_to_all_products'] ?? false);
         $audience = (string) ($data['audience_type'] ?? ManufacturerDiscountSet::AUDIENCE_ALL);
+        if ($type === ManufacturerDiscountSet::TYPE_INDIVIDUAL) {
+            $audience = ManufacturerDiscountSet::AUDIENCE_SELECTED;
+        }
 
         $startsAt = $data['starts_at'] ?? null;
         $endsAt = $isIndefinite ? null : ($data['ends_at'] ?? null);
@@ -416,18 +499,26 @@ class ManufacturerDiscountSetService
             'discount_amount' => ($data['discount_amount'] ?? '') === '' ? null : (float) $data['discount_amount'],
             'min_order_amount' => ($data['min_order_amount'] ?? '') === '' ? null : (float) $data['min_order_amount'],
             'min_quantity' => ($data['min_quantity'] ?? '') === '' ? null : (int) $data['min_quantity'],
-            'require_all_conditions' => (bool) ($data['require_all_conditions'] ?? false),
-            'apply_to_all_products' => $applyAll,
-            'apply_only_active_products' => (bool) ($data['apply_only_active_products'] ?? false),
-            'only_new_distributors' => (bool) ($data['only_new_distributors'] ?? false),
+            'require_all_conditions' => $this->toBool($data['require_all_conditions'] ?? false),
+            'apply_to_all_products' => $type === ManufacturerDiscountSet::TYPE_CATEGORY ? false : $applyAll,
+            'apply_only_active_products' => $this->toBool($data['apply_only_active_products'] ?? false),
+            'only_new_distributors' => $this->toBool($data['only_new_distributors'] ?? false),
             'audience_type' => $audience,
-            'category_ids' => $applyAll ? [] : $this->intArray($data['category_ids'] ?? []),
-            'excluded_category_ids' => $this->intArray($data['excluded_category_ids'] ?? []),
-            'product_ids' => $applyAll ? [] : $this->intArray($data['product_ids'] ?? []),
+            'category_ids' => ($applyAll && $type !== ManufacturerDiscountSet::TYPE_CATEGORY)
+                ? []
+                : $this->intArray($data['category_ids'] ?? []),
+            'excluded_category_ids' => $type === ManufacturerDiscountSet::TYPE_CATEGORY
+                ? []
+                : $this->intArray($data['excluded_category_ids'] ?? []),
+            'product_ids' => ($applyAll || $type === ManufacturerDiscountSet::TYPE_CATEGORY)
+                ? []
+                : $this->intArray($data['product_ids'] ?? []),
             'region_ids' => $this->intArray($data['region_ids'] ?? []),
             'audience_region_ids' => $this->intArray($data['audience_region_ids'] ?? []),
             'distributor_ids' => $audience === ManufacturerDiscountSet::AUDIENCE_SELECTED
-                ? $this->intArray($data['distributor_ids'] ?? [])
+                ? ($type === ManufacturerDiscountSet::TYPE_INDIVIDUAL
+                    ? array_slice($this->intArray($data['distributor_ids'] ?? []), 0, 1)
+                    : $this->intArray($data['distributor_ids'] ?? []))
                 : [],
             'company_types' => $audience === ManufacturerDiscountSet::AUDIENCE_COMPANY_TYPES
                 ? array_values(array_filter(array_map('strval', $data['company_types'] ?? [])))
@@ -436,8 +527,17 @@ class ManufacturerDiscountSetService
             'starts_at' => $startsAt ?: null,
             'ends_at' => $endsAt ?: null,
             'is_indefinite' => $isIndefinite || ! $endsAt,
-            'auto_deactivate' => (bool) ($data['auto_deactivate'] ?? ($type === ManufacturerDiscountSet::TYPE_PROMO)),
+            'auto_deactivate' => $this->toBool($data['auto_deactivate'] ?? ($type === ManufacturerDiscountSet::TYPE_PROMO)),
         ];
+    }
+
+    private function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
     /**
@@ -446,11 +546,18 @@ class ManufacturerDiscountSetService
     public function formCatalog(ManufacturerProfile $profile, ?ManufacturerDiscountSet $set = null): array
     {
         $categoryTree = ProductCategory::assignableTree();
+        $categories = ProductCategory::query()
+            ->active()
+            ->assignableForProducts()
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
         return [
             'types' => config('manufacturer_discounts.types'),
             'audienceTypes' => config('manufacturer_discounts.audience_types'),
             'companyTypes' => config('manufacturer_discounts.company_types'),
+            'categoryTree' => $categoryTree,
+            'categories' => $categories,
             'categoryOptions' => ProductCategory::selectOptionsFromTree($categoryTree),
             'regionOptions' => Region::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'distributors' => $this->partnerDistributors($profile),
@@ -511,7 +618,12 @@ class ManufacturerDiscountSetService
     {
         $names = collect($conflicts)->pluck('name')->filter()->take(3)->implode(', ');
 
-        return 'У выбранного дистрибьютора уже есть набор скидок, перекрывающий этот. Продолжить? Пересечение: '.$names;
+        $message = 'У выбранного дистрибьютора уже есть набор скидок, перекрывающий этот. Продолжить?';
+        if ($names !== '') {
+            $message .= ' Пересечение: '.$names.'.';
+        }
+
+        return $message;
     }
 
     /**
@@ -558,15 +670,30 @@ class ManufacturerDiscountSetService
     {
         return [
             'name' => $set->name,
+            'description' => $set->description,
             'type' => $set->type,
             'status' => $set->status,
             'discount_percent' => $set->discount_percent,
             'discount_amount' => $set->discount_amount,
-            'starts_at' => $set->starts_at?->toDateString(),
-            'ends_at' => $set->ends_at?->toDateString(),
-            'audience_type' => $set->audience_type,
             'min_order_amount' => $set->min_order_amount,
             'min_quantity' => $set->min_quantity,
+            'require_all_conditions' => $set->require_all_conditions,
+            'apply_to_all_products' => $set->apply_to_all_products,
+            'apply_only_active_products' => $set->apply_only_active_products,
+            'only_new_distributors' => $set->only_new_distributors,
+            'audience_type' => $set->audience_type,
+            'category_ids' => $set->intList($set->category_ids),
+            'excluded_category_ids' => $set->intList($set->excluded_category_ids),
+            'product_ids' => $set->intList($set->product_ids),
+            'region_ids' => $set->intList($set->region_ids),
+            'audience_region_ids' => $set->intList($set->audience_region_ids),
+            'distributor_ids' => $set->intList($set->distributor_ids),
+            'company_types' => array_values(array_map('strval', is_array($set->company_types) ? $set->company_types : [])),
+            'tiers' => $set->normalizedTiers(),
+            'starts_at' => $set->starts_at?->toDateString(),
+            'ends_at' => $set->ends_at?->toDateString(),
+            'is_indefinite' => $set->is_indefinite,
+            'auto_deactivate' => $set->auto_deactivate,
         ];
     }
 

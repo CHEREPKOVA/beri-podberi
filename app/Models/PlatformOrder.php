@@ -95,6 +95,9 @@ class PlatformOrder extends Model
         'received_at',
         'completion_notes',
         'shipping_from_warehouse',
+        'shipping_comment',
+        'stock_reserved',
+        'stock_reservation',
         'status_changed_at',
         'status_changed_by_user_id',
         'paused_at',
@@ -130,6 +133,8 @@ class PlatformOrder extends Model
             'paused_at' => 'datetime',
             'has_active_claim' => 'boolean',
             'has_integration_error' => 'boolean',
+            'stock_reserved' => 'boolean',
+            'stock_reservation' => 'array',
         ];
     }
 

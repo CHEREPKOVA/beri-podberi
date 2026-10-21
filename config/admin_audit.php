@@ -30,6 +30,9 @@ return [
         'admin_action' => ['label' => 'Админ-панель'],
         'partnership' => ['label' => 'Партнёрства'],
         'distributor_product' => ['label' => 'Товары дистрибьютора'],
+        'user_login' => ['label' => 'Входы в систему'],
+        'order_status' => ['label' => 'Изменения заказов'],
+        'distributor_discount' => ['label' => 'Скидки дистрибьютора'],
     ],
 
     /*
@@ -51,12 +54,12 @@ return [
         'orders' => [
             'label' => 'Заказы',
             'prefixes' => ['admin.orders.'],
-            'sources' => ['admin_action'],
+            'sources' => ['admin_action', 'order_status'],
         ],
         'security' => [
             'label' => 'Безопасность',
             'prefixes' => ['security.'],
-            'sources' => ['admin_action'],
+            'sources' => ['admin_action', 'user_login'],
         ],
         'catalog' => [
             'label' => 'Каталог',
@@ -90,6 +93,18 @@ return [
             'label' => 'Товары дистрибьютора',
             'sources' => ['distributor_product'],
         ],
+        'distributor_discount' => [
+            'label' => 'Скидки дистрибьютора',
+            'sources' => ['distributor_discount'],
+        ],
+        'user_login' => [
+            'label' => 'Входы в систему',
+            'sources' => ['user_login'],
+        ],
+        'order_status' => [
+            'label' => 'Изменения заказов',
+            'sources' => ['order_status'],
+        ],
     ],
 
     'partnership_action_labels' => [
@@ -106,6 +121,28 @@ return [
         'unpublished' => 'Товар снят с публикации',
         'price_changed' => 'Изменена цена',
         'stock_changed' => 'Изменён остаток',
+    ],
+
+    'distributor_discount_action_labels' => [
+        'created' => 'Создан набор скидок',
+        'updated' => 'Изменён набор скидок',
+        'activated' => 'Активирован набор скидок',
+        'deactivated' => 'Отключён набор скидок',
+        'copied' => 'Скопирован набор скидок',
+        'deleted' => 'Удалён набор скидок',
+        'imported' => 'Импортирован набор скидок',
+    ],
+
+    'order_status_action_labels' => [
+        'created' => 'Создан заказ',
+        'status_changed' => 'Изменён статус заказа',
+        'comment' => 'Комментарий к заказу',
+        'document_added' => 'Добавлен документ к заказу',
+        'document_removed' => 'Удалён документ заказа',
+        'message' => 'Сообщение по заказу',
+        'paused' => 'Заказ приостановлен',
+        'resumed' => 'Приостановка заказа снята',
+        'edited' => 'Изменён заказ',
     ],
 
     /*

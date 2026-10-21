@@ -37,7 +37,8 @@ class DistributorPurchaseCheckoutService
      *     warehouses: Collection<int, DistributorWarehouse>,
      *     default_warehouse_id: ?int,
      *     delivery_notes: ?string,
-     *     item_warnings: list<array{name: string, warnings: list<array<string, mixed>>}>
+     *     item_warnings: list<array{name: string, warnings: list<array<string, mixed>>}>,
+     *     applied_promo_code: ?string
      * }
      */
     public function prepare(User $user, int $manufacturerProfileId): array
@@ -62,7 +63,23 @@ class DistributorPurchaseCheckoutService
             'default_warehouse_id' => $warehouses->count() === 1 ? $warehouses->first()?->id : null,
             'delivery_notes' => $manufacturer->delivery_notes ?? null,
             'item_warnings' => $this->itemWarnings($group),
+            'applied_promo_code' => $this->currentPromoCode($user, $manufacturerProfileId),
         ];
+    }
+
+    public function applyPromoCode(User $user, int $manufacturerProfileId, ?string $promoCode): void
+    {
+        $this->requireGroup($user, $manufacturerProfileId);
+
+        $previous = $this->currentPromoCode($user, $manufacturerProfileId);
+        $this->persistPromoCode($user, $manufacturerProfileId, $promoCode);
+
+        try {
+            $this->requireGroup($user, $manufacturerProfileId);
+        } catch (ValidationException $e) {
+            $this->persistPromoCode($user, $manufacturerProfileId, $previous);
+            throw $e;
+        }
     }
 
     /**
@@ -114,14 +131,11 @@ class DistributorPurchaseCheckoutService
             $responsibleId,
             $manufacturerProfileId,
         ): PlatformOrder {
-            $promoCode = filled($data['promo_code'] ?? null) ? mb_strtoupper(trim((string) $data['promo_code'])) : null;
+            $promoCode = filled($data['promo_code'] ?? null)
+                ? mb_strtoupper(trim((string) $data['promo_code']))
+                : $this->currentPromoCode($user, $manufacturerProfileId);
             if ($promoCode) {
-                $cart = $this->cartService->getOrCreateCart($profile);
-                $codes = $cart->promo_codes ?? [];
-                $codes[(string) $manufacturerProfileId] = $promoCode;
-                $cart->promo_codes = $codes;
-                $cart->save();
-                session(['purchase_promo.'.$manufacturerProfileId => $promoCode]);
+                $this->persistPromoCode($user, $manufacturerProfileId, $promoCode);
                 $group = $this->requireGroup($user, $manufacturerProfileId);
             }
 
@@ -177,12 +191,7 @@ class DistributorPurchaseCheckoutService
                 if ($promo) {
                     $this->promoCodes->recordUsage($promo, $user, $order, $discountAmount);
                 }
-                session()->forget('purchase_promo.'.$manufacturerProfileId);
-                $cart = $this->cartService->getOrCreateCart($profile);
-                $codes = $cart->promo_codes ?? [];
-                unset($codes[(string) $manufacturerProfileId], $codes[$manufacturerProfileId]);
-                $cart->promo_codes = $codes;
-                $cart->save();
+                $this->persistPromoCode($user, $manufacturerProfileId, null);
             }
 
             PlatformOrderStatusLog::query()->create([
@@ -236,6 +245,44 @@ class DistributorPurchaseCheckoutService
         }
 
         return $group;
+    }
+
+    private function currentPromoCode(User $user, int $manufacturerProfileId): ?string
+    {
+        $profile = $this->cartService->resolveProfile($user);
+        $cart = $this->cartService->getOrCreateCart($profile);
+        $codes = is_array($cart->promo_codes) ? $cart->promo_codes : [];
+        $promo = $codes[(string) $manufacturerProfileId]
+            ?? $codes[$manufacturerProfileId]
+            ?? session('purchase_promo.'.$manufacturerProfileId);
+
+        if (! is_string($promo)) {
+            return null;
+        }
+
+        $promo = mb_strtoupper(trim($promo));
+
+        return $promo !== '' ? $promo : null;
+    }
+
+    private function persistPromoCode(User $user, int $manufacturerProfileId, ?string $promoCode): void
+    {
+        $profile = $this->cartService->resolveProfile($user);
+        $cart = $this->cartService->getOrCreateCart($profile);
+        $codes = is_array($cart->promo_codes) ? $cart->promo_codes : [];
+        $normalized = filled($promoCode) ? mb_strtoupper(trim((string) $promoCode)) : null;
+
+        unset($codes[(string) $manufacturerProfileId], $codes[$manufacturerProfileId]);
+
+        if ($normalized) {
+            $codes[(string) $manufacturerProfileId] = $normalized;
+            session(['purchase_promo.'.$manufacturerProfileId => $normalized]);
+        } else {
+            session()->forget('purchase_promo.'.$manufacturerProfileId);
+        }
+
+        $cart->promo_codes = $codes === [] ? null : $codes;
+        $cart->save();
     }
 
     /**

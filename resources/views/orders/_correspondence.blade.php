@@ -93,17 +93,57 @@
                     <p class="mt-1 text-xs text-[#c3242a]">{{ $message }}</p>
                 @enderror
             </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">Вложения</label>
-                <input type="file"
-                       name="attachments[]"
-                       multiple
-                       accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt"
-                       class="block w-full text-sm text-gray-600 dark:text-gray-300
-                              file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
-                              file:text-sm file:font-medium file:bg-[#c3242a] file:text-white
-                              hover:file:bg-[#a01e24] file:cursor-pointer cursor-pointer">
+            <div x-data="{
+                fileLabel: 'файлы не выбраны',
+                fileError: '',
+                maxBytes: 10 * 1024 * 1024,
+                maxFiles: 10,
+                onFilesSelected(event) {
+                    const input = event.target;
+                    const files = Array.from(input.files || []);
+                    this.fileError = '';
+                    if (files.length === 0) {
+                        this.fileLabel = 'файлы не выбраны';
+                        return;
+                    }
+                    if (files.length > this.maxFiles) {
+                        this.fileError = 'Можно прикрепить не более 10 файлов.';
+                        this.fileLabel = 'файлы не выбраны';
+                        input.value = '';
+                        return;
+                    }
+                    const tooBig = files.filter((file) => file.size > this.maxBytes);
+                    if (tooBig.length > 0) {
+                        this.fileError = 'Файл «' + tooBig[0].name + '» больше 10 МБ. Уменьшите фото или выберите другой файл.';
+                        this.fileLabel = 'файлы не выбраны';
+                        input.value = '';
+                        return;
+                    }
+                    this.fileLabel = files.map((file) => file.name).join(', ');
+                }
+            }">
+                <label class="block text-sm font-medium mb-1" for="order-correspondence-attachments">Вложения</label>
+                <div class="flex items-center gap-3">
+                    <input type="file"
+                           id="order-correspondence-attachments"
+                           name="attachments[]"
+                           multiple
+                           accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt"
+                           class="sr-only"
+                           @change="onFilesSelected($event)">
+                    <label for="order-correspondence-attachments"
+                           class="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                           title="Выбрать файлы"
+                           aria-label="Выбрать файлы">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                                  d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                        </svg>
+                    </label>
+                    <span class="text-sm text-gray-500 dark:text-gray-400 truncate" x-text="fileLabel"></span>
+                </div>
                 <p class="mt-1 text-[11px] text-gray-400">Фото, ТТН, акты, документы — до 10 файлов, каждый до 10 МБ.</p>
+                <p x-show="fileError" x-cloak class="mt-1 text-xs text-[#c3242a]" x-text="fileError"></p>
                 @error('attachments')
                     <p class="mt-1 text-xs text-[#c3242a]">{{ $message }}</p>
                 @enderror

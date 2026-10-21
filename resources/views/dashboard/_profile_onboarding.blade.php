@@ -4,35 +4,51 @@
     $completedCount = $completion['completed_count'] ?? 0;
     $totalCount = $completion['total_count'] ?? 0;
     $isComplete = $completion['is_complete'] ?? false;
+    $isFullyComplete = $percent >= 100;
     $introComplete = $completion['intro_complete'] ?? 'Обязательные шаги выполнены.';
     $introIncomplete = $completion['intro_incomplete'] ?? 'Заполните профиль для работы на платформе.';
+    $introFullyComplete = $completion['intro_fully_complete'] ?? 'Все шаги выполнены — профиль готов к работе на платформе.';
     $notice = $completion['notice'] ?? null;
+    $heading = $isFullyComplete ? 'Профиль заполнен' : 'Настройка профиля';
+    $intro = $isFullyComplete
+        ? $introFullyComplete
+        : ($isComplete ? $introComplete : $introIncomplete);
 @endphp
 
 <div class="space-y-6">
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Настройка профиля</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {{ $isComplete ? $introComplete : $introIncomplete }}
-                </p>
+            <div class="flex items-start gap-3">
+                @if($isFullyComplete)
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                @endif
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ $heading }}</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {{ $intro }}
+                    </p>
+                </div>
             </div>
             <div class="text-right shrink-0">
-                <p class="text-2xl font-bold text-[#c3242a]">{{ $percent }}%</p>
+                <p class="text-2xl font-bold {{ $isFullyComplete ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#c3242a]' }}">{{ $percent }}%</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ $completedCount }} из {{ $totalCount }} шагов</p>
             </div>
         </div>
 
         <div class="mt-4 h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-            <div class="h-full rounded-full bg-[#c3242a] transition-all duration-300" style="width: {{ $percent }}%"></div>
+            <div class="h-full rounded-full transition-all duration-300 {{ $isFullyComplete ? 'bg-emerald-500' : 'bg-[#c3242a]' }}" style="width: {{ $percent }}%"></div>
         </div>
 
         @if($notice)
         <div @class([
             'mt-4 flex items-start gap-3 rounded-lg border px-4 py-3 text-sm',
             'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300' => ($notice['type'] ?? '') === 'warning',
-            'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-300' => ($notice['type'] ?? '') !== 'warning',
+            'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' => ($notice['type'] ?? '') !== 'warning' && $isFullyComplete,
+            'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-300' => ($notice['type'] ?? '') !== 'warning' && ! $isFullyComplete,
         ])>
             <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 @if(($notice['type'] ?? '') === 'warning')
@@ -46,6 +62,7 @@
         @endif
     </div>
 
+    @unless($isFullyComplete)
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         @foreach($steps as $step)
         <a href="{{ $step['url'] }}"
@@ -83,4 +100,5 @@
         </a>
         @endforeach
     </div>
+    @endunless
 </div>

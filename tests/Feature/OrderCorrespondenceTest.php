@@ -178,7 +178,7 @@ class OrderCorrespondenceTest extends TestCase
         $item = $order->items()->firstOrFail();
         $this->actingAs($distUser)->post(route('distributor.orders.send_for_approval', $order), [
             'items' => [
-                ['id' => $item->id, 'quantity' => 2, 'unit_price' => 2500],
+                ['id' => $item->id, 'quantity' => 2, 'unit_price' => 2400],
             ],
             'comment' => 'Цена обновлена',
         ]);

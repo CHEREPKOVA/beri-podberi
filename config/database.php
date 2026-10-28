@@ -3,6 +3,15 @@
 use Illuminate\Support\Str;
 use Pdo\Mysql;
 
+$mysqlPdoOptions = extension_loaded('pdo_mysql') ? array_filter([
+    (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+]) : [];
+
+// На шаред-хостинге MySQL сбрасывает серверные prepared statements (ошибка 1615).
+if (filter_var(env('DB_EMULATE_PREPARES', false), FILTER_VALIDATE_BOOLEAN)) {
+    $mysqlPdoOptions[PDO::ATTR_EMULATE_PREPARES] = true;
+}
+
 return [
 
     /*
@@ -59,9 +68,7 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+            'options' => $mysqlPdoOptions,
         ],
 
         'mariadb' => [
@@ -79,9 +86,7 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+            'options' => $mysqlPdoOptions,
         ],
 
         'pgsql' => [
